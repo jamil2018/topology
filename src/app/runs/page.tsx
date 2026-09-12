@@ -22,6 +22,7 @@ export default async function RunsPage() {
           name: r.name,
           status: r.status,
           environment: r.environment,
+          createdAt: r.createdAt,
           updatedAt: r.updatedAt,
         }))}
         cases={cases.map((c) => ({
