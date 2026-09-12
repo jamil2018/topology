@@ -379,35 +379,33 @@ export function RunsWorkspace({
                   const checked = selectedIds.has(c.id);
                   return (
                     <li key={c.id}>
-                      <label className="flex cursor-pointer items-start gap-2.5 px-2.5 py-2 hover:bg-[color:var(--topo-chip)]/40">
-                        <Checkbox
-                          isSelected={checked}
-                          onChange={(next) => toggleCase(c.id, next)}
-                          className="mt-0.5"
-                        >
-                          <Checkbox.Control>
+                      <Checkbox
+                        isSelected={checked}
+                        onChange={(next) => toggleCase(c.id, next)}
+                        className="w-full px-2.5 py-2 hover:bg-[color:var(--topo-chip)]/40"
+                      >
+                        <Checkbox.Content className="flex w-full cursor-pointer items-start gap-2.5">
+                          <Checkbox.Control className="mt-0.5">
                             <Checkbox.Indicator />
                           </Checkbox.Control>
-                        </Checkbox>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-[color:var(--topo-ink)]">
-                            {c.title}
+                          <div className="min-w-0 flex-1 text-left">
+                            <div className="truncate text-sm font-medium text-[color:var(--topo-ink)]">
+                              {c.title}
+                            </div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[color:var(--topo-muted)]">
+                              <span className="font-mono">{c.key}</span>
+                              <StatusChip mono>{c.priority}</StatusChip>
+                              <StatusChip mono>{c.status}</StatusChip>
+                              {c.folder ? <span>{c.folder.name}</span> : null}
+                              {(c.tags ?? []).slice(0, 3).map((t) => (
+                                <Chip key={t} size="sm" variant="soft">
+                                  {t}
+                                </Chip>
+                              ))}
+                            </div>
                           </div>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[color:var(--topo-muted)]">
-                            <span className="font-mono">{c.key}</span>
-                            <StatusChip mono>{c.priority}</StatusChip>
-                            <StatusChip mono>{c.status}</StatusChip>
-                            {c.folder ? (
-                              <span>{c.folder.name}</span>
-                            ) : null}
-                            {(c.tags ?? []).slice(0, 3).map((t) => (
-                              <Chip key={t} size="sm" variant="soft">
-                                {t}
-                              </Chip>
-                            ))}
-                          </div>
-                        </div>
-                      </label>
+                        </Checkbox.Content>
+                      </Checkbox>
                     </li>
                   );
                 })}
