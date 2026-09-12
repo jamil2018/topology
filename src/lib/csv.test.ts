@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCasesCsv, serializeCasesCsv } from "@/lib/csv";
+import { buildCasesCsvTemplate, parseCasesCsv, serializeCasesCsv } from "@/lib/csv";
 
 describe("parseCasesCsv", () => {
   it("parses a standard cases CSV", () => {
@@ -50,3 +50,16 @@ describe("serializeCasesCsv", () => {
     expect(rows[0]?.folder).toBe("Smoke");
   });
 });
+
+describe("buildCasesCsvTemplate", () => {
+  it("includes header and example rows the importer accepts", () => {
+    const csv = buildCasesCsvTemplate();
+    const { rows, errors } = parseCasesCsv(csv);
+    expect(errors).toEqual([]);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    expect(csv.split("\n")[0]).toContain("key,title,description");
+    expect(rows[0]?.key).toBe("TOP-20");
+    expect(rows[0]?.folder).toBe("Import");
+  });
+});
+

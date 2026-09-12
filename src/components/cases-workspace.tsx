@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   Button,
   Input,
@@ -13,6 +13,13 @@ import {
   Select,
 } from "@heroui/react";
 import { motion, AnimatePresence } from "motion/react";
+import {
+  CASE_LIST_PAGE_SIZE,
+  filterAndSortCases,
+  paginateCases,
+  type CaseListSort,
+  type CaseListSortDir,
+} from "@/lib/case-list";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
 
@@ -30,6 +37,14 @@ type CaseRow = {
 const priorities = ["P0", "P1", "P2", "P3"] as const;
 const statuses = ["draft", "ready", "blocked", "deprecated"] as const;
 
+const sortColumns: { id: CaseListSort; label: string }[] = [
+  { id: "key", label: "Key" },
+  { id: "title", label: "Title" },
+  { id: "folder", label: "Folder" },
+  { id: "priority", label: "Priority" },
+  { id: "status", label: "Status" },
+];
+
 export function CasesWorkspace({
   initialCases,
   folders,
@@ -40,8 +55,16 @@ export function CasesWorkspace({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [folderFilter, setFolderFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<CaseListSort>("key");
+  const [sortDir, setSortDir] = useState<CaseListSortDir>("asc");
+  const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showFolderCreate, setShowFolderCreate] = useState(false);
+  const [folderName, setFolderName] = useState("");
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const [folderPending, setFolderPending] = useState(false);
   const [form, setForm] = useState({
     key: "",
     title: "",
@@ -52,10 +75,36 @@ export function CasesWorkspace({
     tags: "",
   });
 
-  const filtered =
-    folderFilter === "all"
-      ? initialCases
-      : initialCases.filter((c) => c.folder?.id === folderFilter);
+  const filteredSorted = useMemo(
+    () => filterAndSortCases(initialCases, folderFilter, search, sort, sortDir),
+    [initialCases, folderFilter, search, sort, sortDir],
+  );
+
+  const pageData = useMemo(
+    () => paginateCases(filteredSorted, page, CASE_LIST_PAGE_SIZE),
+    [filteredSorted, page],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [folderFilter, search, sort, sortDir]);
+
+  useEffect(() => {
+    if (page !== pageData.page) setPage(pageData.page);
+  }, [page, pageData.page]);
+
+  const rangeStart =
+    pageData.total === 0 ? 0 : (pageData.page - 1) * CASE_LIST_PAGE_SIZE + 1;
+  const rangeEnd = Math.min(pageData.page * CASE_LIST_PAGE_SIZE, pageData.total);
+
+  function toggleSort(next: CaseListSort) {
+    if (sort === next) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSort(next);
+      setSortDir("asc");
+    }
+  }
 
   async function createCase() {
     setError(null);
@@ -96,19 +145,40 @@ export function CasesWorkspace({
   }
 
   async function createFolder() {
-    const name = window.prompt("Folder name");
-    if (!name?.trim()) return;
-    setError(null);
-    const res = await fetch("/api/folders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() }),
-    });
-    if (!res.ok) {
-      setError("Failed to create folder");
+    const name = folderName.trim();
+    if (!name) {
+      setFolderError("Folder name is required");
       return;
     }
-    startTransition(() => router.refresh());
+    setFolderError(null);
+    setError(null);
+    setFolderPending(true);
+    try {
+      const res = await fetch("/api/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message =
+          typeof data.error === "string"
+            ? data.error
+            : "Failed to create folder";
+        setFolderError(message);
+        return;
+      }
+      setFolderName("");
+      setShowFolderCreate(false);
+      if (typeof data.folder?.id === "string") {
+        setFolderFilter(data.folder.id);
+      }
+      startTransition(() => router.refresh());
+    } catch {
+      setFolderError("Failed to create folder");
+    } finally {
+      setFolderPending(false);
+    }
   }
 
   async function importCsv(file: File) {
@@ -137,8 +207,23 @@ export function CasesWorkspace({
         }
         actions={
           <>
-            <Button size="sm" variant="secondary" onPress={createFolder}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={() => {
+                setShowFolderCreate((v) => !v);
+                setShowCreate(false);
+                setFolderError(null);
+              }}
+            >
               New folder
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={() => window.open("/api/import/csv/template", "_blank")}
+            >
+              Download template
             </Button>
             <Button
               size="sm"
@@ -163,7 +248,10 @@ export function CasesWorkspace({
             <Button
               size="sm"
               variant="primary"
-              onPress={() => setShowCreate((v) => !v)}
+              onPress={() => {
+                setShowCreate((v) => !v);
+                setShowFolderCreate(false);
+              }}
             >
               New case
             </Button>
@@ -176,6 +264,61 @@ export function CasesWorkspace({
           {error}
         </p>
       ) : null}
+
+      <AnimatePresence>
+        {showFolderCreate ? (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="space-y-3 rounded-xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
+          >
+            <TextField name="folder-name" className="w-full max-w-md">
+              <Label>Folder name</Label>
+              <Input
+                placeholder="e.g. Smoke"
+                value={folderName}
+                onChange={(e) => {
+                  setFolderName(e.target.value);
+                  if (folderError) setFolderError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void createFolder();
+                  }
+                }}
+                className="w-full"
+                autoFocus
+              />
+            </TextField>
+            {folderError ? (
+              <p className="text-sm text-red-600 dark:text-red-400">
+                {folderError}
+              </p>
+            ) : null}
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                isDisabled={folderPending || !folderName.trim()}
+                onPress={() => void createFolder()}
+              >
+                Create folder
+              </Button>
+              <Button
+                variant="tertiary"
+                onPress={() => {
+                  setShowFolderCreate(false);
+                  setFolderName("");
+                  setFolderError(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <div className="flex flex-wrap gap-1.5">
         <button
@@ -360,18 +503,58 @@ export function CasesWorkspace({
       </AnimatePresence>
 
       <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
+        <div className="flex flex-col gap-2 border-b border-[color:var(--topo-line)] p-2.5 sm:flex-row sm:items-center sm:gap-3">
+          <TextField name="case-list-search" className="min-w-0 flex-1">
+            <Label className="sr-only">Search cases</Label>
+            <Input
+              aria-label="Search cases"
+              placeholder="Search title, key, tags, or folder"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full"
+            />
+          </TextField>
+          <p className="shrink-0 text-xs text-[color:var(--topo-muted)]">
+            {pageData.total} match
+            {pageData.total === 1 ? "" : "es"}
+          </p>
+        </div>
+
         <table className="w-full text-left text-sm">
           <thead className="border-b border-[color:var(--topo-line)] font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
             <tr>
-              <th className="px-3 py-2 font-medium">Key</th>
-              <th className="px-3 py-2 font-medium">Title</th>
-              <th className="px-3 py-2 font-medium">Folder</th>
-              <th className="px-3 py-2 font-medium">Priority</th>
-              <th className="px-3 py-2 font-medium">Status</th>
+              {sortColumns.map((col) => {
+                const active = sort === col.id;
+                return (
+                  <th key={col.id} className="px-3 py-2 font-medium">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(col.id)}
+                      className={`inline-flex items-center gap-1 uppercase tracking-[0.12em] transition-colors ${
+                        active
+                          ? "text-[color:var(--topo-ink)]"
+                          : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+                      }`}
+                      aria-sort={
+                        active
+                          ? sortDir === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
+                      {col.label}
+                      <span aria-hidden className="font-sans text-[9px]">
+                        {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
+                      </span>
+                    </button>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {initialCases.length === 0 ? (
               <tr>
                 <td
                   colSpan={5}
@@ -380,8 +563,17 @@ export function CasesWorkspace({
                   No cases yet. Create one or import a CSV.
                 </td>
               </tr>
+            ) : pageData.items.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-3 py-10 text-center text-[color:var(--topo-muted)]"
+                >
+                  No cases match this search or folder.
+                </td>
+              </tr>
             ) : (
-              filtered.map((c, i) => (
+              pageData.items.map((c, i) => (
                 <motion.tr
                   key={c.id}
                   initial={{ opacity: 0, y: 4 }}
@@ -422,6 +614,34 @@ export function CasesWorkspace({
             )}
           </tbody>
         </table>
+
+        {pageData.total > CASE_LIST_PAGE_SIZE ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--topo-line)] px-2.5 py-2">
+            <p className="text-xs text-[color:var(--topo-muted)]">
+              {rangeStart}–{rangeEnd} of {pageData.total}
+            </p>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={pageData.page <= 1}
+                onPress={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={pageData.page >= pageData.totalPages}
+                onPress={() =>
+                  setPage((p) => Math.min(pageData.totalPages, p + 1))
+                }
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
