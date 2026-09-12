@@ -320,52 +320,72 @@ export function RunsWorkspace({
             </Select>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              className="min-w-[9rem]"
-              variant="secondary"
-              placeholder="Sort"
-              value={sort}
-              onChange={(value) => {
-                if (value == null) return;
-                setSort(String(value) as CasePickerSort);
-              }}
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span
+                id="case-picker-sort-label"
+                className="shrink-0 text-xs text-[color:var(--topo-muted)]"
+              >
+                Sort
+              </span>
+              <Select
+                aria-labelledby="case-picker-sort-label"
+                className="w-[9.5rem] shrink-0"
+                variant="secondary"
+                placeholder="Updated"
+                value={sort}
+                onChange={(value) => {
+                  if (value == null) return;
+                  setSort(String(value) as CasePickerSort);
+                }}
+              >
+                <Select.Trigger className="h-9 min-h-9 py-0 md:h-8 md:min-h-8">
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {sorts.map((s) => (
+                      <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
+                        {s.label}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            </div>
+
+            <div
+              className="hidden h-4 w-px shrink-0 bg-[color:var(--topo-line)] sm:block"
+              aria-hidden
+            />
+
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              role="group"
+              aria-label="Case selection"
             >
-              <Label>Sort</Label>
-              <Select.Trigger>
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {sorts.map((s) => (
-                    <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
-                      {s.label}
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={visibleIds.length === 0 || allVisibleSelected}
-              onPress={selectAllVisible}
-            >
-              Select all visible
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={selectedCount === 0}
-              onPress={clearSelection}
-            >
-              Clear
-            </Button>
-            <Button size="sm" variant="tertiary" onPress={resetToReady}>
-              Reset to all ready
-            </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={visibleIds.length === 0 || allVisibleSelected}
+                onPress={selectAllVisible}
+              >
+                Select all visible
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={selectedCount === 0}
+                onPress={clearSelection}
+              >
+                Clear
+              </Button>
+              <Button size="sm" variant="tertiary" onPress={resetToReady}>
+                Reset to all ready
+              </Button>
+            </div>
           </div>
 
           <div className="max-h-64 overflow-auto rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
