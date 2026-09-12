@@ -21,8 +21,8 @@ import { ThemeToggle } from "./theme-toggle";
 
 const nav = [
   { href: "/", label: "Hub", hint: "Pulse", Icon: CirclesFourIcon },
-  { href: "/cases", label: "Cases", hint: "Suites", Icon: ListChecksIcon },
-  { href: "/runs", label: "Runs", hint: "Manual", Icon: PlayCircleIcon },
+  { href: "/cases", label: "Test Cases", hint: "Suites", Icon: ListChecksIcon },
+  { href: "/runs", label: "Test Runs", hint: "Manual", Icon: PlayCircleIcon },
   { href: "/automation", label: "Automation", hint: "CI", Icon: FlaskIcon },
   { href: "/triage", label: "Triage", hint: "Failures", Icon: BugIcon },
   { href: "/connect", label: "Connect", hint: "MCP", Icon: PlugsConnectedIcon },
