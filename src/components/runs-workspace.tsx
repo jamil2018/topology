@@ -162,7 +162,7 @@ export function RunsWorkspace({
           multi-select to narrow before create — selection is required.
         </p>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-3">
           <TextField name="run-name" className="w-full">
             <Label>Run name</Label>
             <Input
