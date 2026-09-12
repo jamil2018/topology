@@ -163,35 +163,44 @@ export function SettingsWorkspace({
         <p className="text-sm text-red-500">{loadError}</p>
       ) : null}
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+      <div className="space-y-4">
         <nav
-          className="flex shrink-0 gap-1 overflow-x-auto lg:w-44 lg:flex-col"
+          className="overflow-x-auto overscroll-x-contain [scrollbar-width:thin]"
           aria-label="Settings sections"
+          role="tablist"
         >
-          {SECTIONS.map((item) => {
-            const active = section === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => go(item.id)}
-                className={`flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
-                  active
-                    ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
-                    : "text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
-                }`}
-                aria-current={active ? "page" : undefined}
-              >
-                <span className="font-medium">{item.label}</span>
-                <span className="font-mono text-[10px] uppercase tracking-wide opacity-70">
-                  {item.hint}
-                </span>
-              </button>
-            );
-          })}
+          <div className="flex w-max min-w-full gap-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] p-1">
+            {SECTIONS.map((item) => {
+              const active = section === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  onClick={() => go(item.id)}
+                  className={`flex shrink-0 items-center justify-center gap-2 rounded-[5px] px-3 py-2 text-sm transition-colors sm:flex-1 ${
+                    active
+                      ? "bg-[color:var(--topo-panel)] text-[color:var(--topo-ink)] shadow-sm"
+                      : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+                  }`}
+                  aria-selected={active}
+                  aria-controls={`settings-panel-${item.id}`}
+                >
+                  <span className="font-medium whitespace-nowrap">{item.label}</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wide opacity-70 whitespace-nowrap">
+                    {item.hint}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
-        <div className="min-w-0 flex-1 space-y-4">
+        <div
+          id={`settings-panel-${section}`}
+          className="min-w-0 space-y-4"
+          role="tabpanel"
+        >
           {section === "profile" ? (
             <section className="space-y-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
               <div>
