@@ -17,6 +17,7 @@ import {
   SignOutIcon,
   XIcon,
 } from "@phosphor-icons/react";
+import { BrandMark } from "./brand-mark";
 import { ThemeToggle } from "./theme-toggle";
 
 const nav = [
@@ -96,14 +97,9 @@ function SidebarChrome({
         <Link
           href="/"
           onClick={onNavigate}
-          className="flex min-w-0 flex-1 items-baseline gap-2"
+          className="flex min-w-0 flex-1"
         >
-          <span className="truncate text-base font-semibold tracking-tight text-[color:var(--topo-ink)]">
-            Topology
-          </span>
-          <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
-            TCM
-          </span>
+          <BrandMark size={26} showWordmark eyebrow="TCM" priority />
         </Link>
       </div>
 
@@ -226,12 +222,12 @@ export function HubShell({
           >
             <SidebarSimpleIcon size={16} weight="bold" />
           </Button>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-[color:var(--topo-ink)]">
-              Topology
-            </div>
-            <div className="truncate font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
-              {current?.label ?? "App"}
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <BrandMark size={22} showWordmark={false} />
+            <div className="min-w-0">
+              <div className="truncate font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+                {current?.label ?? "App"}
+              </div>
             </div>
           </div>
           <ThemeToggle compact />

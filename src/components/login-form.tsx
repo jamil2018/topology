@@ -4,6 +4,7 @@ import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { Button, Input, Label, TextField } from "@heroui/react";
 import { motion } from "motion/react";
+import { BrandMark } from "./brand-mark";
 import { ThemeToggle } from "./theme-toggle";
 
 export function LoginForm({
@@ -41,14 +42,12 @@ export function LoginForm({
       className="w-full max-w-md space-y-5 rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-5"
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 space-y-1.5">
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--topo-muted)]">
             Sign in
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[color:var(--topo-ink)]">
-            Topology
-          </h1>
-          <p className="mt-1.5 text-sm text-[color:var(--topo-muted)]">
+          <BrandMark size={36} as="h1" showWordmark priority />
+          <p className="text-sm text-[color:var(--topo-muted)]">
             OAuth-first when configured. Email and password for local operators.
           </p>
         </div>
