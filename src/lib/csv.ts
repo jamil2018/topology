@@ -155,3 +155,33 @@ export function serializeCasesCsv(
   }
   return `${lines.join("\n")}\n`;
 }
+
+export function buildCasesCsvTemplate(): string {
+  return serializeCasesCsv([
+    {
+      key: "TOP-20",
+      title: "CSV import lands cases",
+      description: "Imported via the sample template",
+      preconditions: "Signed in to Topology",
+      steps: "1. Download template; 2. Fill rows; 3. Import CSV",
+      expectedResult: "Cases appear under the chosen folder",
+      priority: "P2",
+      status: "ready",
+      folderName: "Import",
+      tags: ["csv", "import"],
+    },
+    {
+      key: "TOP-21",
+      title: "Folder filter works",
+      description: "Chip filters narrow the cases table",
+      preconditions: "",
+      steps: "1. Open Cases; 2. Click a folder chip",
+      expectedResult: "Table shows only cases in that folder",
+      priority: "P3",
+      status: "draft",
+      folderName: "Import",
+      tags: ["ui"],
+    },
+  ]);
+}
+

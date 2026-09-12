@@ -1,3 +1,3 @@
 key,title,description,preconditions,steps,expectedResult,priority,status,folder,tags
-TOP-20,CSV import lands cases,Imported via fixtures,,,1. Import CSV,Cases appear under folder,P2,ready,Import,csv;import
-TOP-21,Folder filter works,Filter chips,,,,1. Click folder chip,Table filters,P3,draft,Import,ui
+TOP-20,CSV import lands cases,Imported via the sample template,Signed in to Topology,1. Download template; 2. Fill rows; 3. Import CSV,Cases appear under the chosen folder,P2,ready,Import,csv;import
+TOP-21,Folder filter works,Chip filters narrow the cases table,,1. Open Cases; 2. Click a folder chip,Table shows only cases in that folder,P3,draft,Import,ui
