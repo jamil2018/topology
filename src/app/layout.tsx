@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Topology",
   description:
     "Self-hosted test case management with a Linear-like operating hub.",
+  applicationName: "Topology",
 };
 
 const themeBoot = `(function(){try{var k='topology-theme';var p=localStorage.getItem(k)||'system';var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=p==='dark'||(p!=='light'&&d);var e=document.documentElement;e.classList.toggle('dark',r);e.dataset.theme=r?'dark':'light';e.style.colorScheme=r?'dark':'light';}catch(e){}})();`;
