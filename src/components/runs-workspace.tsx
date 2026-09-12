@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import type { Selection } from "@heroui/react";
 import {
   Button,
-  Checkbox,
-  Chip,
   Disclosure,
   Input,
   Label,
@@ -17,6 +16,7 @@ import {
 } from "@heroui/react";
 import { motion } from "motion/react";
 import { PageHeader } from "./page-header";
+import { RunCasePickerTable } from "./run-case-picker-table";
 import { StatusChip, statusToneForRun } from "./status-chip";
 import {
   collectCaseTags,
@@ -44,15 +44,6 @@ type RunRow = {
 
 type Folder = { id: string; name: string };
 
-const statuses = ["all", "draft", "ready", "blocked", "deprecated"] as const;
-const priorities = ["all", "P0", "P1", "P2", "P3"] as const;
-const sorts: { id: CasePickerSort; label: string }[] = [
-  { id: "updated", label: "Updated" },
-  { id: "created", label: "Created" },
-  { id: "title", label: "Title" },
-  { id: "priority", label: "Priority" },
-  { id: "status", label: "Status" },
-];
 const runListSorts: { id: RunListSort; label: string }[] = [
   { id: "updated", label: "Updated" },
   { id: "created", label: "Created" },
@@ -123,21 +114,10 @@ export function RunsWorkspace({
   );
 
   const visibleIds = visible.map((c) => c.id);
-  const allVisibleSelected =
-    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const selectedCount = selectedIds.size;
   const readyCount = cases.filter((c) => c.status === "ready").length;
   /** Collapse create form when runs already exist; expand on empty for first-run UX. */
   const startRunDefaultExpanded = initialRuns.length === 0;
-
-  function toggleCase(id: string, next: boolean) {
-    setSelectedIds((prev) => {
-      const copy = new Set(prev);
-      if (next) copy.add(id);
-      else copy.delete(id);
-      return copy;
-    });
-  }
 
   function selectAllVisible() {
     setSelectedIds((prev) => {
@@ -158,6 +138,20 @@ export function RunsWorkspace({
     setTag("all");
     setSearch("");
     setSelectedIds(new Set(defaultReadySelection(cases)));
+  }
+
+  /** Preserve selections outside the current filter while Table manages visible rows. */
+  function handlePickerSelectionChange(keys: Selection) {
+    const visibleSet = new Set(visibleIds);
+    setSelectedIds((prev) => {
+      const next = new Set([...prev].filter((id) => !visibleSet.has(id)));
+      if (keys === "all") {
+        for (const id of visibleIds) next.add(id);
+        return next;
+      }
+      for (const key of keys) next.add(String(key));
+      return next;
+    });
   }
 
   async function createRun() {
@@ -247,257 +241,28 @@ export function RunsWorkspace({
               </TextField>
             </div>
 
-            <div className="space-y-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/30 p-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-medium text-[color:var(--topo-ink)]">
-                  Cases for this run
-                </div>
-                <StatusChip mono>
-                  {selectedCount} selected · {visible.length} visible
-                </StatusChip>
-              </div>
-
-              <TextField name="case-search" className="w-full">
-                <Label>Search</Label>
-                <Input
-                  placeholder="Title, key, ID, or tag"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full"
-                />
-              </TextField>
-
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <Select
-                  className="w-full"
-                  variant="secondary"
-                  placeholder="Status"
-                  value={status}
-                  onChange={(value) => {
-                    if (value == null) return;
-                    setStatus(String(value));
-                  }}
-                >
-                  <Label>Status</Label>
-                  <Select.Trigger>
-                    <Select.Value />
-                    <Select.Indicator />
-                  </Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      {statuses.map((s) => (
-                        <ListBox.Item key={s} id={s} textValue={s}>
-                          {s === "all" ? "All statuses" : s}
-                          <ListBox.ItemIndicator />
-                        </ListBox.Item>
-                      ))}
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
-
-                <Select
-                  className="w-full"
-                  variant="secondary"
-                  placeholder="Priority"
-                  value={priority}
-                  onChange={(value) => {
-                    if (value == null) return;
-                    setPriority(String(value));
-                  }}
-                >
-                  <Label>Priority</Label>
-                  <Select.Trigger>
-                    <Select.Value />
-                    <Select.Indicator />
-                  </Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      {priorities.map((p) => (
-                        <ListBox.Item key={p} id={p} textValue={p}>
-                          {p === "all" ? "All priorities" : p}
-                          <ListBox.ItemIndicator />
-                        </ListBox.Item>
-                      ))}
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
-
-                <Select
-                  className="w-full"
-                  variant="secondary"
-                  placeholder="Folder"
-                  value={folderId}
-                  onChange={(value) => {
-                    if (value == null) return;
-                    setFolderId(String(value));
-                  }}
-                >
-                  <Label>Folder / suite</Label>
-                  <Select.Trigger>
-                    <Select.Value />
-                    <Select.Indicator />
-                  </Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      <ListBox.Item id="all" textValue="All folders">
-                        All folders
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                      {folders.map((f) => (
-                        <ListBox.Item key={f.id} id={f.id} textValue={f.name}>
-                          {f.name}
-                          <ListBox.ItemIndicator />
-                        </ListBox.Item>
-                      ))}
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
-
-                <Select
-                  className="w-full"
-                  variant="secondary"
-                  placeholder="Tag"
-                  value={tag}
-                  onChange={(value) => {
-                    if (value == null) return;
-                    setTag(String(value));
-                  }}
-                >
-                  <Label>Tag</Label>
-                  <Select.Trigger>
-                    <Select.Value />
-                    <Select.Indicator />
-                  </Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      <ListBox.Item id="all" textValue="All tags">
-                        All tags
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                      {tags.map((t) => (
-                        <ListBox.Item key={t} id={t} textValue={t}>
-                          {t}
-                          <ListBox.ItemIndicator />
-                        </ListBox.Item>
-                      ))}
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
-              </div>
-
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span
-                    id="case-picker-sort-label"
-                    className="shrink-0 text-xs text-[color:var(--topo-muted)]"
-                  >
-                    Sort
-                  </span>
-                  <Select
-                    aria-labelledby="case-picker-sort-label"
-                    className="w-[9.5rem] shrink-0"
-                    variant="secondary"
-                    placeholder="Updated"
-                    value={sort}
-                    onChange={(value) => {
-                      if (value == null) return;
-                      setSort(String(value) as CasePickerSort);
-                    }}
-                  >
-                    <Select.Trigger className="h-9 min-h-9 py-0 md:h-8 md:min-h-8">
-                      <Select.Value />
-                      <Select.Indicator />
-                    </Select.Trigger>
-                    <Select.Popover>
-                      <ListBox>
-                        {sorts.map((s) => (
-                          <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
-                            {s.label}
-                            <ListBox.ItemIndicator />
-                          </ListBox.Item>
-                        ))}
-                      </ListBox>
-                    </Select.Popover>
-                  </Select>
-                </div>
-
-                <div
-                  className="hidden h-4 w-px shrink-0 bg-[color:var(--topo-line)] sm:block"
-                  aria-hidden
-                />
-
-                <div
-                  className="flex flex-wrap items-center gap-1.5"
-                  role="group"
-                  aria-label="Case selection"
-                >
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    isDisabled={visibleIds.length === 0 || allVisibleSelected}
-                    onPress={selectAllVisible}
-                  >
-                    Select all visible
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    isDisabled={selectedCount === 0}
-                    onPress={clearSelection}
-                  >
-                    Clear
-                  </Button>
-                  <Button size="sm" variant="tertiary" onPress={resetToReady}>
-                    Reset to all ready
-                  </Button>
-                </div>
-              </div>
-
-              <div className="max-h-64 overflow-auto rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
-                {visible.length === 0 ? (
-                  <p className="px-3 py-8 text-center text-sm text-[color:var(--topo-muted)]">
-                    No cases match these filters.
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-[color:var(--topo-line)]">
-                    {visible.map((c) => {
-                      const checked = selectedIds.has(c.id);
-                      return (
-                        <li key={c.id}>
-                          <Checkbox
-                            isSelected={checked}
-                            onChange={(next) => toggleCase(c.id, next)}
-                            className="w-full px-2.5 py-2 hover:bg-[color:var(--topo-chip)]/40"
-                          >
-                            <Checkbox.Content className="flex w-full cursor-pointer items-start gap-2.5">
-                              <Checkbox.Control className="mt-0.5">
-                                <Checkbox.Indicator />
-                              </Checkbox.Control>
-                              <div className="min-w-0 flex-1 text-left">
-                                <div className="truncate text-sm font-medium text-[color:var(--topo-ink)]">
-                                  {c.title}
-                                </div>
-                                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[color:var(--topo-muted)]">
-                                  <span className="font-mono">{c.key}</span>
-                                  <StatusChip mono>{c.priority}</StatusChip>
-                                  <StatusChip mono>{c.status}</StatusChip>
-                                  {c.folder ? <span>{c.folder.name}</span> : null}
-                                  {(c.tags ?? []).slice(0, 3).map((t) => (
-                                    <Chip key={t} size="sm" variant="soft">
-                                      {t}
-                                    </Chip>
-                                  ))}
-                                </div>
-                              </div>
-                            </Checkbox.Content>
-                          </Checkbox>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </div>
+            <RunCasePickerTable
+              visible={visible}
+              folders={folders}
+              tags={tags}
+              search={search}
+              status={status}
+              priority={priority}
+              folderId={folderId}
+              tag={tag}
+              sort={sort}
+              selectedIds={selectedIds}
+              onSearchChange={setSearch}
+              onStatusChange={setStatus}
+              onPriorityChange={setPriority}
+              onFolderChange={setFolderId}
+              onTagChange={setTag}
+              onSortChange={setSort}
+              onSelectionChange={handlePickerSelectionChange}
+              onSelectAllVisible={selectAllVisible}
+              onClearSelection={clearSelection}
+              onResetToReady={resetToReady}
+            />
 
             {error ? (
               <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
