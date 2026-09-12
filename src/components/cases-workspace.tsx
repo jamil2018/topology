@@ -11,6 +11,7 @@ import {
   TextField,
   ListBox,
   Select,
+  ComboBox,
   Modal,
   Dropdown,
   useOverlayState,
@@ -18,11 +19,14 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import {
   CaretDownIcon,
+  DotsThreeVerticalIcon,
   FileArrowDownIcon,
   FileArrowUpIcon,
   FileCsvIcon,
   FolderPlusIcon,
+  PencilSimpleIcon,
   PlusIcon,
+  TrashIcon,
 } from "@phosphor-icons/react";
 import {
   CASE_LIST_PAGE_SIZE,
@@ -72,14 +76,19 @@ export function CasesWorkspace({
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [folderModalMode, setFolderModalMode] = useState<"create" | "rename">(
+    "create",
+  );
   const folderModal = useOverlayState({
     onOpenChange: (open) => {
       if (!open) {
         setFolderName("");
         setFolderError(null);
+        setFolderModalMode("create");
       }
     },
   });
+  const deleteModal = useOverlayState();
   const [folderName, setFolderName] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
   const [folderPending, setFolderPending] = useState(false);
@@ -94,15 +103,44 @@ export function CasesWorkspace({
     tags: "",
   });
 
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of initialCases) {
+      if (!c.folder?.id) continue;
+      counts.set(c.folder.id, (counts.get(c.folder.id) ?? 0) + 1);
+    }
+    return counts;
+  }, [initialCases]);
+
+  const selectedFolder =
+    folderFilter === "all"
+      ? null
+      : (folders.find((f) => f.id === folderFilter) ?? null);
+
+  const activeFolderFilter = selectedFolder ? selectedFolder.id : "all";
+
+  const selectedFolderCount = selectedFolder
+    ? (folderCounts.get(selectedFolder.id) ?? 0)
+    : 0;
+
   const filteredSorted = useMemo(
-    () => filterAndSortCases(initialCases, folderFilter, search, sort, sortDir),
-    [initialCases, folderFilter, search, sort, sortDir],
+    () =>
+      filterAndSortCases(
+        initialCases,
+        activeFolderFilter,
+        search,
+        sort,
+        sortDir,
+      ),
+    [initialCases, activeFolderFilter, search, sort, sortDir],
   );
 
   const pageData = useMemo(
     () => paginateCases(filteredSorted, page, CASE_LIST_PAGE_SIZE),
     [filteredSorted, page],
   );
+
+  const hasSearch = search.trim().length > 0;
 
   useEffect(() => {
     setPage(1);
@@ -163,7 +201,7 @@ export function CasesWorkspace({
     startTransition(() => router.refresh());
   }
 
-  async function createFolder() {
+  async function submitFolder() {
     const name = folderName.trim();
     if (!name) {
       setFolderError("Folder name is required");
@@ -173,6 +211,31 @@ export function CasesWorkspace({
     setError(null);
     setFolderPending(true);
     try {
+      if (folderModalMode === "rename") {
+        if (!selectedFolder) {
+          setFolderError("Select a folder to rename");
+          return;
+        }
+        const res = await fetch(`/api/folders/${selectedFolder.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const message =
+            typeof data.error === "string"
+              ? data.error
+              : "Failed to rename folder";
+          setFolderError(message);
+          return;
+        }
+        setFolderName("");
+        folderModal.close();
+        startTransition(() => router.refresh());
+        return;
+      }
+
       const res = await fetch("/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -194,10 +257,58 @@ export function CasesWorkspace({
       }
       startTransition(() => router.refresh());
     } catch {
-      setFolderError("Failed to create folder");
+      setFolderError(
+        folderModalMode === "rename"
+          ? "Failed to rename folder"
+          : "Failed to create folder",
+      );
     } finally {
       setFolderPending(false);
     }
+  }
+
+  async function deleteFolder() {
+    if (!selectedFolder) return;
+    setError(null);
+    setFolderPending(true);
+    try {
+      const res = await fetch(`/api/folders/${selectedFolder.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "Failed to delete folder",
+        );
+        return;
+      }
+      setFolderFilter("all");
+      deleteModal.close();
+      startTransition(() => router.refresh());
+    } catch {
+      setError("Failed to delete folder");
+    } finally {
+      setFolderPending(false);
+    }
+  }
+
+  function openCreateFolder() {
+    setShowCreate(false);
+    setFolderModalMode("create");
+    setFolderName("");
+    setFolderError(null);
+    folderModal.open();
+  }
+
+  function openRenameFolder() {
+    if (!selectedFolder) return;
+    setShowCreate(false);
+    setFolderModalMode("rename");
+    setFolderName(selectedFolder.name);
+    setFolderError(null);
+    folderModal.open();
   }
 
   async function importCsv(file: File) {
@@ -242,11 +353,7 @@ export function CasesWorkspace({
               size="sm"
               variant="secondary"
               className="gap-1.5"
-              onPress={() => {
-                setShowCreate(false);
-                setFolderError(null);
-                folderModal.open();
-              }}
+              onPress={openCreateFolder}
             >
               <FolderPlusIcon size={14} weight="bold" />
               New folder
@@ -326,10 +433,12 @@ export function CasesWorkspace({
             <Modal.Dialog className="outline-none">
               <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
                 <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
-                  New folder
+                  {folderModalMode === "rename" ? "Rename folder" : "New folder"}
                 </Modal.Heading>
                 <p className="text-sm text-[color:var(--topo-muted)]">
-                  Name a suite folder to organize cases.
+                  {folderModalMode === "rename"
+                    ? "Update the suite folder name."
+                    : "Name a suite folder to organize cases."}
                 </p>
               </Modal.Header>
               <Modal.Body className="space-y-3 px-4 py-4">
@@ -345,7 +454,7 @@ export function CasesWorkspace({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        void createFolder();
+                        void submitFolder();
                       }
                     }}
                     className="w-full"
@@ -369,9 +478,15 @@ export function CasesWorkspace({
                 <Button
                   variant="primary"
                   isDisabled={folderPending || !folderName.trim()}
-                  onPress={() => void createFolder()}
+                  onPress={() => void submitFolder()}
                 >
-                  {folderPending ? "Creating…" : "Create folder"}
+                  {folderPending
+                    ? folderModalMode === "rename"
+                      ? "Saving…"
+                      : "Creating…"
+                    : folderModalMode === "rename"
+                      ? "Save name"
+                      : "Create folder"}
                 </Button>
               </Modal.Footer>
             </Modal.Dialog>
@@ -379,34 +494,123 @@ export function CasesWorkspace({
         </Modal.Backdrop>
       </Modal.Root>
 
+      <Modal.Root state={deleteModal}>
+        <Modal.Backdrop isDismissable={!folderPending}>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog className="outline-none">
+              <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+                <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                  Delete folder
+                </Modal.Heading>
+                <p className="text-sm text-[color:var(--topo-muted)]">
+                  {selectedFolder
+                    ? `Delete “${selectedFolder.name}”? ${
+                        selectedFolderCount === 0
+                          ? "No cases are in this folder."
+                          : selectedFolderCount === 1
+                            ? "1 case in this folder will move to unfiled."
+                            : `${selectedFolderCount} cases in this folder will move to unfiled.`
+                      }`
+                    : "Select a folder to delete."}
+                </p>
+              </Modal.Header>
+              <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
+                <Button
+                  variant="tertiary"
+                  isDisabled={folderPending}
+                  onPress={() => deleteModal.close()}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  isDisabled={folderPending || !selectedFolder}
+                  onPress={() => void deleteFolder()}
+                >
+                  {folderPending ? "Deleting…" : "Delete folder"}
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal.Root>
 
-      <div className="flex flex-wrap gap-1.5">
-        <button
-          type="button"
-          onClick={() => setFolderFilter("all")}
-          className={`rounded-md px-2.5 py-1 text-xs ${
-            folderFilter === "all"
-              ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-panel)]"
-              : "border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] text-[color:var(--topo-muted)]"
-          }`}
+      <div className="flex flex-wrap items-end gap-2">
+        <ComboBox
+          className="min-w-[14rem] max-w-full flex-1 sm:max-w-xs"
+          variant="secondary"
+          selectedKey={activeFolderFilter}
+          onSelectionChange={(key) => {
+            if (key == null) return;
+            setFolderFilter(String(key));
+          }}
+          aria-label="Filter by folder"
         >
-          All ({initialCases.length})
-        </button>
-        {folders.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => setFolderFilter(f.id)}
-            className={`rounded-md px-2.5 py-1 text-xs ${
-              folderFilter === f.id
-                ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-panel)]"
-                : "border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] text-[color:var(--topo-muted)]"
-            }`}
-          >
-            {f.name} (
-            {initialCases.filter((c) => c.folder?.id === f.id).length})
-          </button>
-        ))}
+          <Label className="text-xs text-[color:var(--topo-muted)]">
+            Folder
+          </Label>
+          <ComboBox.InputGroup>
+            <Input placeholder="Search folders…" />
+            <ComboBox.Trigger />
+          </ComboBox.InputGroup>
+          <ComboBox.Popover>
+            <ListBox>
+              <ListBox.Item
+                id="all"
+                textValue={`All ${initialCases.length}`}
+              >
+                All ({initialCases.length})
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+              {folders.map((f) => {
+                const count = folderCounts.get(f.id) ?? 0;
+                return (
+                  <ListBox.Item
+                    key={f.id}
+                    id={f.id}
+                    textValue={`${f.name} ${count}`}
+                  >
+                    {f.name} ({count})
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                );
+              })}
+            </ListBox>
+          </ComboBox.Popover>
+        </ComboBox>
+
+        {selectedFolder ? (
+          <Dropdown.Root>
+            <Dropdown.Trigger
+              aria-label={`Manage folder ${selectedFolder.name}`}
+              className="button button--sm button--secondary inline-flex items-center gap-1"
+            >
+              <DotsThreeVerticalIcon size={14} weight="bold" />
+              Manage
+            </Dropdown.Trigger>
+            <Dropdown.Popover placement="bottom end" className="min-w-[11rem]">
+              <Dropdown.Menu
+                aria-label="Folder actions"
+                onAction={(key) => {
+                  if (key === "rename") {
+                    openRenameFolder();
+                  } else if (key === "delete") {
+                    deleteModal.open();
+                  }
+                }}
+              >
+                <Dropdown.Item id="rename" textValue="Rename" className="gap-2">
+                  <PencilSimpleIcon size={14} weight="bold" />
+                  Rename
+                </Dropdown.Item>
+                <Dropdown.Item id="delete" textValue="Delete" className="gap-2">
+                  <TrashIcon size={14} weight="bold" />
+                  Delete
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown.Root>
+        ) : null}
       </div>
 
       <AnimatePresence>
@@ -574,10 +778,12 @@ export function CasesWorkspace({
               className="w-full"
             />
           </TextField>
-          <p className="shrink-0 text-xs text-[color:var(--topo-muted)]">
-            {pageData.total} match
-            {pageData.total === 1 ? "" : "es"}
-          </p>
+          {hasSearch ? (
+            <p className="shrink-0 text-xs text-[color:var(--topo-muted)]">
+              {pageData.total} match
+              {pageData.total === 1 ? "" : "es"}
+            </p>
+          ) : null}
         </div>
 
         <table className="w-full text-left text-sm">
