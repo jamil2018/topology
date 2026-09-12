@@ -21,7 +21,9 @@
     "paths": {
       "@/*": ["./src/*"],
       "@topology/domain": ["./packages/domain/src/index.ts"],
-      "@topology/domain/*": ["./packages/domain/src/*"]
+      "@topology/domain/*": ["./packages/domain/src/*"],
+      "@topology/issue-providers": ["./packages/issue-providers/src/index.ts"],
+      "@topology/mcp": ["./packages/mcp/src/index.ts"]
     }
   },
   "include": [

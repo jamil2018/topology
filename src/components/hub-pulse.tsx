@@ -33,6 +33,15 @@ type Pulse = {
   };
   triageOpen?: number;
   flakeSuspects?: number;
+  openLinkedIssues?: number;
+  retestQueue?: Array<{
+    id: string;
+    key: string;
+    title: string;
+    caseKey: string | null;
+    runId: string | null;
+    resultId: string | null;
+  }>;
 };
 
 type MilestoneView = {
@@ -122,6 +131,12 @@ export function HubPulse({
                 ? ` (${pulse.triageOpen})`
                 : ""}
             </Link>
+            <Link
+              href="/connect"
+              className="rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-4 py-2 text-sm text-[color:var(--topo-ink)]"
+            >
+              Connect an agent
+            </Link>
           </motion.div>
         </div>
       </section>
@@ -159,7 +174,7 @@ export function HubPulse({
         </motion.section>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {[
           {
             label: "Cases ready",
@@ -185,6 +200,11 @@ export function HubPulse({
                 : `${pulse.results.passRate}%`,
             hint: `${pulse.results.failed} failed · ${pulse.flakeSuspects ?? 0} flake suspects`,
           },
+          {
+            label: "Open defects",
+            value: String(pulse.openLinkedIssues ?? 0),
+            hint: `${pulse.retestQueue?.length ?? 0} ready to retest`,
+          },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -206,6 +226,42 @@ export function HubPulse({
             </div>
           </motion.div>
         ))}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium text-[color:var(--topo-ink)]">
+          Retest queue
+        </h2>
+        {(pulse.retestQueue?.length ?? 0) === 0 ? (
+          <p className="text-sm text-[color:var(--topo-muted)]">
+            When a linked issue closes, it shows up here for retest.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {pulse.retestQueue!.map((item) => (
+              <li key={item.id}>
+                <Link
+                  href={item.runId ? `/runs/${item.runId}` : "/runs"}
+                  className="flex items-center justify-between rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-4 py-3 text-sm hover:border-[color:var(--topo-accent)]"
+                >
+                  <span className="text-[color:var(--topo-ink)]">
+                    <span className="font-mono text-[color:var(--topo-accent)]">
+                      {item.key}
+                    </span>{" "}
+                    {item.title}
+                    {item.caseKey ? (
+                      <span className="text-[color:var(--topo-muted)]">
+                        {" "}
+                        · {item.caseKey}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="text-[color:var(--topo-signal)]">Retest</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="space-y-3">

@@ -14,10 +14,11 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --env-file=.env.local src/db/seed.ts",
     "db:studio": "drizzle-kit studio",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --config vitest.packages.config.ts",
+    "test:watch": "vitest --config vitest.packages.config.ts",
     "test:e2e": "playwright test",
-    "topology": "tsx packages/cli/src/index.ts"
+    "topology": "tsx packages/cli/src/index.ts",
+    "mcp": "npm run start --workspace=@topology/mcp"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",
@@ -25,6 +26,8 @@
     "@heroui/styles": "^3.2.5",
     "@topology/cli": "0.1.0",
     "@topology/domain": "0.1.0",
+    "@topology/issue-providers": "0.1.0",
+    "@topology/mcp": "0.1.0",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
     "motion": "^13.2.0",

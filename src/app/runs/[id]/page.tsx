@@ -22,23 +22,26 @@ export default async function RunDetailPage({ params }: Props) {
           name: run.name,
           status: run.status,
           description: run.description,
-          kind: run.kind,
-          source: run.source,
           results: run.results.map((r) => ({
             id: r.id,
             status: r.status,
             notes: r.notes,
-            externalKey: r.externalKey,
-            title: r.title,
-            case: r.case
-              ? {
-                  id: r.case.id,
-                  key: r.case.key,
-                  title: r.case.title,
-                  steps: r.case.steps,
-                  expectedResult: r.case.expectedResult,
-                }
-              : null,
+            linkedIssues: (r.linkedIssues ?? []).map((i) => ({
+              id: i.id,
+              provider: i.provider,
+              remoteKey: i.remoteKey,
+              url: i.url,
+              title: i.title,
+              remoteStatus: i.remoteStatus,
+              needsRetest: i.needsRetest,
+            })),
+            case: {
+              id: r.case?.id ?? r.caseId ?? r.id,
+              key: r.case?.key ?? r.externalKey ?? "AUTO",
+              title: r.case?.title ?? r.title ?? "Untitled",
+              steps: r.case?.steps ?? "",
+              expectedResult: r.case?.expectedResult ?? "",
+            },
           })),
         }}
       />

@@ -12,8 +12,9 @@ export const authConfig = {
       const isAuthRoute =
         pathname.startsWith("/login") || pathname.startsWith("/api/auth");
       const isCiApi = pathname.startsWith("/api/ci");
+      const isAgentApi = pathname.startsWith("/api/agent");
 
-      if (isAuthRoute || isCiApi) return true;
+      if (isAuthRoute || isCiApi || isAgentApi) return true;
       if (pathname.startsWith("/_next")) return true;
       return isLoggedIn;
     },

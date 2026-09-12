@@ -12,11 +12,13 @@ import { db } from "@/db";
 import {
   cases,
   folders,
+  linkedIssues,
   milestones,
   runResults,
   runs,
   triageItems,
 } from "@/db/schema";
+import { listRetestQueue } from "@/lib/issues";
 
 export async function getHubPulse() {
   const [caseStats] = await db
@@ -60,6 +62,11 @@ export async function getHubPulse() {
   });
 
   const flakeSuspects = await countFlakeSuspects();
+  const openLinked = await db
+    .select({ value: count() })
+    .from(linkedIssues)
+    .where(eq(linkedIssues.remoteStatus, "open"));
+  const retestQueue = await listRetestQueue();
 
   const passed = Number(resultStats?.passed ?? 0);
   const failed = Number(resultStats?.failed ?? 0);
@@ -115,6 +122,15 @@ export async function getHubPulse() {
     quality,
     triageOpen: Number(triageStats?.open ?? 0),
     flakeSuspects,
+    openLinkedIssues: Number(openLinked[0]?.value ?? 0),
+    retestQueue: retestQueue.slice(0, 8).map((i) => ({
+      id: i.id,
+      key: i.remoteKey,
+      title: i.title,
+      caseKey: i.case?.key ?? null,
+      runId: i.runId,
+      resultId: i.resultId,
+    })),
   };
 }
 
@@ -176,8 +192,9 @@ export async function getRunWithResults(runId: string) {
     where: eq(runs.id, runId),
     with: {
       results: {
-        with: { case: true },
+        with: { case: true, linkedIssues: true },
       },
+      linkedIssues: true,
     },
   });
 }

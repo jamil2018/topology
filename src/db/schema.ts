@@ -228,11 +228,57 @@ export const triageItems = pgTable("triage_items", {
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
 
+export const issueProviderEnum = pgEnum("issue_provider", [
+  "mock",
+  "jira",
+  "linear",
+  "github",
+]);
+
+export const issueRemoteStatusEnum = pgEnum("issue_remote_status", [
+  "open",
+  "in_progress",
+  "done",
+  "unknown",
+]);
+
+export const linkedIssues = pgTable("linked_issues", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  provider: issueProviderEnum("provider").notNull(),
+  remoteId: text("remote_id").notNull(),
+  remoteKey: text("remote_key").notNull(),
+  url: text("url").notNull(),
+  title: text("title").notNull(),
+  remoteStatus: issueRemoteStatusEnum("remote_status")
+    .default("open")
+    .notNull(),
+  resultId: uuid("result_id").references(() => runResults.id, {
+    onDelete: "set null",
+  }),
+  caseId: uuid("case_id").references(() => cases.id, {
+    onDelete: "set null",
+  }),
+  runId: uuid("run_id").references(() => runs.id, {
+    onDelete: "set null",
+  }),
+  needsRetest: integer("needs_retest").default(0).notNull(),
+  createdById: uuid("created_by_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  lastSyncedAt: timestamp("last_synced_at", { mode: "date" })
+    .defaultNow()
+    .notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
   sessions: many(sessions),
   cases: many(cases),
   runs: many(runs),
+  linkedIssues: many(linkedIssues),
+  apiTokens: many(apiTokens),
 }));
 
 export const foldersRelations = relations(folders, ({ many, one }) => ({
@@ -253,6 +299,7 @@ export const casesRelations = relations(cases, ({ one, many }) => ({
     references: [users.id],
   }),
   results: many(runResults),
+  linkedIssues: many(linkedIssues),
 }));
 
 export const runsRelations = relations(runs, ({ one, many }) => ({
@@ -262,9 +309,10 @@ export const runsRelations = relations(runs, ({ one, many }) => ({
   }),
   results: many(runResults),
   shards: many(runShards),
+  linkedIssues: many(linkedIssues),
 }));
 
-export const runResultsRelations = relations(runResults, ({ one }) => ({
+export const runResultsRelations = relations(runResults, ({ one, many }) => ({
   run: one(runs, {
     fields: [runResults.runId],
     references: [runs.id],
@@ -273,6 +321,7 @@ export const runResultsRelations = relations(runResults, ({ one }) => ({
     fields: [runResults.caseId],
     references: [cases.id],
   }),
+  linkedIssues: many(linkedIssues),
 }));
 
 export const runShardsRelations = relations(runShards, ({ one }) => ({
@@ -300,6 +349,32 @@ export const triageItemsRelations = relations(triageItems, ({ one }) => ({
   }),
 }));
 
+export const linkedIssuesRelations = relations(linkedIssues, ({ one }) => ({
+  result: one(runResults, {
+    fields: [linkedIssues.resultId],
+    references: [runResults.id],
+  }),
+  case: one(cases, {
+    fields: [linkedIssues.caseId],
+    references: [cases.id],
+  }),
+  run: one(runs, {
+    fields: [linkedIssues.runId],
+    references: [runs.id],
+  }),
+  createdBy: one(users, {
+    fields: [linkedIssues.createdById],
+    references: [users.id],
+  }),
+}));
+
+export const apiTokensRelations = relations(apiTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [apiTokens.userId],
+    references: [users.id],
+  }),
+}));
+
 export type Case = typeof cases.$inferSelect;
 export type Folder = typeof folders.$inferSelect;
 export type Run = typeof runs.$inferSelect;
@@ -308,3 +383,4 @@ export type User = typeof users.$inferSelect;
 export type Milestone = typeof milestones.$inferSelect;
 export type TriageItem = typeof triageItems.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
+export type LinkedIssue = typeof linkedIssues.$inferSelect;

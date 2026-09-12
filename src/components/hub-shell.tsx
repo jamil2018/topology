@@ -12,6 +12,7 @@ const nav = [
   { href: "/runs", label: "Runs" },
   { href: "/automation", label: "Automation" },
   { href: "/triage", label: "Triage" },
+  { href: "/connect", label: "Agents" },
 ];
 
 export function HubShell({

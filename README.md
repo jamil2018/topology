@@ -10,6 +10,7 @@ Self-hosted test case management with a Linear-like operating hub.
 - Postgres + Drizzle ORM
 - Auth.js (GitHub/Google OAuth when configured, email/password fallback)
 - `@topology/domain` + `@topology/cli` workspaces
+- `@topology/issue-providers` + `@topology/mcp`
 - Vitest + Playwright
 
 ## Quick start
@@ -54,6 +55,20 @@ npm run topology -- runs complete --run-id <id>
 
 Examples: `packages/cli/examples/github-actions.yml`, `packages/cli/examples/Jenkinsfile`.
 
+### Issue providers
+
+Default `TOPOLOGY_ISSUE_PROVIDER=mock` files issues in-process. From a failed/blocked result use **Create issue** or **Link**; sync status from the chip; closed remotes surface on the hub **Retest** queue.
+
+### Connect an agent
+
+Open [/connect](http://127.0.0.1:4317/connect) for Cursor / Claude Desktop / Codex snippets, or see [`packages/mcp/README.md`](packages/mcp/README.md).
+
+```bash
+export TOPOLOGY_URL=http://127.0.0.1:4317
+export TOPOLOGY_API_TOKEN=topo_demo_token_local_dev_only
+npx tsx packages/mcp/src/server.ts
+```
+
 ## Scripts
 
 | Script | Purpose |
@@ -62,7 +77,8 @@ Examples: `packages/cli/examples/github-actions.yml`, `packages/cli/examples/Jen
 | `npm run db:push` | Push Drizzle schema |
 | `npm run db:seed` | Seed demo user, folders, cases, run, milestone, API token |
 | `npm run topology` | Topology CLI |
-| `npm run test` | Vitest unit tests |
+| `npm run mcp` | Start `@topology/mcp` stdio server |
+| `npm run test` | Vitest unit tests (app + packages) |
 | `npm run test:e2e` | Playwright smoke |
 
 ## v1 slice
@@ -73,4 +89,6 @@ Examples: `packages/cli/examples/github-actions.yml`, `packages/cli/examples/Jen
 - Manual runs with pass/fail recording
 - CI JUnit ingest + shard merge (CLI + `/api/ci/*`)
 - Automation runs browser + failure triage queue + flake hints
+- Issue create/link/status (mock + Jira/Linear/GitHub) + retest queue
+- MCP agent plugin (`@topology/mcp`) + Connect an agent page
 - Auth scaffolding (OAuth-ready + credentials)
