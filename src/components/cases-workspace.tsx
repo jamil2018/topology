@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   Button,
   Input,
@@ -11,8 +11,19 @@ import {
   TextField,
   ListBox,
   Select,
+  Modal,
+  Dropdown,
+  useOverlayState,
 } from "@heroui/react";
 import { motion, AnimatePresence } from "motion/react";
+import {
+  CaretDownIcon,
+  FileArrowDownIcon,
+  FileArrowUpIcon,
+  FileCsvIcon,
+  FolderPlusIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
 import {
   CASE_LIST_PAGE_SIZE,
   filterAndSortCases,
@@ -61,10 +72,18 @@ export function CasesWorkspace({
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [showFolderCreate, setShowFolderCreate] = useState(false);
+  const folderModal = useOverlayState({
+    onOpenChange: (open) => {
+      if (!open) {
+        setFolderName("");
+        setFolderError(null);
+      }
+    },
+  });
   const [folderName, setFolderName] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
   const [folderPending, setFolderPending] = useState(false);
+  const csvFileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     key: "",
     title: "",
@@ -169,7 +188,7 @@ export function CasesWorkspace({
         return;
       }
       setFolderName("");
-      setShowFolderCreate(false);
+      folderModal.close();
       if (typeof data.folder?.id === "string") {
         setFolderFilter(data.folder.id);
       }
@@ -209,52 +228,88 @@ export function CasesWorkspace({
           <>
             <Button
               size="sm"
-              variant="secondary"
-              onPress={() => {
-                setShowFolderCreate((v) => !v);
-                setShowCreate(false);
-                setFolderError(null);
-              }}
-            >
-              New folder
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onPress={() => window.open("/api/import/csv/template", "_blank")}
-            >
-              Download template
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onPress={() => window.open("/api/import/csv", "_blank")}
-            >
-              Export CSV
-            </Button>
-            <label className="inline-flex cursor-pointer items-center rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-accent-soft)]">
-              Import CSV
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void importCsv(file);
-                  e.target.value = "";
-                }}
-              />
-            </label>
-            <Button
-              size="sm"
               variant="primary"
+              className="gap-1.5"
               onPress={() => {
                 setShowCreate((v) => !v);
-                setShowFolderCreate(false);
+                folderModal.close();
               }}
             >
+              <PlusIcon size={14} weight="bold" />
               New case
             </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="gap-1.5"
+              onPress={() => {
+                setShowCreate(false);
+                setFolderError(null);
+                folderModal.open();
+              }}
+            >
+              <FolderPlusIcon size={14} weight="bold" />
+              New folder
+            </Button>
+            <Dropdown.Root>
+              <Dropdown.Trigger className="button button--sm button--secondary inline-flex items-center gap-1.5">
+                <FileCsvIcon size={14} weight="bold" />
+                CSV
+                <CaretDownIcon size={12} weight="bold" />
+              </Dropdown.Trigger>
+              <Dropdown.Popover placement="bottom end" className="min-w-[12.5rem]">
+                <Dropdown.Menu
+                  aria-label="CSV actions"
+                  onAction={(key) => {
+                    if (key === "template") {
+                      window.open("/api/import/csv/template", "_blank");
+                    } else if (key === "export") {
+                      window.open("/api/import/csv", "_blank");
+                    } else if (key === "import") {
+                      csvFileInputRef.current?.click();
+                    }
+                  }}
+                >
+                  <Dropdown.Item
+                    id="template"
+                    textValue="Download template"
+                    className="gap-2"
+                  >
+                    <FileArrowDownIcon size={14} weight="bold" />
+                    Download template
+                  </Dropdown.Item>
+                  <Dropdown.Item
+                    id="export"
+                    textValue="Export CSV"
+                    className="gap-2"
+                  >
+                    <FileArrowDownIcon size={14} weight="bold" />
+                    Export CSV
+                  </Dropdown.Item>
+                  <Dropdown.Item
+                    id="import"
+                    textValue="Import CSV"
+                    className="gap-2"
+                  >
+                    <FileArrowUpIcon size={14} weight="bold" />
+                    Import CSV
+                  </Dropdown.Item>
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown.Root>
+            <input
+              ref={csvFileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              aria-hidden
+              tabIndex={-1}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void importCsv(file);
+                e.target.value = "";
+              }}
+            />
           </>
         }
       />
@@ -265,60 +320,65 @@ export function CasesWorkspace({
         </p>
       ) : null}
 
-      <AnimatePresence>
-        {showFolderCreate ? (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="space-y-3 rounded-xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
-          >
-            <TextField name="folder-name" className="w-full max-w-md">
-              <Label>Folder name</Label>
-              <Input
-                placeholder="e.g. Smoke"
-                value={folderName}
-                onChange={(e) => {
-                  setFolderName(e.target.value);
-                  if (folderError) setFolderError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void createFolder();
-                  }
-                }}
-                className="w-full"
-                autoFocus
-              />
-            </TextField>
-            {folderError ? (
-              <p className="text-sm text-red-600 dark:text-red-400">
-                {folderError}
-              </p>
-            ) : null}
-            <div className="flex gap-2">
-              <Button
-                variant="primary"
-                isDisabled={folderPending || !folderName.trim()}
-                onPress={() => void createFolder()}
-              >
-                Create folder
-              </Button>
-              <Button
-                variant="tertiary"
-                onPress={() => {
-                  setShowFolderCreate(false);
-                  setFolderName("");
-                  setFolderError(null);
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      <Modal.Root state={folderModal}>
+        <Modal.Backdrop isDismissable={!folderPending}>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog className="outline-none">
+              <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+                <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                  New folder
+                </Modal.Heading>
+                <p className="text-sm text-[color:var(--topo-muted)]">
+                  Name a suite folder to organize cases.
+                </p>
+              </Modal.Header>
+              <Modal.Body className="space-y-3 px-4 py-4">
+                <TextField name="folder-name" className="w-full">
+                  <Label>Folder name</Label>
+                  <Input
+                    placeholder="e.g. Smoke"
+                    value={folderName}
+                    onChange={(e) => {
+                      setFolderName(e.target.value);
+                      if (folderError) setFolderError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void createFolder();
+                      }
+                    }}
+                    className="w-full"
+                    autoFocus
+                  />
+                </TextField>
+                {folderError ? (
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    {folderError}
+                  </p>
+                ) : null}
+              </Modal.Body>
+              <Modal.Footer className="flex justify-end gap-2 border-t border-[color:var(--topo-line)] px-4 py-3">
+                <Button
+                  variant="tertiary"
+                  isDisabled={folderPending}
+                  onPress={() => folderModal.close()}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  isDisabled={folderPending || !folderName.trim()}
+                  onPress={() => void createFolder()}
+                >
+                  {folderPending ? "Creating…" : "Create folder"}
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal.Root>
+
 
       <div className="flex flex-wrap gap-1.5">
         <button
