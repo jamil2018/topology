@@ -4,19 +4,30 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useSyncExternalStore,
 } from "react";
+import { useSession } from "next-auth/react";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 
-const STORAGE_KEY = "topology-theme";
+export const THEME_STORAGE_KEY = "topology-theme";
+
+type SetPreferenceOptions = {
+  /** When false, skip PATCH /api/settings (e.g. hydrating from server). Default true. */
+  syncServer?: boolean;
+};
 
 type ThemeContextValue = {
   preference: ThemePreference;
   resolved: ResolvedTheme;
-  setPreference: (next: ThemePreference) => void;
+  setPreference: (
+    next: ThemePreference,
+    options?: SetPreferenceOptions,
+  ) => void;
   cyclePreference: () => void;
 };
 
@@ -31,7 +42,7 @@ function getSystemTheme(): ResolvedTheme {
 
 function readPreference(): ThemePreference {
   if (typeof window === "undefined") return "system";
-  const stored = window.localStorage.getItem(STORAGE_KEY);
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
   if (stored === "light" || stored === "dark" || stored === "system") {
     return stored;
   }
@@ -69,7 +80,7 @@ function subscribe(listener: () => void) {
   };
   mq.addEventListener("change", onSystem);
   const onStorage = (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY) {
+    if (e.key === THEME_STORAGE_KEY) {
       preferenceSnapshot = readPreference();
       applyTheme(preferenceSnapshot);
       emit();
@@ -99,25 +110,77 @@ function bootstrapClient() {
 
 bootstrapClient();
 
+async function persistThemeToServer(next: ThemePreference) {
+  try {
+    await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        preferences: { themePreference: next },
+      }),
+    });
+  } catch {
+    // localStorage remains the fallback
+  }
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const { status } = useSession();
+  const hydratedFromServer = useRef(false);
+
   const preference = useSyncExternalStore(
     subscribe,
     getSnapshot,
     getServerSnapshot,
   );
 
-  const setPreference = useCallback((next: ThemePreference) => {
-    preferenceSnapshot = next;
-    window.localStorage.setItem(STORAGE_KEY, next);
-    applyTheme(next);
-    emit();
-  }, []);
+  const setPreference = useCallback(
+    (next: ThemePreference, options?: SetPreferenceOptions) => {
+      preferenceSnapshot = next;
+      window.localStorage.setItem(THEME_STORAGE_KEY, next);
+      applyTheme(next);
+      emit();
+      if (options?.syncServer !== false && status === "authenticated") {
+        void persistThemeToServer(next);
+      }
+    },
+    [status],
+  );
 
   const cyclePreference = useCallback(() => {
     const order: ThemePreference[] = ["system", "light", "dark"];
     const next = order[(order.indexOf(preferenceSnapshot) + 1) % order.length];
     setPreference(next);
   }, [setPreference]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || hydratedFromServer.current) return;
+    hydratedFromServer.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/settings");
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          preferences?: { themePreference?: ThemePreference };
+        };
+        const serverTheme = data.preferences?.themePreference;
+        if (
+          serverTheme === "light" ||
+          serverTheme === "dark" ||
+          serverTheme === "system"
+        ) {
+          // Server wins for logged-in users; keep localStorage in sync
+          setPreference(serverTheme, { syncServer: false });
+        }
+      } catch {
+        // keep localStorage
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [status, setPreference]);
 
   const resolved = resolve(preference);
 

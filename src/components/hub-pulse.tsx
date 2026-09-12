@@ -118,10 +118,16 @@ export function HubPulse({
               Cases
             </Link>
             <Link
-              href="/automation"
+              href="/settings?section=ci"
               className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
             >
-              Automation
+              CI setup
+            </Link>
+            <Link
+              href="/runs"
+              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+            >
+              Test Runs
             </Link>
             <Link
               href="/triage"

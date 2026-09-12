@@ -25,6 +25,8 @@ docker compose up -d
 cp .env.example .env.local   # if needed
 npm install
 npm run db:push
+# or apply checked-in SQL (includes theme_preference):
+npm run db:migrate
 npm run db:seed
 
 # 3. Dev server (uncommon port)
@@ -61,7 +63,7 @@ Default `TOPOLOGY_ISSUE_PROVIDER=mock` files issues in-process. From a failed/bl
 
 ### Connect an agent
 
-Open [/connect](http://127.0.0.1:4317/connect) for Cursor / Claude Desktop / Codex snippets, or see [`packages/mcp/README.md`](packages/mcp/README.md).
+Open [Settings → Connections](http://127.0.0.1:4317/settings?section=connections) for Cursor / Claude Desktop / Codex snippets (`/connect` redirects there), or see [`packages/mcp/README.md`](packages/mcp/README.md).
 
 ```bash
 export TOPOLOGY_URL=http://127.0.0.1:4317
@@ -69,12 +71,21 @@ export TOPOLOGY_API_TOKEN=topo_demo_token_local_dev_only
 npx tsx packages/mcp/src/server.ts
 ```
 
+### CI ingest setup
+
+Open [Settings → CI](http://127.0.0.1:4317/settings?section=ci) for token/docs (`/automation` redirects there). Browse CI run history from Hub / Test Runs.
+
+### Theme preference
+
+Sidebar theme toggle and Settings → Preferences share `topology-theme` in `localStorage`. For signed-in users the preference is also stored on `users.theme_preference`; server value wins on load, localStorage remains the immediate fallback (and for signed-out).
+
 ## Scripts
 
 | Script | Purpose |
 | --- | --- |
 | `npm run dev` | Next.js on port 4317 |
 | `npm run db:push` | Push Drizzle schema |
+| `npm run db:migrate` | Apply `drizzle/*.sql` migrations (idempotent) |
 | `npm run db:seed` | Seed demo user, folders, cases, run, milestone, API token |
 | `npm run topology` | Topology CLI |
 | `npm run mcp` | Start `@topology/mcp` stdio server |
@@ -90,5 +101,6 @@ npx tsx packages/mcp/src/server.ts
 - CI JUnit ingest + shard merge (CLI + `/api/ci/*`)
 - Automation runs browser + failure triage queue + flake hints
 - Issue create/link/status (mock + Jira/Linear/GitHub) + retest queue
-- MCP agent plugin (`@topology/mcp`) + Connect an agent page
+- MCP agent plugin (`@topology/mcp`) + Settings → Connections
+- Settings (profile, theme prefs, MCP, CI setup); `/connect` and `/automation` redirect
 - Auth scaffolding (OAuth-ready + credentials)

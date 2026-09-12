@@ -59,8 +59,10 @@ npx -y @topology/mcp`;
 
 export function ConnectAgentPanel({
   defaultUrl,
+  compact = false,
 }: {
   defaultUrl: string;
+  compact?: boolean;
 }) {
   const [client, setClient] = useState<Client>("cursor");
   const [url, setUrl] = useState(defaultUrl);
@@ -80,12 +82,28 @@ export function ConnectAgentPanel({
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        eyebrow="Agent plugin"
-        title="Connect an agent"
-        description="Point Claude, Cursor, or Codex at this Topology instance with TOPOLOGY_URL and TOPOLOGY_API_TOKEN. The MCP package talks to the same agent REST API as the UI."
-        meta={<StatusChip mono>@topology/mcp</StatusChip>}
-      />
+      {compact ? (
+        <div>
+          <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+            Connect an agent
+          </h2>
+          <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
+            Point Claude, Cursor, or Codex at this Topology instance with{" "}
+            <code className="font-mono">TOPOLOGY_URL</code> and{" "}
+            <code className="font-mono">TOPOLOGY_API_TOKEN</code>.
+          </p>
+          <div className="mt-2">
+            <StatusChip mono>@topology/mcp</StatusChip>
+          </div>
+        </div>
+      ) : (
+        <PageHeader
+          eyebrow="Agent plugin"
+          title="Connect an agent"
+          description="Point Claude, Cursor, or Codex at this Topology instance with TOPOLOGY_URL and TOPOLOGY_API_TOKEN. The MCP package talks to the same agent REST API as the UI."
+          meta={<StatusChip mono>@topology/mcp</StatusChip>}
+        />
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-1 text-sm">

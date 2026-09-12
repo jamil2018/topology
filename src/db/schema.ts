@@ -52,6 +52,12 @@ export const milestoneStatusEnum = pgEnum("milestone_status", [
   "archived",
 ]);
 
+export const themePreferenceEnum = pgEnum("theme_preference", [
+  "system",
+  "light",
+  "dark",
+]);
+
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name"),
@@ -59,6 +65,9 @@ export const users = pgTable("users", {
   emailVerified: timestamp("email_verified", { mode: "date" }),
   image: text("image"),
   passwordHash: text("password_hash"),
+  themePreference: themePreferenceEnum("theme_preference")
+    .default("system")
+    .notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
 
