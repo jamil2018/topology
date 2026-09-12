@@ -248,12 +248,12 @@ export function HubPulse({
         }
       />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6 lg:grid-rows-[auto_auto_auto]">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
         {/* 1. Highest: quality + pass rate + pass/fail graph */}
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.02}
-          className="flex flex-col p-4 sm:col-span-2 lg:col-span-3 lg:row-span-2"
+          className="flex min-h-[280px] flex-col p-4 sm:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-span-2 lg:row-start-1"
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -292,7 +292,7 @@ export function HubPulse({
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.05}
-          className="p-4 sm:col-span-1 lg:col-span-3"
+          className="flex h-full flex-col p-4 sm:col-span-1 lg:col-span-3 lg:col-start-4 lg:row-start-1"
         >
           {milestone ? (
             <div className="flex h-full flex-wrap items-start justify-between gap-3">
@@ -334,7 +334,7 @@ export function HubPulse({
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.08}
-          className="p-4 sm:col-span-1 lg:col-span-2"
+          className="flex h-full flex-col p-4 sm:col-span-1 lg:col-span-2 lg:col-start-4 lg:row-start-2"
         >
           <WidgetLabel>Cases ready</WidgetLabel>
           <div className="mt-1.5 font-mono text-3xl font-semibold tabular-nums tracking-tight text-[color:var(--topo-ink)]">
@@ -362,7 +362,7 @@ export function HubPulse({
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.1}
-          className="p-4 sm:col-span-1 lg:col-span-1"
+          className="flex h-full flex-col p-4 sm:col-span-1 lg:col-span-1 lg:col-start-6 lg:row-start-2"
         >
           <WidgetLabel>Active runs</WidgetLabel>
           <div className="mt-1.5 font-mono text-3xl font-semibold tabular-nums tracking-tight text-[color:var(--topo-ink)]">
@@ -377,7 +377,7 @@ export function HubPulse({
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.12}
-          className="overflow-hidden sm:col-span-2 lg:col-span-6"
+          className="overflow-hidden sm:col-span-2 lg:col-span-6 lg:col-start-1 lg:row-start-3"
         >
           <div className="flex items-baseline justify-between gap-2 border-b border-[color:var(--topo-line)] px-4 py-3">
             <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
