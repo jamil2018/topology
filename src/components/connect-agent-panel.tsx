@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@heroui/react";
+import { PageHeader } from "./page-header";
+import { StatusChip } from "./status-chip";
 
 type Client = "cursor" | "claude" | "codex";
 
@@ -77,26 +79,13 @@ export function ConnectAgentPanel({
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.16em] text-[color:var(--topo-muted)]">
-          Agent plugin
-        </p>
-        <h1 className="font-[family-name:var(--font-display)] text-3xl text-[color:var(--topo-ink)]">
-          Connect an agent
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm text-[color:var(--topo-muted)]">
-          Point Claude, Cursor, or Codex at this Topology instance with{" "}
-          <code className="font-mono text-[color:var(--topo-ink)]">
-            TOPOLOGY_URL
-          </code>{" "}
-          and{" "}
-          <code className="font-mono text-[color:var(--topo-ink)]">
-            TOPOLOGY_API_TOKEN
-          </code>
-          . The MCP package talks to the same agent REST API as the UI.
-        </p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        eyebrow="Agent plugin"
+        title="Connect an agent"
+        description="Point Claude, Cursor, or Codex at this Topology instance with TOPOLOGY_URL and TOPOLOGY_API_TOKEN. The MCP package talks to the same agent REST API as the UI."
+        meta={<StatusChip mono>@topology/mcp</StatusChip>}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-1 text-sm">

@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@heroui/react";
 import { motion } from "motion/react";
+import { PageHeader } from "./page-header";
+import { StatusChip, statusToneForRun } from "./status-chip";
 
 type LinkedIssue = {
   id: string;
@@ -126,51 +128,60 @@ export function RunExecutor({ run }: { run: RunDetail }) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-[color:var(--topo-muted)]">
-            Manual run
-          </p>
-          <h1 className="font-[family-name:var(--font-display)] text-3xl text-[color:var(--topo-ink)]">
-            {run.name}
-          </h1>
-          <p className="mt-1 text-sm text-[color:var(--topo-muted)]">
-            {run.description || "No description"} · {run.status.replace("_", " ")}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {run.status === "planned" ? (
-            <Button
-              size="sm"
-              variant="primary"
-              isDisabled={pending}
-              onPress={() => void patch({ action: "start" })}
-            >
-              Start
-            </Button>
-          ) : null}
-          {run.status !== "completed" ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={pending}
-              onPress={() => void patch({ action: "complete" })}
-            >
-              Complete
-            </Button>
-          ) : null}
-        </div>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        eyebrow="Manual run"
+        title={run.name}
+        description={
+          run.description || "No description"
+        }
+        meta={
+          <>
+            <StatusChip tone={statusToneForRun(run.status)} mono>
+              {run.status.replace("_", " ")}
+            </StatusChip>
+            <StatusChip mono>
+              {done}/{run.results.length} · {pct}%
+            </StatusChip>
+            <span className="font-mono text-[10px] text-[color:var(--topo-muted)]">
+              {run.id.slice(0, 8)}
+            </span>
+          </>
+        }
+        actions={
+          <>
+            {run.status === "planned" ? (
+              <Button
+                size="sm"
+                variant="primary"
+                isDisabled={pending}
+                onPress={() => void patch({ action: "start" })}
+              >
+                Start
+              </Button>
+            ) : null}
+            {run.status !== "completed" ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={pending}
+                onPress={() => void patch({ action: "complete" })}
+              >
+                Complete
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
-      <div className="space-y-2">
-        <div className="flex justify-between text-xs text-[color:var(--topo-muted)]">
+      <div className="space-y-1.5">
+        <div className="flex justify-between font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
           <span>
             Progress {done}/{run.results.length}
           </span>
           <span>{pct}%</span>
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-[color:var(--topo-line)]">
+        <div className="h-1.5 overflow-hidden rounded-sm bg-[color:var(--topo-line)]">
           <motion.div
             className="h-full bg-[color:var(--topo-accent)]"
             initial={{ width: 0 }}
@@ -180,23 +191,25 @@ export function RunExecutor({ run }: { run: RunDetail }) {
         </div>
       </div>
 
-      {error ? <p className="text-sm text-red-700">{error}</p> : null}
+      {error ? (
+        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+      ) : null}
 
-      <div className="space-y-3">
+      <div className="divide-y divide-[color:var(--topo-line)] overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
         {run.results.map((result, i) => (
           <motion.article
             key={result.id}
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.04 }}
-            className="rounded-xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
+            transition={{ delay: Math.min(i, 12) * 0.02 }}
+            className="p-3"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="font-mono text-xs text-[color:var(--topo-accent)]">
                   {result.case.key}
                 </div>
-                <h2 className="text-base font-medium text-[color:var(--topo-ink)]">
+                <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
                   {result.case.title}
                 </h2>
               </div>
@@ -209,10 +222,10 @@ export function RunExecutor({ run }: { run: RunDetail }) {
                     onClick={() =>
                       void patch({ caseId: result.case.id, status })
                     }
-                    className={`rounded-md px-2 py-1 text-xs capitalize ${
+                    className={`rounded-md px-2 py-1 text-xs capitalize transition active:scale-[0.98] ${
                       result.status === status
-                        ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-paper)]"
-                        : "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+                        ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-panel)]"
+                        : "bg-[color:var(--topo-chip)] text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
                     }`}
                   >
                     {status}
@@ -221,7 +234,7 @@ export function RunExecutor({ run }: { run: RunDetail }) {
               </div>
             </div>
             {result.case.steps ? (
-              <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-[color:var(--topo-paper)]/70 p-3 text-xs text-[color:var(--topo-muted)]">
+              <pre className="mt-3 whitespace-pre-wrap rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] p-2.5 font-mono text-[11px] text-[color:var(--topo-muted)]">
                 {result.case.steps}
               </pre>
             ) : null}
@@ -274,7 +287,7 @@ export function RunExecutor({ run }: { run: RunDetail }) {
                         }))
                       }
                       placeholder="Link key (MOCK-1)"
-                      className="w-36 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs"
+                      className="w-36 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 font-mono text-xs"
                     />
                     <Button
                       size="sm"

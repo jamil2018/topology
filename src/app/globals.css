@@ -1,15 +1,37 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --topo-paper: #f3efe6;
-  --topo-panel: #fffdf8;
-  --topo-ink: #1c2b24;
-  --topo-muted: #5d6b63;
-  --topo-line: #d7d0c2;
-  --topo-accent: #0f7a5f;
-  --topo-accent-soft: #d8eee5;
-  --topo-signal: #c45c26;
+  /* Cool zinc cockpit neutrals + teal accent (Linear/Primer-adjacent) */
+  --topo-paper: #f4f4f5;
+  --topo-panel: #fafafa;
+  --topo-sidebar: #f0f0f2;
+  --topo-surface: #e4e4e7;
+  --topo-chip: #e4e4e7;
+  --topo-ink: #18181b;
+  --topo-muted: #71717a;
+  --topo-line: #d4d4d8;
+  --topo-accent: #0d9488;
+  --topo-accent-soft: #ccfbf1;
+  --topo-signal: #ea580c;
+  --background: var(--topo-paper);
+  --foreground: var(--topo-ink);
+}
+
+.dark {
+  --topo-paper: #09090b;
+  --topo-panel: #111113;
+  --topo-sidebar: #0c0c0e;
+  --topo-surface: #1c1c1f;
+  --topo-chip: #1f1f23;
+  --topo-ink: #f4f4f5;
+  --topo-muted: #a1a1aa;
+  --topo-line: #27272a;
+  --topo-accent: #2dd4bf;
+  --topo-accent-soft: rgba(45, 212, 191, 0.12);
+  --topo-signal: #fb923c;
   --background: var(--topo-paper);
   --foreground: var(--topo-ink);
 }
@@ -17,26 +39,38 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-body);
-  --font-mono: var(--font-mono);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 body {
   color: var(--topo-ink);
-  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  background: var(--topo-paper);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 .topology-shell {
-  background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(15, 122, 95, 0.14), transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 38, 0.1), transparent 50%),
-    linear-gradient(180deg, #efe8da 0%, var(--topo-paper) 40%, #ebe4d6 100%);
-  background-attachment: fixed;
+  background: var(--topo-paper);
 }
 
+/* Subtle grid only on light surfaces that opt in */
 .topo-grid {
   background-image:
-    linear-gradient(rgba(28, 43, 36, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(28, 43, 36, 0.04) 1px, transparent 1px);
-  background-size: 28px 28px;
+    linear-gradient(rgba(24, 24, 27, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(24, 24, 27, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.dark .topo-grid {
+  background-image:
+    linear-gradient(rgba(244, 244, 245, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(244, 244, 245, 0.04) 1px, transparent 1px);
 }

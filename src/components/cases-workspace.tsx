@@ -2,8 +2,19 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Button, Input, TextArea, Chip, Label, TextField } from "@heroui/react";
+import {
+  Button,
+  Input,
+  TextArea,
+  Chip,
+  Label,
+  TextField,
+  ListBox,
+  Select,
+} from "@heroui/react";
 import { motion, AnimatePresence } from "motion/react";
+import { PageHeader } from "./page-header";
+import { StatusChip, statusToneForRun } from "./status-chip";
 
 type Folder = { id: string; name: string };
 type CaseRow = {
@@ -114,64 +125,66 @@ export function CasesWorkspace({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-[family-name:var(--font-display)] text-3xl text-[color:var(--topo-ink)]">
-            Cases
-          </h1>
-          <p className="mt-1 max-w-xl text-sm text-[color:var(--topo-muted)]">
-            Organize suites in folders, author cases, and import or export CSV.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" onPress={createFolder}>
-            New folder
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onPress={() => window.open("/api/import/csv", "_blank")}
-          >
-            Export CSV
-          </Button>
-          <label className="inline-flex cursor-pointer items-center rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-sm text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-accent-soft)]">
-            Import CSV
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void importCsv(file);
-                e.target.value = "";
-              }}
-            />
-          </label>
-          <Button
-            size="sm"
-            variant="primary"
-            onPress={() => setShowCreate((v) => !v)}
-          >
-            New case
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        eyebrow="Suites"
+        title="Cases"
+        description="Organize suites in folders, author cases, and import or export CSV."
+        meta={
+          <StatusChip mono>
+            {initialCases.length} cases · {folders.length} folders
+          </StatusChip>
+        }
+        actions={
+          <>
+            <Button size="sm" variant="secondary" onPress={createFolder}>
+              New folder
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={() => window.open("/api/import/csv", "_blank")}
+            >
+              Export CSV
+            </Button>
+            <label className="inline-flex cursor-pointer items-center rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-accent-soft)]">
+              Import CSV
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void importCsv(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <Button
+              size="sm"
+              variant="primary"
+              onPress={() => setShowCreate((v) => !v)}
+            >
+              New case
+            </Button>
+          </>
+        }
+      />
 
       {error ? (
-        <p className="rounded-md border border-red-300/60 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
           {error}
         </p>
       ) : null}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         <button
           type="button"
           onClick={() => setFolderFilter("all")}
-          className={`rounded-full px-3 py-1 text-xs ${
+          className={`rounded-md px-2.5 py-1 text-xs ${
             folderFilter === "all"
-              ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-paper)]"
-              : "bg-[color:var(--topo-panel)] text-[color:var(--topo-muted)]"
+              ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-panel)]"
+              : "border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] text-[color:var(--topo-muted)]"
           }`}
         >
           All ({initialCases.length})
@@ -181,10 +194,10 @@ export function CasesWorkspace({
             key={f.id}
             type="button"
             onClick={() => setFolderFilter(f.id)}
-            className={`rounded-full px-3 py-1 text-xs ${
+            className={`rounded-md px-2.5 py-1 text-xs ${
               folderFilter === f.id
-                ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-paper)]"
-                : "bg-[color:var(--topo-panel)] text-[color:var(--topo-muted)]"
+                ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-panel)]"
+                : "border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] text-[color:var(--topo-muted)]"
             }`}
           >
             {f.name} (
@@ -234,55 +247,92 @@ export function CasesWorkspace({
               />
             </TextField>
             <div className="grid gap-3 sm:grid-cols-3">
-              <label className="text-sm text-[color:var(--topo-muted)]">
-                Priority
-                <select
-                  className="mt-1 w-full rounded-lg border border-[color:var(--topo-line)] bg-transparent px-3 py-2 text-[color:var(--topo-ink)]"
-                  value={form.priority}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, priority: e.target.value }))
-                  }
-                >
-                  {priorities.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm text-[color:var(--topo-muted)]">
-                Status
-                <select
-                  className="mt-1 w-full rounded-lg border border-[color:var(--topo-line)] bg-transparent px-3 py-2 text-[color:var(--topo-ink)]"
-                  value={form.status}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, status: e.target.value }))
-                  }
-                >
-                  {statuses.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm text-[color:var(--topo-muted)]">
-                Folder
-                <select
-                  className="mt-1 w-full rounded-lg border border-[color:var(--topo-line)] bg-transparent px-3 py-2 text-[color:var(--topo-ink)]"
-                  value={form.folderId}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, folderId: e.target.value }))
-                  }
-                >
-                  <option value="">None</option>
-                  {folders.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <Select
+                className="w-full"
+                variant="secondary"
+                placeholder="Priority"
+                value={form.priority}
+                onChange={(value) => {
+                  if (value == null) return;
+                  setForm((f) => ({ ...f, priority: String(value) }));
+                }}
+              >
+                <Label>Priority</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {priorities.map((p) => (
+                      <ListBox.Item key={p} id={p} textValue={p}>
+                        {p}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <Select
+                className="w-full"
+                variant="secondary"
+                placeholder="Status"
+                value={form.status}
+                onChange={(value) => {
+                  if (value == null) return;
+                  setForm((f) => ({ ...f, status: String(value) }));
+                }}
+              >
+                <Label>Status</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {statuses.map((s) => (
+                      <ListBox.Item key={s} id={s} textValue={s}>
+                        {s}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <Select
+                className="w-full"
+                variant="secondary"
+                placeholder="Folder"
+                value={form.folderId || "none"}
+                onChange={(value) => {
+                  if (value == null) return;
+                  const next = String(value);
+                  setForm((f) => ({
+                    ...f,
+                    folderId: next === "none" ? "" : next,
+                  }));
+                }}
+              >
+                <Label>Folder</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    <ListBox.Item id="none" textValue="None">
+                      None
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                    {folders.map((f) => (
+                      <ListBox.Item key={f.id} id={f.id} textValue={f.name}>
+                        {f.name}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
             </div>
             <TextField name="tags" className="w-full">
               <Label>Tags</Label>
@@ -309,15 +359,15 @@ export function CasesWorkspace({
         ) : null}
       </AnimatePresence>
 
-      <div className="overflow-hidden rounded-xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
+      <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-[color:var(--topo-line)] text-xs uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <thead className="border-b border-[color:var(--topo-line)] font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
             <tr>
-              <th className="px-4 py-3 font-medium">Key</th>
-              <th className="px-4 py-3 font-medium">Title</th>
-              <th className="px-4 py-3 font-medium">Folder</th>
-              <th className="px-4 py-3 font-medium">Priority</th>
-              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">Key</th>
+              <th className="px-3 py-2 font-medium">Title</th>
+              <th className="px-3 py-2 font-medium">Folder</th>
+              <th className="px-3 py-2 font-medium">Priority</th>
+              <th className="px-3 py-2 font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -325,7 +375,7 @@ export function CasesWorkspace({
               <tr>
                 <td
                   colSpan={5}
-                  className="px-4 py-10 text-center text-[color:var(--topo-muted)]"
+                  className="px-3 py-10 text-center text-[color:var(--topo-muted)]"
                 >
                   No cases yet. Create one or import a CSV.
                 </td>
@@ -334,15 +384,15 @@ export function CasesWorkspace({
               filtered.map((c, i) => (
                 <motion.tr
                   key={c.id}
-                  initial={{ opacity: 0, y: 6 }}
+                  initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="border-b border-[color:var(--topo-line)]/70 last:border-0"
+                  transition={{ delay: Math.min(i, 12) * 0.02 }}
+                  className="border-b border-[color:var(--topo-line)] last:border-0"
                 >
-                  <td className="px-4 py-3 font-mono text-xs text-[color:var(--topo-accent)]">
+                  <td className="px-3 py-2 font-mono text-xs text-[color:var(--topo-accent)]">
                     {c.key}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     <div className="font-medium text-[color:var(--topo-ink)]">
                       {c.title}
                     </div>
@@ -356,11 +406,17 @@ export function CasesWorkspace({
                       </div>
                     ) : null}
                   </td>
-                  <td className="px-4 py-3 text-[color:var(--topo-muted)]">
-                    {c.folder?.name ?? "—"}
+                  <td className="px-3 py-2 text-xs text-[color:var(--topo-muted)]">
+                    {c.folder?.name ?? "unfiled"}
                   </td>
-                  <td className="px-4 py-3">{c.priority}</td>
-                  <td className="px-4 py-3 capitalize">{c.status}</td>
+                  <td className="px-3 py-2">
+                    <StatusChip mono>{c.priority}</StatusChip>
+                  </td>
+                  <td className="px-3 py-2">
+                    <StatusChip tone={statusToneForRun(c.status)}>
+                      {c.status}
+                    </StatusChip>
+                  </td>
                 </motion.tr>
               ))
             )}

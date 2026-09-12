@@ -1,23 +1,8 @@
 import type { Metadata } from "next";
-import { Fraunces, Source_Sans_3, IBM_Plex_Mono } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import { Providers } from "@/components/providers";
 import "./globals.css";
-
-const display = Fraunces({
-  variable: "--font-display",
-  subsets: ["latin"],
-});
-
-const body = Source_Sans_3({
-  variable: "--font-body",
-  subsets: ["latin"],
-});
-
-const mono = IBM_Plex_Mono({
-  variable: "--font-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
-});
 
 export const metadata: Metadata = {
   title: "Topology",
@@ -25,14 +10,19 @@ export const metadata: Metadata = {
     "Self-hosted test case management with a Linear-like operating hub.",
 };
 
+const themeBoot = `(function(){try{var k='topology-theme';var p=localStorage.getItem(k)||'system';var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=p==='dark'||(p!=='light'&&d);var e=document.documentElement;e.classList.toggle('dark',r);e.dataset.theme=r?'dark':'light';e.style.colorScheme=r?'dark':'light';}catch(e){}})();`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${display.variable} ${body.variable} ${mono.variable} h-full antialiased`}
+      className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBoot }} />
+      </head>
+      <body className="min-h-full flex flex-col bg-[color:var(--topo-paper)] text-[color:var(--topo-ink)]">
         <Providers>{children}</Providers>
       </body>
     </html>

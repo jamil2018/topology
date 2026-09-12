@@ -4,6 +4,7 @@ import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { Button, Input, Label, TextField } from "@heroui/react";
 import { motion } from "motion/react";
+import { ThemeToggle } from "./theme-toggle";
 
 export function LoginForm({
   oauth,
@@ -34,21 +35,24 @@ export function LoginForm({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full max-w-md space-y-6 rounded-2xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]/95 p-6 shadow-[0_24px_80px_rgba(20,40,30,0.12)]"
+      transition={{ duration: 0.25 }}
+      className="w-full max-w-md space-y-5 rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-5"
     >
-      <div>
-        <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--topo-muted)]">
-          Sign in
-        </p>
-        <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl text-[color:var(--topo-ink)]">
-          Topology
-        </h1>
-        <p className="mt-2 text-sm text-[color:var(--topo-muted)]">
-          OAuth-first when configured. Email and password available for local
-          operators.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--topo-muted)]">
+            Sign in
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[color:var(--topo-ink)]">
+            Topology
+          </h1>
+          <p className="mt-1.5 text-sm text-[color:var(--topo-muted)]">
+            OAuth-first when configured. Email and password for local operators.
+          </p>
+        </div>
+        <ThemeToggle compact />
       </div>
 
       {(oauth.github || oauth.google) && (
@@ -95,7 +99,7 @@ export function LoginForm({
             className="w-full"
           />
         </TextField>
-        {error ? <p className="text-sm text-red-700">{error}</p> : null}
+        {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
         <Button
           className="w-full"
           variant="primary"
@@ -106,8 +110,8 @@ export function LoginForm({
         </Button>
       </div>
 
-      <p className="text-xs text-[color:var(--topo-muted)]">
-        Demo: demo@topology.local / topology-demo
+      <p className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+        demo@topology.local / topology-demo
       </p>
     </motion.div>
   );

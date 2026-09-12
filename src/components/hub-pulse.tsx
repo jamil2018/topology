@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
+import { PageHeader } from "./page-header";
+import { StatusChip, statusToneForRun } from "./status-chip";
 
 type Pulse = {
   cases: { total: number; ready: number; blocked: number; draft: number };
@@ -33,15 +35,6 @@ type Pulse = {
   };
   triageOpen?: number;
   flakeSuspects?: number;
-  openLinkedIssues?: number;
-  retestQueue?: Array<{
-    id: string;
-    key: string;
-    title: string;
-    caseKey: string | null;
-    runId: string | null;
-    resultId: string | null;
-  }>;
 };
 
 type MilestoneView = {
@@ -55,18 +48,6 @@ type MilestoneView = {
   badge: string;
 } | null;
 
-const healthColor = {
-  healthy: "text-emerald-800",
-  watch: "text-amber-800",
-  critical: "text-red-800",
-} as const;
-
-const badgeStyles = {
-  ready: "bg-emerald-100 text-emerald-900",
-  at_risk: "bg-amber-100 text-amber-900",
-  blocked: "bg-red-100 text-red-900",
-} as const;
-
 export function HubPulse({
   pulse,
   milestone,
@@ -75,222 +56,184 @@ export function HubPulse({
   milestone: MilestoneView;
 }) {
   const health = pulse.quality?.health ?? "healthy";
+  const reduceMotion = useReducedMotion();
+
+  const stats = [
+    {
+      label: "Cases ready",
+      value: `${pulse.cases.ready}/${pulse.cases.total}`,
+      hint: `${pulse.cases.blocked} blocked · ${pulse.cases.draft} draft`,
+      mono: true,
+    },
+    {
+      label: "Quality",
+      value: health,
+      hint: pulse.quality?.signals[0] ?? "Pulse steady",
+      chip: statusToneForRun(health),
+    },
+    {
+      label: "Active runs",
+      value: String(pulse.runs.inProgress),
+      hint: `${pulse.runs.automation ?? 0} CI · ${pulse.runs.completed} done`,
+      mono: true,
+    },
+    {
+      label: "Pass rate",
+      value:
+        pulse.results.passRate == null ? "n/a" : `${pulse.results.passRate}%`,
+      hint: `${pulse.results.failed} failed · ${pulse.flakeSuspects ?? 0} flake`,
+      mono: true,
+    },
+  ];
 
   return (
-    <div className="space-y-10">
-      <section className="relative overflow-hidden rounded-2xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]/80 topo-grid">
-        <div className="relative px-6 py-10 sm:px-10">
-          <motion.p
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-xs uppercase tracking-[0.22em] text-[color:var(--topo-muted)]"
-          >
-            Operating hub
-          </motion.p>
-          <motion.h1
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="mt-2 max-w-2xl font-[family-name:var(--font-display)] text-4xl leading-tight text-[color:var(--topo-ink)] sm:text-5xl"
-          >
-            Topology
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="mt-3 max-w-xl text-base text-[color:var(--topo-muted)]"
-          >
-            Quality pulse across cases, manual runs, and CI automation —
-            triage failures and gate milestones from one hub.
-          </motion.p>
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.16 }}
-            className="mt-6 flex flex-wrap gap-3"
-          >
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Operating hub"
+        title="Quality pulse"
+        description="Cases, manual runs, and CI automation in one cockpit. Triage failures and gate milestones without leaving the hub."
+        meta={
+          <>
+            <StatusChip tone={statusToneForRun(health)}>{health}</StatusChip>
+            {(pulse.triageOpen ?? 0) > 0 ? (
+              <StatusChip tone="danger">
+                {pulse.triageOpen} open triage
+              </StatusChip>
+            ) : (
+              <StatusChip tone="success">Triage clear</StatusChip>
+            )}
+            {milestone ? (
+              <StatusChip tone={statusToneForRun(milestone.readiness.status)}>
+                {milestone.badge}
+              </StatusChip>
+            ) : null}
+          </>
+        }
+        actions={
+          <div className="flex flex-wrap gap-2">
             <Link
               href="/cases"
-              className="rounded-lg bg-[color:var(--topo-ink)] px-4 py-2 text-sm text-[color:var(--topo-paper)]"
+              className="rounded-md bg-[color:var(--topo-ink)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-panel)] transition active:scale-[0.98]"
             >
-              Open cases
+              Cases
             </Link>
             <Link
               href="/automation"
-              className="rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-4 py-2 text-sm text-[color:var(--topo-ink)]"
+              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
             >
               Automation
             </Link>
             <Link
               href="/triage"
-              className="rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-4 py-2 text-sm text-[color:var(--topo-ink)]"
+              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
             >
               Triage
-              {(pulse.triageOpen ?? 0) > 0
-                ? ` (${pulse.triageOpen})`
-                : ""}
+              {(pulse.triageOpen ?? 0) > 0 ? ` (${pulse.triageOpen})` : ""}
             </Link>
-            <Link
-              href="/connect"
-              className="rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-4 py-2 text-sm text-[color:var(--topo-ink)]"
-            >
-              Connect an agent
-            </Link>
-          </motion.div>
-        </div>
-      </section>
+          </div>
+        }
+      />
 
       {milestone ? (
-        <motion.section
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-4 py-4"
-        >
-          <div>
-            <div className="text-xs uppercase tracking-wide text-[color:var(--topo-muted)]">
-              Milestone readiness
+        <section className="flex flex-wrap items-center justify-between gap-3 border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2.5">
+          <div className="min-w-0">
+            <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+              Milestone
             </div>
-            <div className="mt-1 font-[family-name:var(--font-display)] text-2xl text-[color:var(--topo-ink)]">
+            <div className="truncate text-sm font-semibold text-[color:var(--topo-ink)]">
               {milestone.milestone.name}
             </div>
-            <p className="mt-1 text-xs text-[color:var(--topo-muted)]">
+            <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
               {milestone.readiness.reasons[0]}
               {milestone.readiness.passRate != null
-                ? ` · pass rate ${milestone.readiness.passRate}% (gate ${milestone.milestone.passRateThreshold}%)`
+                ? ` · pass ${milestone.readiness.passRate}% (gate ${milestone.milestone.passRateThreshold}%)`
                 : ""}
             </p>
           </div>
           <div className="text-right">
-            <span
-              className={`inline-flex rounded-md px-3 py-1 text-sm font-medium ${badgeStyles[milestone.readiness.status]}`}
-            >
+            <StatusChip tone={statusToneForRun(milestone.readiness.status)}>
               {milestone.badge}
-            </span>
-            <div className="mt-2 text-xs text-[color:var(--topo-muted)]">
-              Score {milestone.readiness.score}
+            </StatusChip>
+            <div className="mt-1 font-mono text-[11px] text-[color:var(--topo-muted)]">
+              score {milestone.readiness.score}
             </div>
           </div>
-        </motion.section>
+        </section>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {[
-          {
-            label: "Cases ready",
-            value: `${pulse.cases.ready}/${pulse.cases.total}`,
-            hint: `${pulse.cases.blocked} blocked · ${pulse.cases.draft} draft`,
-          },
-          {
-            label: "Quality health",
-            value: health,
-            hint: pulse.quality?.signals[0] ?? "Pulse steady",
-            emphasize: healthColor[health],
-          },
-          {
-            label: "Active runs",
-            value: String(pulse.runs.inProgress),
-            hint: `${pulse.runs.automation ?? 0} automation · ${pulse.runs.completed} completed`,
-          },
-          {
-            label: "Pass rate",
-            value:
-              pulse.results.passRate == null
-                ? "—"
-                : `${pulse.results.passRate}%`,
-            hint: `${pulse.results.failed} failed · ${pulse.flakeSuspects ?? 0} flake suspects`,
-          },
-          {
-            label: "Open defects",
-            value: String(pulse.openLinkedIssues ?? 0),
-            hint: `${pulse.retestQueue?.length ?? 0} ready to retest`,
-          },
-        ].map((stat, i) => (
+      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-line)] lg:grid-cols-4">
+        {stats.map((stat, i) => (
           <motion.div
             key={stat.label}
-            initial={{ opacity: 0, y: 10 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.08 + i * 0.05 }}
-            className="rounded-xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-4 py-4"
+            transition={{ delay: reduceMotion ? 0 : 0.04 + i * 0.03 }}
+            className="bg-[color:var(--topo-panel)] px-3 py-3"
           >
-            <div className="text-xs uppercase tracking-wide text-[color:var(--topo-muted)]">
+            <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
               {stat.label}
             </div>
-            <div
-              className={`mt-2 font-[family-name:var(--font-display)] text-3xl capitalize text-[color:var(--topo-ink)] ${"emphasize" in stat ? stat.emphasize : ""}`}
-            >
-              {stat.value}
+            <div className="mt-1.5 flex items-center gap-2">
+              <span
+                className={`text-2xl font-semibold tracking-tight text-[color:var(--topo-ink)] ${
+                  "mono" in stat && stat.mono ? "font-mono tabular-nums" : "capitalize"
+                }`}
+              >
+                {stat.value}
+              </span>
+              {"chip" in stat && stat.chip ? (
+                <StatusChip tone={stat.chip}>{health}</StatusChip>
+              ) : null}
             </div>
-            <div className="mt-1 text-xs text-[color:var(--topo-muted)]">
+            <div className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
               {stat.hint}
             </div>
           </motion.div>
         ))}
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-[color:var(--topo-ink)]">
-          Retest queue
-        </h2>
-        {(pulse.retestQueue?.length ?? 0) === 0 ? (
-          <p className="text-sm text-[color:var(--topo-muted)]">
-            When a linked issue closes, it shows up here for retest.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {pulse.retestQueue!.map((item) => (
-              <li key={item.id}>
-                <Link
-                  href={item.runId ? `/runs/${item.runId}` : "/runs"}
-                  className="flex items-center justify-between rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-4 py-3 text-sm hover:border-[color:var(--topo-accent)]"
-                >
-                  <span className="text-[color:var(--topo-ink)]">
-                    <span className="font-mono text-[color:var(--topo-accent)]">
-                      {item.key}
-                    </span>{" "}
-                    {item.title}
-                    {item.caseKey ? (
-                      <span className="text-[color:var(--topo-muted)]">
-                        {" "}
-                        · {item.caseKey}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="text-[color:var(--topo-signal)]">Retest</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-[color:var(--topo-ink)]">
-          Recent runs
-        </h2>
+      <section>
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+            Recent runs
+          </h2>
+          <Link
+            href="/runs"
+            className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
+          >
+            View all
+          </Link>
+        </div>
         {pulse.recentRuns.length === 0 ? (
-          <p className="text-sm text-[color:var(--topo-muted)]">
+          <p className="border border-dashed border-[color:var(--topo-line)] px-3 py-8 text-center text-sm text-[color:var(--topo-muted)]">
             No runs yet. Create one from Manual runs or submit JUnit via CLI.
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="divide-y divide-[color:var(--topo-line)] overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
             {pulse.recentRuns.map((run) => (
               <li key={run.id}>
                 <Link
                   href={`/runs/${run.id}`}
-                  className="flex items-center justify-between rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-4 py-3 text-sm hover:border-[color:var(--topo-accent)]"
+                  className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-[color:var(--topo-chip)]/60"
                 >
-                  <span className="text-[color:var(--topo-ink)]">
-                    {run.name}
-                    {run.kind === "automation" ? (
-                      <span className="ml-2 text-xs text-[color:var(--topo-muted)]">
-                        CI
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-[color:var(--topo-ink)]">
+                      {run.name}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                      <span className="font-mono text-[10px] text-[color:var(--topo-muted)]">
+                        {run.id.slice(0, 8)}
                       </span>
-                    ) : null}
-                  </span>
-                  <span className="capitalize text-[color:var(--topo-muted)]">
+                      {run.kind === "automation" ? (
+                        <StatusChip tone="info">CI</StatusChip>
+                      ) : (
+                        <StatusChip>Manual</StatusChip>
+                      )}
+                    </div>
+                  </div>
+                  <StatusChip tone={statusToneForRun(run.status)} mono>
                     {run.status.replace("_", " ")}
-                  </span>
+                  </StatusChip>
                 </Link>
               </li>
             ))}
