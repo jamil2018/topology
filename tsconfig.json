@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@topology/domain": ["./packages/domain/src/index.ts"],
+      "@topology/domain/*": ["./packages/domain/src/*"]
     }
   },
   "include": [

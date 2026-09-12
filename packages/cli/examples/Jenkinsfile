@@ -1,0 +1,42 @@
+// Topology — Jenkins Pipeline JUnit upload example
+// Requires TOPOLOGY_URL + TOPOLOGY_API_TOKEN credentials.
+
+pipeline {
+  agent any
+
+  environment {
+    TOPOLOGY_URL = credentials('topology-url')
+    TOPOLOGY_API_TOKEN = credentials('topology-api-token')
+  }
+
+  stages {
+    stage('Test') {
+      steps {
+        sh 'npm test -- --reporter=junit --outputFile=reports/junit.xml || true'
+      }
+    }
+
+    stage('Submit to Topology') {
+      steps {
+        sh '''
+          npm exec -- topology junit submit ./reports/junit.xml \
+            --name "Jenkins #${BUILD_NUMBER}" \
+            --source jenkins
+        '''
+      }
+    }
+
+    stage('Sharded flow (optional)') {
+      when { expression { return false } } // enable when you split suites
+      steps {
+        sh '''
+          RUN_JSON=$(npm exec -- topology runs create --name "Jenkins shards #${BUILD_NUMBER}" --source jenkins --shards 2)
+          RUN_ID=$(node -e "console.log(JSON.parse(process.argv[1]).run.id)" "$RUN_JSON")
+          npm exec -- topology runs submit-thread --run-id "$RUN_ID" --shard 1 --file reports/junit-1.xml
+          npm exec -- topology runs submit-thread --run-id "$RUN_ID" --shard 2 --file reports/junit-2.xml
+          npm exec -- topology runs complete --run-id "$RUN_ID"
+        '''
+      }
+    }
+  }
+}

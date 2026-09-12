@@ -65,6 +65,8 @@ export async function POST(request: Request) {
       environment: parsed.data.environment,
       createdById: session.user.id,
       status: "planned",
+      kind: "manual",
+      source: "manual",
     })
     .returning();
 

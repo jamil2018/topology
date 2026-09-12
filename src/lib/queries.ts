@@ -1,6 +1,22 @@
 import { and, count, desc, eq, sql } from "drizzle-orm";
+import {
+  buildTriageQueue,
+  computeMilestoneReadiness,
+  computeQualityPulse,
+  detectFlakeSignal,
+  readinessBadgeLabel,
+  type MilestoneCase,
+  type TriageFailure,
+} from "@topology/domain";
 import { db } from "@/db";
-import { cases, folders, runResults, runs } from "@/db/schema";
+import {
+  cases,
+  folders,
+  milestones,
+  runResults,
+  runs,
+  triageItems,
+} from "@/db/schema";
 
 export async function getHubPulse() {
   const [caseStats] = await db
@@ -17,6 +33,7 @@ export async function getHubPulse() {
       total: count(),
       inProgress: sql<number>`count(*) filter (where ${runs.status} = 'in_progress')`,
       completed: sql<number>`count(*) filter (where ${runs.status} = 'completed')`,
+      automation: sql<number>`count(*) filter (where ${runs.kind} = 'automation')`,
     })
     .from(runs);
 
@@ -29,6 +46,12 @@ export async function getHubPulse() {
     })
     .from(runResults);
 
+  const [triageStats] = await db
+    .select({
+      open: sql<number>`count(*) filter (where ${triageItems.status} = 'open')`,
+    })
+    .from(triageItems);
+
   const folderCount = await db.select({ value: count() }).from(folders);
 
   const recentRuns = await db.query.runs.findMany({
@@ -36,11 +59,36 @@ export async function getHubPulse() {
     limit: 5,
   });
 
+  const flakeSuspects = await countFlakeSuspects();
+
   const passed = Number(resultStats?.passed ?? 0);
   const failed = Number(resultStats?.failed ?? 0);
   const totalResults = Number(resultStats?.total ?? 0);
   const executed = passed + failed;
   const passRate = executed === 0 ? null : Math.round((passed / executed) * 100);
+
+  const quality = computeQualityPulse({
+    cases: {
+      total: Number(caseStats?.total ?? 0),
+      ready: Number(caseStats?.ready ?? 0),
+      blocked: Number(caseStats?.blocked ?? 0),
+      draft: Number(caseStats?.draft ?? 0),
+    },
+    runs: {
+      total: Number(runStats?.total ?? 0),
+      inProgress: Number(runStats?.inProgress ?? 0),
+      completed: Number(runStats?.completed ?? 0),
+      automation: Number(runStats?.automation ?? 0),
+    },
+    results: {
+      passed,
+      failed,
+      untested: Number(resultStats?.untested ?? 0),
+      total: totalResults,
+    },
+    triageOpen: Number(triageStats?.open ?? 0),
+    flakeSuspects,
+  });
 
   return {
     cases: {
@@ -53,6 +101,7 @@ export async function getHubPulse() {
       total: Number(runStats?.total ?? 0),
       inProgress: Number(runStats?.inProgress ?? 0),
       completed: Number(runStats?.completed ?? 0),
+      automation: Number(runStats?.automation ?? 0),
     },
     results: {
       passed,
@@ -63,7 +112,43 @@ export async function getHubPulse() {
     },
     folders: Number(folderCount[0]?.value ?? 0),
     recentRuns,
+    quality,
+    triageOpen: Number(triageStats?.open ?? 0),
+    flakeSuspects,
   };
+}
+
+async function countFlakeSuspects(): Promise<number> {
+  const recent = await db.query.runResults.findMany({
+    where: sql`${runResults.status} in ('passed', 'failed')`,
+    orderBy: [desc(runResults.executedAt)],
+    limit: 500,
+    with: { case: true },
+  });
+
+  const byCase = new Map<
+    string,
+    Array<{ status: "passed" | "failed"; at: Date }>
+  >();
+
+  for (const row of recent) {
+    if (!row.caseId || (row.status !== "passed" && row.status !== "failed")) {
+      continue;
+    }
+    const list = byCase.get(row.caseId) ?? [];
+    list.push({
+      status: row.status,
+      at: row.executedAt ?? row.createdAt,
+    });
+    byCase.set(row.caseId, list);
+  }
+
+  let suspects = 0;
+  for (const history of byCase.values()) {
+    const signal = detectFlakeSignal(history);
+    if (signal.isFlaky) suspects += 1;
+  }
+  return suspects;
 }
 
 export async function listCases(folderId?: string | null) {
@@ -97,7 +182,13 @@ export async function getRunWithResults(runId: string) {
   });
 }
 
-export async function listRuns() {
+export async function listRuns(kind?: "manual" | "automation") {
+  if (kind) {
+    return db.query.runs.findMany({
+      where: eq(runs.kind, kind),
+      orderBy: [desc(runs.updatedAt)],
+    });
+  }
   return db.query.runs.findMany({
     orderBy: [desc(runs.updatedAt)],
   });
@@ -113,6 +204,160 @@ export function runProgress(
     total,
     pct: total === 0 ? 0 : Math.round((done / total) * 100),
   };
+}
+
+export async function getActiveMilestoneReadiness() {
+  const milestone = await db.query.milestones.findFirst({
+    where: eq(milestones.status, "active"),
+    orderBy: [desc(milestones.updatedAt)],
+  });
+
+  if (!milestone) {
+    return null;
+  }
+
+  const suiteCases = milestone.folderId
+    ? await db.query.cases.findMany({
+        where: eq(cases.folderId, milestone.folderId),
+      })
+    : await db.query.cases.findMany();
+
+  const latestByCase = new Map<string, string>();
+  const recentResults = await db.query.runResults.findMany({
+    orderBy: [desc(runResults.executedAt)],
+    limit: 1000,
+  });
+  for (const result of recentResults) {
+    if (!result.caseId) continue;
+    if (!latestByCase.has(result.caseId)) {
+      latestByCase.set(result.caseId, result.status);
+    }
+  }
+
+  const milestoneCases: MilestoneCase[] = suiteCases.map((c) => ({
+    key: c.key,
+    priority: c.priority,
+    status: c.status,
+    lastResult: (latestByCase.get(c.id) as MilestoneCase["lastResult"]) ?? null,
+  }));
+
+  const readiness = computeMilestoneReadiness(milestoneCases, {
+    minPassRate: milestone.passRateThreshold,
+    maxOpenP0Failures: milestone.maxOpenP0Failures,
+    requireReadyCases: true,
+  });
+
+  return {
+    milestone,
+    readiness,
+    badge: readinessBadgeLabel(readiness.status),
+  };
+}
+
+export async function getTriageQueue() {
+  const open = await db.query.triageItems.findMany({
+    where: eq(triageItems.status, "open"),
+    with: { case: true, run: true },
+    orderBy: [desc(triageItems.lastSeenAt)],
+  });
+
+  const failures: TriageFailure[] = open.map((item) => ({
+    id: item.id,
+    caseKey: item.case?.key ?? "unknown",
+    caseTitle: item.title,
+    priority: item.priority,
+    runId: item.runId ?? "",
+    runName: item.run?.name ?? "unknown run",
+    notes: item.notes,
+    failedAt: item.lastSeenAt,
+    occurrenceCount: item.occurrenceCount,
+  }));
+
+  const flakeHints = await getFlakeHintsForCaseIds(
+    open.map((o) => o.caseId).filter(Boolean) as string[],
+  );
+
+  const withFlake = failures.map((f) => {
+    const item = open.find((o) => o.id === f.id);
+    const hint = item?.caseId ? flakeHints.get(item.caseId) : undefined;
+    return {
+      ...f,
+      isFlaky: hint?.isFlaky ?? false,
+    };
+  });
+
+  return buildTriageQueue(withFlake).map((item) => ({
+    ...item,
+    flakeHint: open.find((o) => o.id === item.id)?.caseId
+      ? flakeHints.get(open.find((o) => o.id === item.id)!.caseId!)?.hint
+      : null,
+  }));
+}
+
+async function getFlakeHintsForCaseIds(caseIds: string[]) {
+  const map = new Map<
+    string,
+    ReturnType<typeof detectFlakeSignal>
+  >();
+  if (caseIds.length === 0) return map;
+
+  for (const caseId of caseIds) {
+    const history = await db.query.runResults.findMany({
+      where: and(
+        eq(runResults.caseId, caseId),
+        sql`${runResults.status} in ('passed', 'failed')`,
+      ),
+      orderBy: [desc(runResults.executedAt)],
+      limit: 12,
+    });
+    const signal = detectFlakeSignal(
+      history.map((h) => ({
+        status: h.status as "passed" | "failed",
+        at: h.executedAt ?? h.createdAt,
+      })),
+    );
+    map.set(caseId, signal);
+  }
+  return map;
+}
+
+export async function getFlakeHints(limit = 20) {
+  const allCases = await db.query.cases.findMany({ limit: 200 });
+  const hints: Array<{
+    caseId: string;
+    caseKey: string;
+    title: string;
+    score: number;
+    hint: string;
+  }> = [];
+
+  for (const c of allCases) {
+    const history = await db.query.runResults.findMany({
+      where: and(
+        eq(runResults.caseId, c.id),
+        sql`${runResults.status} in ('passed', 'failed')`,
+      ),
+      orderBy: [desc(runResults.executedAt)],
+      limit: 12,
+    });
+    const signal = detectFlakeSignal(
+      history.map((h) => ({
+        status: h.status as "passed" | "failed",
+        at: h.executedAt ?? h.createdAt,
+      })),
+    );
+    if (signal.isFlaky && signal.hint) {
+      hints.push({
+        caseId: c.id,
+        caseKey: c.key,
+        title: c.title,
+        score: signal.score,
+        hint: signal.hint,
+      });
+    }
+  }
+
+  return hints.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 export { and, eq, sql };

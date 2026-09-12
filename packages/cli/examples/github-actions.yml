@@ -1,0 +1,54 @@
+# Topology — GitHub Actions JUnit upload (sharded)
+
+name: topology-junit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Topology CLI
+        run: npm install --global file:./packages/cli || npm install
+      - name: Create automation run (shard 1 only)
+        if: matrix.shard == 1
+        env:
+          TOPOLOGY_URL: ${{ vars.TOPOLOGY_URL }}
+          TOPOLOGY_API_TOKEN: ${{ secrets.TOPOLOGY_API_TOKEN }}
+        run: |
+          npx topology runs create \
+            --name "GH ${{ github.run_id }}" \
+            --source github \
+            --branch "${{ github.ref_name }}" \
+            --sha "${{ github.sha }}" \
+            --shards 2 | tee /tmp/topo-run.json
+          echo "TOPOLOGY_RUN_ID=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("/tmp/topo-run.json","utf8")).run.id)')" >> "$GITHUB_ENV"
+      - name: Upload shard
+        env:
+          TOPOLOGY_URL: ${{ vars.TOPOLOGY_URL }}
+          TOPOLOGY_API_TOKEN: ${{ secrets.TOPOLOGY_API_TOKEN }}
+          TOPOLOGY_RUN_ID: ${{ env.TOPOLOGY_RUN_ID }}
+        run: |
+          # Replace with your real JUnit path
+          npx topology runs submit-thread \
+            --run-id "$TOPOLOGY_RUN_ID" \
+            --shard ${{ matrix.shard }} \
+            --file "./reports/junit-shard-${{ matrix.shard }}.xml"
+      - name: Complete run (shard 1 only)
+        if: matrix.shard == 1
+        env:
+          TOPOLOGY_URL: ${{ vars.TOPOLOGY_URL }}
+          TOPOLOGY_API_TOKEN: ${{ secrets.TOPOLOGY_API_TOKEN }}
+          TOPOLOGY_RUN_ID: ${{ env.TOPOLOGY_RUN_ID }}
+        run: npx topology runs complete --run-id "$TOPOLOGY_RUN_ID"

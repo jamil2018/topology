@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="topology-smoke" tests="3" failures="1" errors="0" skipped="0" time="0.42">
+  <testcase classname="hub" name="loads" time="0.12"/>
+  <testcase classname="auth" name="login" time="0.18"/>
+  <testcase classname="runs" name="record_result" time="0.12">
+    <failure message="expected status passed">AssertionError: expected failed to equal passed</failure>
+  </testcase>
+</testsuite>

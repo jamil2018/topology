@@ -2,6 +2,9 @@
   "name": "topology",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev --port 4317 --hostname 127.0.0.1",
     "build": "next build",
@@ -13,12 +16,15 @@
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "topology": "tsx packages/cli/src/index.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",
     "@heroui/react": "^3.2.5",
     "@heroui/styles": "^3.2.5",
+    "@topology/cli": "0.1.0",
+    "@topology/domain": "0.1.0",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
     "motion": "^13.2.0",

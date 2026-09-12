@@ -1,8 +1,17 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
+import { hashToken } from "../lib/ci-auth";
 import { db } from "./index";
-import { cases, folders, runResults, runs, users } from "./schema";
+import {
+  apiTokens,
+  cases,
+  folders,
+  milestones,
+  runResults,
+  runs,
+  users,
+} from "./schema";
 
 async function seed() {
   const email = process.env.DEMO_USER_EMAIL ?? "demo@topology.local";
@@ -26,10 +35,42 @@ async function seed() {
           })
           .returning();
 
+  const demoToken =
+    process.env.TOPOLOGY_API_TOKEN ?? "topo_demo_token_local_dev_only";
+  const tokenHash = hashToken(demoToken);
+  const existingToken = await db.query.apiTokens.findFirst({
+    where: eq(apiTokens.tokenHash, tokenHash),
+  });
+  if (!existingToken) {
+    await db.insert(apiTokens).values({
+      name: "Local demo CLI token",
+      tokenHash,
+      tokenPrefix: demoToken.slice(0, 12),
+      userId: user.id,
+    });
+  }
+
   const existingFolders = await db.select().from(folders).limit(1);
   if (existingFolders.length > 0) {
+    const existingMilestone = await db.select().from(milestones).limit(1);
+    if (existingMilestone.length === 0) {
+      const [smoke] = await db
+        .select()
+        .from(folders)
+        .where(eq(folders.name, "Smoke"))
+        .limit(1);
+      await db.insert(milestones).values({
+        name: "v1 launch gate",
+        description: "Smoke suite must stay green for launch.",
+        folderId: smoke?.id,
+        passRateThreshold: 95,
+        maxOpenP0Failures: 0,
+        status: "active",
+      });
+    }
     console.log("Seed skipped — folders already present");
     console.log(`Demo login: ${email} / ${password}`);
+    console.log(`CLI token: ${demoToken}`);
     return;
   }
 
@@ -100,12 +141,22 @@ async function seed() {
     ])
     .returning();
 
+  await db.insert(milestones).values({
+    name: "v1 launch gate",
+    description: "Smoke suite must stay green for launch.",
+    folderId: smoke.id,
+    passRateThreshold: 95,
+    maxOpenP0Failures: 0,
+    status: "active",
+  });
+
   const [run] = await db
     .insert(runs)
     .values({
       name: "Local smoke — bootstrap",
       description: "First manual pass after Topology bootstrap.",
       status: "planned",
+      kind: "manual",
       environment: "local",
       createdById: user.id,
     })
@@ -119,8 +170,9 @@ async function seed() {
     })),
   );
 
-  console.log(`Seeded ${seededCases.length} cases, 2 folders, 1 run`);
+  console.log(`Seeded ${seededCases.length} cases, 2 folders, 1 run, 1 milestone`);
   console.log(`Demo login: ${email} / ${password}`);
+  console.log(`CLI token: ${demoToken}`);
 }
 
 seed()

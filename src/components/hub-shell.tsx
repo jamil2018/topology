@@ -10,6 +10,8 @@ const nav = [
   { href: "/", label: "Hub" },
   { href: "/cases", label: "Cases" },
   { href: "/runs", label: "Runs" },
+  { href: "/automation", label: "Automation" },
+  { href: "/triage", label: "Triage" },
 ];
 
 export function HubShell({

@@ -22,17 +22,23 @@ export default async function RunDetailPage({ params }: Props) {
           name: run.name,
           status: run.status,
           description: run.description,
+          kind: run.kind,
+          source: run.source,
           results: run.results.map((r) => ({
             id: r.id,
             status: r.status,
             notes: r.notes,
-            case: {
-              id: r.case.id,
-              key: r.case.key,
-              title: r.case.title,
-              steps: r.case.steps,
-              expectedResult: r.case.expectedResult,
-            },
+            externalKey: r.externalKey,
+            title: r.title,
+            case: r.case
+              ? {
+                  id: r.case.id,
+                  key: r.case.key,
+                  title: r.case.title,
+                  steps: r.case.steps,
+                  expectedResult: r.case.expectedResult,
+                }
+              : null,
           })),
         }}
       />

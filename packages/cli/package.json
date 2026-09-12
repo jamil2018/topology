@@ -1,0 +1,18 @@
+{
+  "name": "@topology/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "topology": "./bin/topology.js"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@topology/domain": "0.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.13"
+  }
+}

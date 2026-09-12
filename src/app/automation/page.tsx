@@ -1,23 +1,27 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
-import { RunsWorkspace } from "@/components/runs-workspace";
+import { AutomationWorkspace } from "@/components/automation-workspace";
 import { listRuns } from "@/lib/queries";
 
-export default async function RunsPage() {
+export default async function AutomationPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const runs = await listRuns("manual");
+  const runs = await listRuns("automation");
 
   return (
     <HubShell userEmail={session.user.email}>
-      <RunsWorkspace
+      <AutomationWorkspace
         initialRuns={runs.map((r) => ({
           id: r.id,
           name: r.name,
           status: r.status,
-          environment: r.environment,
+          source: r.source,
+          branch: r.branch,
+          commitSha: r.commitSha,
+          shardTotal: r.shardTotal,
+          shardsReceived: r.shardsReceived,
           updatedAt: r.updatedAt,
         }))}
       />
