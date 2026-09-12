@@ -1,4 +1,4 @@
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   buildTriageQueue,
   computeMilestoneReadiness,
@@ -58,8 +58,34 @@ export async function getHubPulse() {
 
   const recentRuns = await db.query.runs.findMany({
     orderBy: [desc(runs.updatedAt)],
-    limit: 5,
+    limit: 8,
   });
+
+  const recentRunIds = recentRuns.map((run) => run.id);
+  const runResultCounts =
+    recentRunIds.length === 0
+      ? []
+      : await db
+          .select({
+            runId: runResults.runId,
+            passed: sql<number>`count(*) filter (where ${runResults.status} = 'passed')`,
+            failed: sql<number>`count(*) filter (where ${runResults.status} = 'failed')`,
+            untested: sql<number>`count(*) filter (where ${runResults.status} = 'untested')`,
+          })
+          .from(runResults)
+          .where(inArray(runResults.runId, recentRunIds))
+          .groupBy(runResults.runId);
+
+  const countsByRun = new Map(
+    runResultCounts.map((row) => [
+      row.runId,
+      {
+        passed: Number(row.passed ?? 0),
+        failed: Number(row.failed ?? 0),
+        untested: Number(row.untested ?? 0),
+      },
+    ]),
+  );
 
   const flakeSuspects = await countFlakeSuspects();
   const openLinked = await db
@@ -97,6 +123,20 @@ export async function getHubPulse() {
     flakeSuspects,
   });
 
+  const recentRunsWithCounts = recentRuns.map((run) => {
+    const counts = countsByRun.get(run.id) ?? {
+      passed: 0,
+      failed: 0,
+      untested: 0,
+    };
+    return {
+      ...run,
+      passed: counts.passed,
+      failed: counts.failed,
+      untested: counts.untested,
+    };
+  });
+
   return {
     cases: {
       total: Number(caseStats?.total ?? 0),
@@ -118,7 +158,8 @@ export async function getHubPulse() {
       passRate,
     },
     folders: Number(folderCount[0]?.value ?? 0),
-    recentRuns,
+    recentRuns: recentRunsWithCounts.slice(0, 5),
+    runTrend: recentRunsWithCounts,
     quality,
     triageOpen: Number(triageStats?.open ?? 0),
     flakeSuspects,
