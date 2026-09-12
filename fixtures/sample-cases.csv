@@ -1,0 +1,3 @@
+key,title,description,preconditions,steps,expectedResult,priority,status,folder,tags
+TOP-20,CSV import lands cases,Imported via fixtures,,,1. Import CSV,Cases appear under folder,P2,ready,Import,csv;import
+TOP-21,Folder filter works,Filter chips,,,,1. Click folder chip,Table filters,P3,draft,Import,ui

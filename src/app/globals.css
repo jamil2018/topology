@@ -1,0 +1,42 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+:root {
+  --topo-paper: #f3efe6;
+  --topo-panel: #fffdf8;
+  --topo-ink: #1c2b24;
+  --topo-muted: #5d6b63;
+  --topo-line: #d7d0c2;
+  --topo-accent: #0f7a5f;
+  --topo-accent-soft: #d8eee5;
+  --topo-signal: #c45c26;
+  --background: var(--topo-paper);
+  --foreground: var(--topo-ink);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+}
+
+body {
+  color: var(--topo-ink);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+}
+
+.topology-shell {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(15, 122, 95, 0.14), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 38, 0.1), transparent 50%),
+    linear-gradient(180deg, #efe8da 0%, var(--topo-paper) 40%, #ebe4d6 100%);
+  background-attachment: fixed;
+}
+
+.topo-grid {
+  background-image:
+    linear-gradient(rgba(28, 43, 36, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(28, 43, 36, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
