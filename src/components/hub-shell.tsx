@@ -8,6 +8,7 @@ import { Button } from "@heroui/react";
 import { signOut } from "next-auth/react";
 import {
   BugIcon,
+  ChartLineIcon,
   CirclesFourIcon,
   GearIcon,
   ListChecksIcon,
@@ -22,6 +23,7 @@ const nav = [
   { href: "/", label: "Hub", hint: "Pulse", Icon: CirclesFourIcon },
   { href: "/cases", label: "Test Cases", hint: "Suites", Icon: ListChecksIcon },
   { href: "/runs", label: "Test Runs", hint: "Manual", Icon: PlayCircleIcon },
+  { href: "/reports", label: "Reports", hint: "Charts", Icon: ChartLineIcon },
   { href: "/triage", label: "Triage", hint: "Failures", Icon: BugIcon },
   { href: "/settings", label: "Settings", hint: "Account", Icon: GearIcon },
 ] as const;

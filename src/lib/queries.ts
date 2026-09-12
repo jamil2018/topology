@@ -19,6 +19,12 @@ import {
   triageItems,
 } from "@/db/schema";
 import { listRetestQueue } from "@/lib/issues";
+import {
+  buildReportKpis,
+  buildResultTimeline,
+  buildSuiteBreakdown,
+  failureRowsFromResults,
+} from "@/lib/report-stats";
 
 export async function getHubPulse() {
   const [caseStats] = await db
@@ -416,6 +422,187 @@ export async function getFlakeHints(limit = 20) {
   }
 
   return hints.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+/** One report per run — list summaries for the Reports surface. */
+export async function listRunReports() {
+  const allRuns = await db.query.runs.findMany({
+    orderBy: [desc(runs.updatedAt)],
+    limit: 100,
+  });
+  if (allRuns.length === 0) return [];
+
+  const ids = allRuns.map((r) => r.id);
+  const counts = await db
+    .select({
+      runId: runResults.runId,
+      passed: sql<number>`count(*) filter (where ${runResults.status} = 'passed')`,
+      failed: sql<number>`count(*) filter (where ${runResults.status} = 'failed')`,
+      skipped: sql<number>`count(*) filter (where ${runResults.status} = 'skipped')`,
+      blocked: sql<number>`count(*) filter (where ${runResults.status} = 'blocked')`,
+      untested: sql<number>`count(*) filter (where ${runResults.status} = 'untested')`,
+      total: count(),
+      durationMs: sql<number>`coalesce(sum(${runResults.durationMs}), 0)`,
+    })
+    .from(runResults)
+    .where(inArray(runResults.runId, ids))
+    .groupBy(runResults.runId);
+
+  const byRun = new Map(
+    counts.map((row) => [
+      row.runId,
+      {
+        passed: Number(row.passed ?? 0),
+        failed: Number(row.failed ?? 0),
+        skipped: Number(row.skipped ?? 0),
+        blocked: Number(row.blocked ?? 0),
+        untested: Number(row.untested ?? 0),
+        total: Number(row.total ?? 0),
+        durationMs: Number(row.durationMs ?? 0) || null,
+      },
+    ]),
+  );
+
+  return allRuns.map((run) => {
+    const c = byRun.get(run.id) ?? {
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      blocked: 0,
+      untested: 0,
+      total: 0,
+      durationMs: null as number | null,
+    };
+    const wall =
+      run.startedAt && run.completedAt
+        ? Math.max(
+            0,
+            new Date(run.completedAt).getTime() -
+              new Date(run.startedAt).getTime(),
+          )
+        : null;
+    const executed = c.passed + c.failed;
+    return {
+      runId: run.id,
+      name: run.name,
+      status: run.status,
+      kind: run.kind,
+      source: run.source,
+      environment: run.environment,
+      branch: run.branch,
+      commitSha: run.commitSha,
+      startedAt: run.startedAt,
+      completedAt: run.completedAt,
+      updatedAt: run.updatedAt,
+      createdAt: run.createdAt,
+      passed: c.passed,
+      failed: c.failed,
+      skipped: c.skipped,
+      blocked: c.blocked,
+      untested: c.untested,
+      total: c.total,
+      passRate:
+        executed === 0 ? null : Math.round((c.passed / executed) * 100),
+      durationMs: wall ?? c.durationMs,
+    };
+  });
+}
+
+/** Full report for a single run (manual or CI). */
+export async function getRunReport(runId: string) {
+  const run = await db.query.runs.findFirst({
+    where: eq(runs.id, runId),
+    with: {
+      results: {
+        with: {
+          case: { with: { folder: true } },
+          linkedIssues: true,
+        },
+      },
+    },
+  });
+  if (!run) return null;
+
+  const resultInputs = run.results.map((r) => ({
+    id: r.id,
+    status: r.status,
+    notes: r.notes,
+    durationMs: r.durationMs,
+    executedAt: r.executedAt,
+    createdAt: r.createdAt,
+    classname: r.classname,
+    title: r.title,
+    externalKey: r.externalKey,
+    caseId: r.caseId,
+    case: r.case
+      ? {
+          id: r.case.id,
+          key: r.case.key,
+          title: r.case.title,
+          priority: r.case.priority,
+          folder: r.case.folder
+            ? { id: r.case.folder.id, name: r.case.folder.name }
+            : null,
+        }
+      : null,
+  }));
+
+  const failedCaseIds = [
+    ...new Set(
+      resultInputs
+        .filter((r) => r.status === "failed" || r.status === "blocked")
+        .map((r) => r.case?.id ?? r.caseId)
+        .filter(Boolean) as string[],
+    ),
+  ];
+  const flakeByCaseId = await getFlakeHintsForCaseIds(failedCaseIds);
+  const flakeMap = new Map(
+    [...flakeByCaseId.entries()].map(([id, signal]) => [
+      id,
+      { isFlaky: signal.isFlaky, hint: signal.hint },
+    ]),
+  );
+  const flakeCount = [...flakeMap.values()].filter((f) => f.isFlaky).length;
+
+  const kpis = buildReportKpis(resultInputs, {
+    flake: flakeCount,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
+  });
+
+  const recentPeerRuns = await listRunReports();
+  const trend = recentPeerRuns
+    .slice(0, 12)
+    .map((r) => ({
+      id: r.runId,
+      name: r.name,
+      passed: r.passed,
+      failed: r.failed,
+      isCurrent: r.runId === runId,
+    }));
+
+  return {
+    run: {
+      id: run.id,
+      name: run.name,
+      description: run.description,
+      status: run.status,
+      kind: run.kind,
+      source: run.source,
+      environment: run.environment,
+      branch: run.branch,
+      commitSha: run.commitSha,
+      startedAt: run.startedAt,
+      completedAt: run.completedAt,
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+    },
+    kpis,
+    suiteBreakdown: buildSuiteBreakdown(resultInputs),
+    timeline: buildResultTimeline(resultInputs),
+    failures: failureRowsFromResults(resultInputs, flakeMap),
+    trend,
+  };
 }
 
 export { and, eq, sql };

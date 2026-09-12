@@ -238,6 +238,12 @@ export function HubPulse({
               Test Runs
             </Link>
             <Link
+              href="/reports"
+              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+            >
+              Reports
+            </Link>
+            <Link
               href="/triage"
               className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
             >
