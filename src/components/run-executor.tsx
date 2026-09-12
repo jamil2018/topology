@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@heroui/react";
@@ -170,6 +171,12 @@ export function RunExecutor({ run }: { run: RunDetail }) {
                 Complete
               </Button>
             ) : null}
+            <Link
+              href={`/reports/${run.id}`}
+              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+            >
+              View report
+            </Link>
           </>
         }
       />
