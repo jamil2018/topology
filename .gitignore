@@ -43,3 +43,6 @@ next-env.d.ts
 
 # local agent worktrees
 .worktrees/
+
+# playwright cli dumps
+.playwright-cli/
