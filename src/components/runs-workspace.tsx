@@ -28,7 +28,6 @@ import {
 import {
   filterAndSortRuns,
   paginateRuns,
-  RUN_LIST_CONTROLS_THRESHOLD,
   RUN_LIST_PAGE_SIZE,
   type RunListSort,
 } from "@/lib/run-list";
@@ -76,7 +75,6 @@ export function RunsWorkspace({
     () => new Set(defaultReadySelection(cases)),
   );
 
-  const showRunListControls = initialRuns.length > RUN_LIST_CONTROLS_THRESHOLD;
   const [runSearch, setRunSearch] = useState("");
   const [runSort, setRunSort] = useState<RunListSort>("updated");
   const [runPage, setRunPage] = useState(1);
@@ -93,24 +91,13 @@ export function RunsWorkspace({
   );
 
   const filteredRuns = useMemo(
-    () =>
-      showRunListControls
-        ? filterAndSortRuns(initialRuns, runSearch, runSort)
-        : initialRuns,
-    [initialRuns, runSearch, runSort, showRunListControls],
+    () => filterAndSortRuns(initialRuns, runSearch, runSort),
+    [initialRuns, runSearch, runSort],
   );
 
   const runPageData = useMemo(
-    () =>
-      showRunListControls
-        ? paginateRuns(filteredRuns, runPage, RUN_LIST_PAGE_SIZE)
-        : {
-            page: 1,
-            totalPages: 1,
-            total: filteredRuns.length,
-            items: filteredRuns,
-          },
-    [filteredRuns, runPage, showRunListControls],
+    () => paginateRuns(filteredRuns, runPage, RUN_LIST_PAGE_SIZE),
+    [filteredRuns, runPage],
   );
 
   const visibleIds = visible.map((c) => c.id);
@@ -118,18 +105,7 @@ export function RunsWorkspace({
   const readyCount = cases.filter((c) => c.status === "ready").length;
   /** Collapse create form when runs already exist; expand on empty for first-run UX. */
   const startRunDefaultExpanded = initialRuns.length === 0;
-
-  function selectAllVisible() {
-    setSelectedIds((prev) => {
-      const copy = new Set(prev);
-      for (const id of visibleIds) copy.add(id);
-      return copy;
-    });
-  }
-
-  function clearSelection() {
-    setSelectedIds(new Set());
-  }
+  const showRunListPagination = runPageData.total > RUN_LIST_PAGE_SIZE;
 
   function resetToReady() {
     setStatus("ready");
@@ -259,8 +235,6 @@ export function RunsWorkspace({
               onTagChange={setTag}
               onSortChange={setSort}
               onSelectionChange={handlePickerSelectionChange}
-              onSelectAllVisible={selectAllVisible}
-              onClearSelection={clearSelection}
               onResetToReady={resetToReady}
             />
 
@@ -279,7 +253,7 @@ export function RunsWorkspace({
       </Disclosure>
 
       <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
-        {showRunListControls ? (
+        {initialRuns.length > 0 ? (
           <div className="flex flex-col gap-2 border-b border-[color:var(--topo-line)] p-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2">
             <TextField name="run-list-search" className="min-w-0 flex-1">
               <Label className="sr-only">Search runs</Label>
@@ -314,7 +288,7 @@ export function RunsWorkspace({
                 }}
               >
                 <Select.Trigger className="h-9 min-h-9 py-0 md:h-8 md:min-h-8">
-                  <Select.Value />
+                  <Select.Value className="text-center" />
                   <Select.Indicator />
                 </Select.Trigger>
                 <Select.Popover>
@@ -371,7 +345,7 @@ export function RunsWorkspace({
           </ul>
         )}
 
-        {showRunListControls && runPageData.total > RUN_LIST_PAGE_SIZE ? (
+        {showRunListPagination ? (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--topo-line)] px-2.5 py-2">
             <p className="text-xs text-[color:var(--topo-muted)]">
               {runRangeStart}–{runRangeEnd} of {runPageData.total}
