@@ -14,8 +14,10 @@ Self-hosted test case management with a Linear-like operating hub.
 ## Quick start
 
 ```bash
-# 1. Start Postgres
+# 1. Start Postgres (Docker / Colima)
 docker compose up -d
+# If the compose plugin is missing:
+# docker run -d --name topology-postgres -e POSTGRES_USER=topology -e POSTGRES_PASSWORD=topology -e POSTGRES_DB=topology -p 54329:5432 -v topology_pgdata:/var/lib/postgresql/data postgres:16-alpine
 
 # 2. Install + migrate + seed
 cp .env.example .env.local   # if needed
