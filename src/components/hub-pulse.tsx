@@ -97,6 +97,7 @@ function PassFailGraph({
     1,
     ...bars.map((run) => (run.passed ?? 0) + (run.failed ?? 0)),
   );
+  const chartHeight = 112;
 
   if (bars.length === 0) {
     return (
@@ -125,7 +126,8 @@ function PassFailGraph({
         ) : null}
       </div>
       <div
-        className="flex h-28 items-end gap-1.5 sm:gap-2"
+        className="flex items-end gap-1.5 sm:gap-2"
+        style={{ height: chartHeight }}
         role="img"
         aria-label="Pass versus fail counts across recent runs"
       >
@@ -133,35 +135,41 @@ function PassFailGraph({
           const passed = run.passed ?? 0;
           const failed = run.failed ?? 0;
           const executed = passed + failed;
-          const heightPct =
-            executed === 0 ? 10 : Math.max(14, Math.round((executed / max) * 100));
+          const barPx =
+            executed === 0
+              ? 10
+              : Math.max(16, Math.round((executed / max) * (chartHeight - 18)));
           return (
             <Link
               key={run.id}
               href={`/runs/${run.id}`}
               title={`${run.name}: ${passed} pass · ${failed} fail`}
-              className="group flex min-w-0 flex-1 flex-col items-center gap-1"
+              className="group flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
             >
               <div
                 className="flex w-full max-w-10 flex-col-reverse overflow-hidden rounded-sm border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] transition group-hover:border-[color:var(--topo-accent)]/40"
-                style={{ height: `${heightPct}%` }}
+                style={{ height: barPx }}
               >
                 {executed === 0 ? (
                   <div className="h-full w-full bg-[color:var(--topo-chip)]" />
                 ) : (
                   <>
-                    <div
-                      className="w-full bg-emerald-500/80"
-                      style={{ flex: Math.max(passed, 0.001) }}
-                    />
-                    <div
-                      className="w-full bg-red-500/80"
-                      style={{ flex: Math.max(failed, 0.001) }}
-                    />
+                    {passed > 0 ? (
+                      <div
+                        className="w-full min-h-[3px] bg-emerald-500/85"
+                        style={{ flex: passed }}
+                      />
+                    ) : null}
+                    {failed > 0 ? (
+                      <div
+                        className="w-full min-h-[3px] bg-red-500/85"
+                        style={{ flex: failed }}
+                      />
+                    ) : null}
                   </>
                 )}
               </div>
-              <span className="w-full truncate text-center font-mono text-[9px] text-[color:var(--topo-muted)] group-hover:text-[color:var(--topo-accent)]">
+              <span className="w-full truncate text-center font-mono text-[9px] leading-none text-[color:var(--topo-muted)] group-hover:text-[color:var(--topo-accent)]">
                 {run.name.slice(0, 6)}
               </span>
             </Link>
