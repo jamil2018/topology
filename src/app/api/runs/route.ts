@@ -6,6 +6,11 @@ import { db } from "@/db";
 import { cases, runResults, runs } from "@/db/schema";
 import { listRuns } from "@/lib/queries";
 
+/** Create a manual run.
+ * `caseIds`: explicit cases to attach as untested results.
+ * Omit / empty array → attach every case with status `ready` (legacy default).
+ * The hub UI always sends an explicit non-empty selection.
+ */
 const createRunSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().optional().default(""),

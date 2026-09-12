@@ -2,13 +2,17 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
 import { RunsWorkspace } from "@/components/runs-workspace";
-import { listRuns } from "@/lib/queries";
+import { listCases, listFolders, listRuns } from "@/lib/queries";
 
 export default async function RunsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const runs = await listRuns("manual");
+  const [runs, cases, folders] = await Promise.all([
+    listRuns("manual"),
+    listCases(),
+    listFolders(),
+  ]);
 
   return (
     <HubShell userEmail={session.user.email}>
@@ -20,6 +24,20 @@ export default async function RunsPage() {
           environment: r.environment,
           updatedAt: r.updatedAt,
         }))}
+        cases={cases.map((c) => ({
+          id: c.id,
+          key: c.key,
+          title: c.title,
+          priority: c.priority,
+          status: c.status,
+          tags: c.tags ?? [],
+          folder: c.folder
+            ? { id: c.folder.id, name: c.folder.name }
+            : null,
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+        }))}
+        folders={folders.map((f) => ({ id: f.id, name: f.name }))}
       />
     </HubShell>
   );
