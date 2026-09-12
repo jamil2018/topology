@@ -10,8 +10,6 @@ export type RunListItem = {
 export type RunListSort = "updated" | "created" | "name" | "status";
 
 export const RUN_LIST_PAGE_SIZE = 10;
-/** Show search / sort / pagination only once the list exceeds this count. */
-export const RUN_LIST_CONTROLS_THRESHOLD = 10;
 
 function toTime(value: string | Date | undefined): number {
   if (!value) return 0;

@@ -58,8 +58,6 @@ export function RunCasePickerTable({
   onTagChange,
   onSortChange,
   onSelectionChange,
-  onSelectAllVisible,
-  onClearSelection,
   onResetToReady,
 }: {
   visible: PickerCase[];
@@ -79,14 +77,10 @@ export function RunCasePickerTable({
   onTagChange: (value: string) => void;
   onSortChange: (value: CasePickerSort) => void;
   onSelectionChange: (keys: Selection) => void;
-  onSelectAllVisible: () => void;
-  onClearSelection: () => void;
   onResetToReady: () => void;
 }) {
   const visibleIds = useMemo(() => visible.map((c) => c.id), [visible]);
   const selectedCount = selectedIds.size;
-  const allVisibleSelected =
-    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
 
   const tableSelectedKeys = useMemo<Selection>(() => {
     if (visibleIds.length === 0) return new Set();
@@ -262,7 +256,7 @@ export function RunCasePickerTable({
               }}
             >
               <Select.Trigger className="h-9 min-h-9 py-0 md:h-8 md:min-h-8">
-                <Select.Value />
+                <Select.Value className="text-center" />
                 <Select.Indicator />
               </Select.Trigger>
               <Select.Popover>
@@ -279,31 +273,10 @@ export function RunCasePickerTable({
           </div>
 
           <div
-            className="hidden h-4 w-px shrink-0 bg-[color:var(--topo-line)] sm:block"
-            aria-hidden
-          />
-
-          <div
-            className="flex flex-wrap items-center gap-1.5"
+            className="ml-auto flex flex-wrap items-center justify-end gap-1.5"
             role="group"
             aria-label="Case selection"
           >
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={visibleIds.length === 0 || allVisibleSelected}
-              onPress={onSelectAllVisible}
-            >
-              Select all visible
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={selectedCount === 0}
-              onPress={onClearSelection}
-            >
-              Clear
-            </Button>
             <Button size="sm" variant="tertiary" onPress={onResetToReady}>
               Reset to all ready
             </Button>
