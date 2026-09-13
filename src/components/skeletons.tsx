@@ -178,7 +178,7 @@ export function ShellLoadingFrame({
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1200px] flex-1 px-3 py-4 sm:px-5 sm:py-5 lg:px-6">
+        <main className="w-full flex-1 px-3 py-4 sm:px-5 sm:py-5 lg:px-6">
           {children}
         </main>
       </div>
