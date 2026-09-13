@@ -46,22 +46,13 @@ export function LoginForm({
 
   return (
     <motion.div
-      initial={reduceMotion ? false : { opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+      initial={reduceMotion ? false : { y: 12 }}
+      animate={{ y: 0 }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       className="w-full max-w-[26rem] space-y-8"
     >
       <header className="space-y-4">
-        <motion.div
-          initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{
-            duration: 0.5,
-            delay: reduceMotion ? 0 : 0.04,
-            ease: [0.16, 1, 0.3, 1],
-          }}
-          className="flex items-center gap-3"
-        >
+        <div className="flex items-center gap-3">
           <Image
             src="/brand/mark.png"
             alt=""
@@ -73,31 +64,13 @@ export function LoginForm({
           <h1 className="text-[2.65rem] leading-[1.05] font-semibold tracking-[-0.04em] text-[color:var(--topo-ink)] sm:text-5xl">
             Topology
           </h1>
-        </motion.div>
-        <motion.p
-          initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{
-            duration: 0.45,
-            delay: reduceMotion ? 0 : 0.1,
-            ease: [0.16, 1, 0.3, 1],
-          }}
-          className="max-w-[34ch] text-[0.95rem] leading-relaxed text-[color:var(--topo-muted)]"
-        >
+        </div>
+        <p className="max-w-[34ch] text-[0.95rem] leading-relaxed text-[color:var(--topo-muted)]">
           {supportLine}
-        </motion.p>
+        </p>
       </header>
 
-      <motion.div
-        initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{
-          duration: 0.45,
-          delay: reduceMotion ? 0 : 0.16,
-          ease: [0.16, 1, 0.3, 1],
-        }}
-        className="space-y-4"
-      >
+      <div className="space-y-4">
         {oauthAvailable ? (
           <div className="space-y-2">
             {oauth.github ? (
@@ -204,7 +177,7 @@ export function LoginForm({
             Local demo still works: demo@topology.local / topology-demo
           </p>
         ) : null}
-      </motion.div>
+      </div>
     </motion.div>
   );
 }
