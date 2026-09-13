@@ -147,11 +147,11 @@ export function ShellLoadingFrame({
 }) {
   return (
     <div
-      className="topology-shell flex min-h-[100dvh]"
+      className="topology-shell flex min-h-[100dvh] bg-[color:var(--topo-paper)]"
       aria-busy="true"
       aria-label={label}
     >
-      <aside className="sticky top-0 z-30 hidden h-[100dvh] w-56 shrink-0 border-r border-[color:var(--topo-line)] bg-[color:var(--topo-sidebar)] lg:block xl:w-60">
+      <aside className="sticky top-0 z-30 hidden h-[100dvh] w-56 shrink-0 lg:block xl:w-60">
         <div className="flex h-full flex-col gap-3 px-3 py-4">
           <div className="flex items-center gap-2 px-1">
             <Bone className="h-7 w-7 rounded-md" />
@@ -169,18 +169,28 @@ export function ShellLoadingFrame({
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]/90 px-3 backdrop-blur-md lg:hidden">
-          <Bone className="h-8 w-8 shrink-0" />
-          <Bone className="h-3 w-20" />
-          <div className="ml-auto">
-            <Bone className="h-7 w-12 rounded-full" />
-          </div>
-        </header>
+      <div className="flex min-w-0 flex-1 p-2 pl-1 sm:p-2.5 sm:pl-1.5 lg:p-3 lg:pl-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+          <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[color:var(--topo-line)] px-2.5 sm:px-3 lg:hidden">
+            <Bone className="h-8 w-8 shrink-0" />
+            <Bone className="h-3 w-20" />
+            <div className="ml-auto">
+              <Bone className="h-7 w-12 rounded-full" />
+            </div>
+          </header>
+          <header className="hidden h-12 shrink-0 items-center gap-3 border-b border-[color:var(--topo-line)] px-2.5 sm:px-3 lg:flex">
+            <Bone className="h-8 w-8 shrink-0" />
+            <Bone className="h-3 w-24" />
+            <Bone className="h-3 w-16" />
+            <div className="ml-auto">
+              <Bone className="h-8 w-8 shrink-0" />
+            </div>
+          </header>
 
-        <main className="w-full flex-1 px-3 py-4 sm:px-5 sm:py-5 lg:px-6">
-          {children}
-        </main>
+          <main className="w-full max-w-none flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-5">
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   );
