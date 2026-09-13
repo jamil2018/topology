@@ -11,6 +11,7 @@ import { WebhooksPanel } from "./webhooks-panel";
 import { useTheme, type ThemePreference } from "./theme-provider";
 import { StatusChip } from "./status-chip";
 import { WorkspaceMembersPanel } from "./workspace-members-panel";
+import { CustomRolesPanel } from "./custom-roles-panel";
 import { ProjectsPanel } from "./projects-panel";
 import {
   SETTINGS_NAV,
@@ -26,24 +27,6 @@ type ProfileState = {
   email: string;
   hasPassword: boolean;
 };
-
-const BUILTIN_ROLES = [
-  {
-    id: "admin",
-    label: "Admin",
-    summary: "Invite and manage members, projects, and workspace settings.",
-  },
-  {
-    id: "member",
-    label: "Member",
-    summary: "Create and edit cases, runs, and other project content.",
-  },
-  {
-    id: "viewer",
-    label: "Viewer",
-    summary: "Read-only access across the active project.",
-  },
-] as const;
 
 export function SettingsWorkspace({
   defaultUrl,
@@ -421,39 +404,11 @@ export function SettingsWorkspace({
                     Roles
                   </h2>
                   <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
-                    Built-in roles control invite, write, and read access. Custom
-                    roles can extend this section without changing the Access nav.
+                    System and custom roles are action allow-lists enforced on
+                    the server. Assign roles to members above.
                   </p>
                 </div>
-                <ul className="divide-y divide-[color:var(--topo-line)] rounded-md border border-[color:var(--topo-line)]">
-                  {BUILTIN_ROLES.map((role) => (
-                    <li
-                      key={role.id}
-                      className="flex flex-wrap items-start justify-between gap-2 px-3 py-2.5"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-[color:var(--topo-ink)]">
-                          {role.label}
-                        </div>
-                        <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
-                          {role.summary}
-                        </p>
-                      </div>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
-                        {role.id}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <div
-                  id="custom-roles"
-                  className="rounded-md border border-dashed border-[color:var(--topo-line)] bg-[color:var(--topo-surface)]/60 px-3 py-3"
-                >
-                  <p className="text-xs text-[color:var(--topo-muted)]">
-                    Custom role permissions will appear here when enabled for this
-                    workspace.
-                  </p>
-                </div>
+                <CustomRolesPanel />
               </section>
             </>
           ) : null}

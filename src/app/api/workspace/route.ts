@@ -9,22 +9,34 @@ import {
   workspaceInvites,
   workspaceMembers,
 } from "@/db/schema";
-import { requireProjectAccess } from "@/lib/project";
+import { findActiveRole, getSystemRole } from "@/lib/custom-roles";
+import { inferLegacyRole } from "@/lib/permissions";
 import {
-  canAdmin,
-  canWrite,
-  ensureMembership,
-} from "@/lib/workspace";
+  ctxCanAdmin,
+  ctxCanWrite,
+  requireProjectAccess,
+} from "@/lib/project";
+import { ensureMembership } from "@/lib/workspace";
 
-const inviteSchema = z.object({
-  email: z.string().email(),
-  role: z.enum(["admin", "member", "viewer"]).default("member"),
-});
+const inviteSchema = z
+  .object({
+    email: z.string().email(),
+    role: z.enum(["admin", "member", "viewer"]).optional(),
+    roleId: z.string().uuid().optional(),
+  })
+  .refine((v) => Boolean(v.role || v.roleId), {
+    message: "role or roleId required",
+  });
 
-const roleSchema = z.object({
-  userId: z.string().uuid(),
-  role: z.enum(["admin", "member", "viewer"]),
-});
+const roleSchema = z
+  .object({
+    userId: z.string().uuid(),
+    role: z.enum(["admin", "member", "viewer"]).optional(),
+    roleId: z.string().uuid().optional(),
+  })
+  .refine((v) => Boolean(v.role || v.roleId), {
+    message: "role or roleId required",
+  });
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -42,7 +54,7 @@ export async function GET(request: Request) {
 
   const members = await db.query.workspaceMembers.findMany({
     where: eq(workspaceMembers.workspaceId, workspace.id),
-    with: { user: true },
+    with: { user: true, customRole: true },
     orderBy: [desc(workspaceMembers.createdAt)],
   });
 
@@ -51,6 +63,7 @@ export async function GET(request: Request) {
       eq(workspaceInvites.workspaceId, workspace.id),
       eq(workspaceInvites.status, "pending"),
     ),
+    with: { customRole: true },
     orderBy: [desc(workspaceInvites.createdAt)],
   });
 
@@ -59,12 +72,23 @@ export async function GET(request: Request) {
     me: {
       userId: session.user.id,
       role: membership.role,
-      canAdmin: canAdmin(membership.role),
-      canWrite: canWrite(membership.role),
+      roleId: membership.customRoleId,
+      canAdmin: ctxCanAdmin(access.ctx),
+      canWrite: ctxCanWrite(access.ctx),
+      actions: access.ctx.actions,
     },
     members: members.map((m) => ({
       id: m.id,
       role: m.role,
+      roleId: m.customRoleId,
+      customRole: m.customRole
+        ? {
+            id: m.customRole.id,
+            name: m.customRole.name,
+            isSystem: m.customRole.isSystem,
+            systemKey: m.customRole.systemKey,
+          }
+        : null,
       user: {
         id: m.user.id,
         name: m.user.name,
@@ -77,6 +101,10 @@ export async function GET(request: Request) {
       id: i.id,
       email: i.email,
       role: i.role,
+      roleId: i.customRoleId,
+      customRole: i.customRole
+        ? { id: i.customRole.id, name: i.customRole.name }
+        : null,
       token: i.token,
       expiresAt: i.expiresAt,
       createdAt: i.createdAt,
@@ -93,7 +121,7 @@ export async function POST(request: Request) {
   await ensureMembership(session.user.id, "admin");
   const access = await requireProjectAccess(session.user.id, {
     request,
-    admin: true,
+    action: "members.invite",
   });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
@@ -109,6 +137,23 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  let customRole =
+    parsed.data.roleId != null
+      ? await findActiveRole(workspace.id, parsed.data.roleId)
+      : null;
+  if (parsed.data.roleId && !customRole) {
+    return NextResponse.json({ error: "Role not found" }, { status: 404 });
+  }
+  if (!customRole) {
+    customRole = await getSystemRole(
+      workspace.id,
+      parsed.data.role ?? "member",
+    );
+  }
+
+  const legacyRole =
+    customRole.systemKey ?? inferLegacyRole(customRole.actions);
 
   const email = parsed.data.email.toLowerCase();
   const existingUser = await db.query.users.findFirst({
@@ -136,7 +181,8 @@ export async function POST(request: Request) {
     .values({
       workspaceId: workspace.id,
       email,
-      role: parsed.data.role,
+      role: legacyRole,
+      customRoleId: customRole.id,
       token,
       invitedById: session.user.id,
       expiresAt,
@@ -152,6 +198,7 @@ export async function POST(request: Request) {
         id: invite.id,
         email: invite.email,
         role: invite.role,
+        roleId: invite.customRoleId,
         token: invite.token,
         expiresAt: invite.expiresAt,
         acceptUrl: `${base.replace(/\/$/, "")}/invite/${invite.token}`,
@@ -170,7 +217,7 @@ export async function PATCH(request: Request) {
   await ensureMembership(session.user.id, "admin");
   const access = await requireProjectAccess(session.user.id, {
     request,
-    admin: true,
+    action: "roles.manage",
   });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
@@ -187,7 +234,25 @@ export async function PATCH(request: Request) {
     );
   }
 
-  if (parsed.data.userId === session.user.id && parsed.data.role !== "admin") {
+  let customRole =
+    parsed.data.roleId != null
+      ? await findActiveRole(workspace.id, parsed.data.roleId)
+      : null;
+  if (parsed.data.roleId && !customRole) {
+    return NextResponse.json({ error: "Role not found" }, { status: 404 });
+  }
+  if (!customRole) {
+    customRole = await getSystemRole(workspace.id, parsed.data.role!);
+  }
+
+  const legacyRole =
+    customRole.systemKey ?? inferLegacyRole(customRole.actions);
+
+  if (
+    parsed.data.userId === session.user.id &&
+    legacyRole !== "admin" &&
+    !customRole.actions.includes("roles.manage")
+  ) {
     return NextResponse.json(
       { error: "Cannot demote yourself" },
       { status: 400 },
@@ -196,7 +261,7 @@ export async function PATCH(request: Request) {
 
   const [updated] = await db
     .update(workspaceMembers)
-    .set({ role: parsed.data.role })
+    .set({ role: legacyRole, customRoleId: customRole.id })
     .where(
       and(
         eq(workspaceMembers.workspaceId, workspace.id),
@@ -209,5 +274,10 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ member: updated });
+  return NextResponse.json({
+    member: {
+      ...updated,
+      roleId: updated.customRoleId,
+    },
+  });
 }

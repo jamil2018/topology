@@ -5,9 +5,20 @@ import {
   workspaceMembers,
   workspaces,
   type Workspace,
+  type WorkspaceCustomRole,
   type WorkspaceMember,
   type WorkspaceRole,
 } from "@/db/schema";
+import { ensureSystemRoles, getSystemRole } from "@/lib/custom-roles";
+import {
+  SYSTEM_ROLE_ACTIONS,
+  actionsAllowAdmin,
+  actionsAllowWrite,
+  denyMessage,
+  normalizeActions,
+  roleHasAction,
+  type Action,
+} from "@/lib/permissions";
 import {
   canAdmin,
   canWrite,
@@ -27,10 +38,17 @@ export type ProjectSummary = {
   role: WorkspaceRole;
 };
 
+export type MembershipWithRole = WorkspaceMember & {
+  customRole?: WorkspaceCustomRole | null;
+  workspace?: Workspace | null;
+  user?: unknown;
+};
+
 export type ActiveProjectContext = {
   project: Workspace;
-  membership: WorkspaceMember;
+  membership: MembershipWithRole;
   projects: ProjectSummary[];
+  actions: Action[];
 };
 
 function toSummary(
@@ -44,6 +62,26 @@ function toSummary(
     archivedAt: workspace.archivedAt,
     role,
   };
+}
+
+/** Resolve effective actions for a membership (custom role or legacy enum). */
+export function membershipActions(membership: MembershipWithRole): Action[] {
+  if (membership.customRole?.actions?.length) {
+    return normalizeActions(membership.customRole.actions);
+  }
+  return [...SYSTEM_ROLE_ACTIONS[membership.role]];
+}
+
+export function ctxHasAction(ctx: ActiveProjectContext, action: Action) {
+  return roleHasAction(ctx.actions, action);
+}
+
+export function ctxCanWrite(ctx: ActiveProjectContext) {
+  return actionsAllowWrite(ctx.actions) || canWrite(ctx.membership.role);
+}
+
+export function ctxCanAdmin(ctx: ActiveProjectContext) {
+  return actionsAllowAdmin(ctx.actions) || canAdmin(ctx.membership.role);
 }
 
 export async function listUserProjects(
@@ -74,7 +112,7 @@ export async function getMembershipForProject(
       eq(workspaceMembers.workspaceId, projectId),
       eq(workspaceMembers.userId, userId),
     ),
-    with: { workspace: true, user: true },
+    with: { workspace: true, user: true, customRole: true },
   });
 }
 
@@ -90,6 +128,19 @@ export async function readPreferredProjectId(
   } catch {
     return null;
   }
+}
+
+function withActions(
+  project: Workspace,
+  membership: MembershipWithRole,
+  projects: ProjectSummary[],
+): ActiveProjectContext {
+  return {
+    project,
+    membership,
+    projects,
+    actions: membershipActions(membership),
+  };
 }
 
 /**
@@ -114,11 +165,27 @@ export async function resolveActiveProject(
   const membership = await getMembershipForProject(userId, pick.id);
   if (!membership?.workspace) return null;
 
-  return {
-    project: membership.workspace,
-    membership,
-    projects,
-  };
+  return withActions(membership.workspace, membership, projects);
+}
+
+function checkAccessOptions(
+  ctx: ActiveProjectContext,
+  options?: {
+    write?: boolean;
+    admin?: boolean;
+    action?: Action;
+  },
+): { ok: true } | { ok: false; status: number; error: string } {
+  if (options?.action && !ctxHasAction(ctx, options.action)) {
+    return { ok: false, status: 403, error: denyMessage(options.action) };
+  }
+  if (options?.admin && !ctxCanAdmin(ctx)) {
+    return { ok: false, status: 403, error: "Admin role required" };
+  }
+  if (options?.write && !ctxCanWrite(ctx)) {
+    return { ok: false, status: 403, error: "Write access required" };
+  }
+  return { ok: true };
 }
 
 export async function requireProjectAccess(
@@ -128,6 +195,8 @@ export async function requireProjectAccess(
     request?: Request | null;
     write?: boolean;
     admin?: boolean;
+    /** Fine-grained action check (preferred over write/admin when known). */
+    action?: Action;
     /** Allow resolving an archived project (admin manage flows). */
     allowArchived?: boolean;
   },
@@ -144,17 +213,9 @@ export async function requireProjectAccess(
       const projects = await listUserProjects(userId, {
         includeArchived: true,
       });
-      const ctx: ActiveProjectContext = {
-        project: membership.workspace,
-        membership,
-        projects,
-      };
-      if (options.admin && !canAdmin(ctx.membership.role)) {
-        return { ok: false, status: 403, error: "Admin role required" };
-      }
-      if (options.write && !canWrite(ctx.membership.role)) {
-        return { ok: false, status: 403, error: "Write access required" };
-      }
+      const ctx = withActions(membership.workspace, membership, projects);
+      const gate = checkAccessOptions(ctx, options);
+      if (!gate.ok) return gate;
       return { ok: true, ctx };
     }
   }
@@ -166,12 +227,8 @@ export async function requireProjectAccess(
   if (ctx.project.archivedAt && !options?.allowArchived) {
     return { ok: false, status: 403, error: "Project is archived" };
   }
-  if (options?.admin && !canAdmin(ctx.membership.role)) {
-    return { ok: false, status: 403, error: "Admin role required" };
-  }
-  if (options?.write && !canWrite(ctx.membership.role)) {
-    return { ok: false, status: 403, error: "Write access required" };
-  }
+  const gate = checkAccessOptions(ctx, options);
+  if (!gate.ok) return gate;
   return { ok: true, ctx };
 }
 
@@ -210,10 +267,14 @@ export async function createProject(input: {
     })
     .returning();
 
+  await ensureSystemRoles(project.id);
+  const adminRole = await getSystemRole(project.id, "admin");
+
   await db.insert(workspaceMembers).values({
     workspaceId: project.id,
     userId: input.creatorUserId,
     role: "admin",
+    customRoleId: adminRole.id,
   });
 
   return project;
@@ -248,11 +309,12 @@ export async function deleteProject(projectId: string) {
 
 export async function userIsProjectAdminAnywhere(userId: string) {
   const rows = await db.query.workspaceMembers.findMany({
-    where: and(
-      eq(workspaceMembers.userId, userId),
-      eq(workspaceMembers.role, "admin"),
-    ),
-    with: { workspace: true },
+    where: eq(workspaceMembers.userId, userId),
+    with: { workspace: true, customRole: true },
   });
-  return rows.some((r) => r.workspace && r.workspace.archivedAt == null);
+  return rows.some((r) => {
+    if (!r.workspace || r.workspace.archivedAt != null) return false;
+    const actions = membershipActions(r);
+    return actionsAllowAdmin(actions) || r.role === "admin";
+  });
 }

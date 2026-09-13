@@ -142,7 +142,7 @@ export async function PATCH(request: Request) {
 
   const access = await requireProjectAccess(session.user.id, {
     preferredId: parsed.data.id,
-    admin: true,
+    action: "project.manage",
     allowArchived: true,
   });
   if (!access.ok) {
@@ -183,7 +183,7 @@ export async function DELETE(request: Request) {
 
   const access = await requireProjectAccess(session.user.id, {
     preferredId: id,
-    admin: true,
+    action: "project.manage",
     allowArchived: true,
   });
   if (!access.ok) {

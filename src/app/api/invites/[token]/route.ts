@@ -76,6 +76,7 @@ export async function POST(_request: Request, { params }: Params) {
       workspaceId: invite.workspaceId,
       userId: session.user.id,
       role: invite.role,
+      customRoleId: invite.customRoleId,
     });
   }
 

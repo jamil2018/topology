@@ -26,7 +26,7 @@ export async function PATCH(request: Request, { params }: Params) {
 
   const access = await requireProjectAccess(session.user.id, {
     request,
-    write: true,
+    action: "folders.manage",
   });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
@@ -140,7 +140,7 @@ export async function DELETE(request: Request, { params }: Params) {
 
   const access = await requireProjectAccess(session.user.id, {
     request,
-    write: true,
+    action: "folders.manage",
   });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });

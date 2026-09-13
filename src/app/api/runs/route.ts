@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
   const access = await requireProjectAccess(session.user.id, {
     request,
-    write: true,
+    action: "runs.create",
   });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
