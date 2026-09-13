@@ -444,7 +444,7 @@ export function CasesWorkspace({
     <div className="space-y-4">
       <PageHeader
         eyebrow="Suites"
-        title="Cases"
+        title="Test Cases"
         description="Organize suites in folders, author cases, and import or export CSV."
         meta={
           <StatusChip mono>
