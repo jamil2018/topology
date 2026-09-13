@@ -6,6 +6,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
@@ -56,6 +57,18 @@ export const themePreferenceEnum = pgEnum("theme_preference", [
   "system",
   "light",
   "dark",
+]);
+
+export const workspaceRoleEnum = pgEnum("workspace_role", [
+  "admin",
+  "member",
+  "viewer",
+]);
+
+export const inviteStatusEnum = pgEnum("invite_status", [
+  "pending",
+  "accepted",
+  "revoked",
 ]);
 
 export const users = pgTable("users", {
@@ -111,6 +124,47 @@ export const verificationTokens = pgTable(
   (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })],
 );
 
+export const workspaces = pgTable("workspaces", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+export const workspaceMembers = pgTable(
+  "workspace_members",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: workspaceRoleEnum("role").default("member").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [unique().on(table.workspaceId, table.userId)],
+);
+
+export const workspaceInvites = pgTable("workspace_invites", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  role: workspaceRoleEnum("role").default("member").notNull(),
+  token: text("token").notNull().unique(),
+  status: inviteStatusEnum("status").default("pending").notNull(),
+  invitedById: uuid("invited_by_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  acceptedAt: timestamp("accepted_at", { mode: "date" }),
+});
+
 export const folders = pgTable("folders", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -136,6 +190,9 @@ export const cases = pgTable("cases", {
   createdById: uuid("created_by_id").references(() => users.id, {
     onDelete: "set null",
   }),
+  assigneeId: uuid("assignee_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
@@ -155,6 +212,9 @@ export const runs = pgTable("runs", {
   shardTotal: integer("shard_total").default(1).notNull(),
   shardsReceived: integer("shards_received").default(0).notNull(),
   createdById: uuid("created_by_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  assigneeId: uuid("assignee_id").references(() => users.id, {
     onDelete: "set null",
   }),
   startedAt: timestamp("started_at", { mode: "date" }),
@@ -180,7 +240,40 @@ export const runResults = pgTable("run_results", {
   executedById: uuid("executed_by_id").references(() => users.id, {
     onDelete: "set null",
   }),
+  assigneeId: uuid("assignee_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
   executedAt: timestamp("executed_at", { mode: "date" }),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+export const resultComments = pgTable("result_comments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  resultId: uuid("result_id")
+    .notNull()
+    .references(() => runResults.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+export const attachments = pgTable("attachments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  resultId: uuid("result_id").references(() => runResults.id, {
+    onDelete: "cascade",
+  }),
+  commentId: uuid("comment_id").references(() => resultComments.id, {
+    onDelete: "set null",
+  }),
+  filename: text("filename").notNull(),
+  contentType: text("content_type").default("application/octet-stream").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  storageKey: text("storage_key").notNull().unique(),
+  uploadedById: uuid("uploaded_by_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
 
@@ -284,11 +377,51 @@ export const linkedIssues = pgTable("linked_issues", {
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
   sessions: many(sessions),
-  cases: many(cases),
-  runs: many(runs),
+  authoredCases: many(cases, { relationName: "caseAuthor" }),
+  assignedCases: many(cases, { relationName: "caseAssignee" }),
+  authoredRuns: many(runs, { relationName: "runAuthor" }),
+  assignedRuns: many(runs, { relationName: "runAssignee" }),
+  executedResults: many(runResults, { relationName: "resultExecutor" }),
+  assignedResults: many(runResults, { relationName: "resultAssignee" }),
   linkedIssues: many(linkedIssues),
   apiTokens: many(apiTokens),
+  memberships: many(workspaceMembers),
+  comments: many(resultComments),
+  uploadedAttachments: many(attachments),
 }));
+
+export const workspacesRelations = relations(workspaces, ({ many }) => ({
+  members: many(workspaceMembers),
+  invites: many(workspaceInvites),
+}));
+
+export const workspaceMembersRelations = relations(
+  workspaceMembers,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [workspaceMembers.workspaceId],
+      references: [workspaces.id],
+    }),
+    user: one(users, {
+      fields: [workspaceMembers.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const workspaceInvitesRelations = relations(
+  workspaceInvites,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [workspaceInvites.workspaceId],
+      references: [workspaces.id],
+    }),
+    invitedBy: one(users, {
+      fields: [workspaceInvites.invitedById],
+      references: [users.id],
+    }),
+  }),
+);
 
 export const foldersRelations = relations(folders, ({ many, one }) => ({
   cases: many(cases),
@@ -306,6 +439,12 @@ export const casesRelations = relations(cases, ({ one, many }) => ({
   createdBy: one(users, {
     fields: [cases.createdById],
     references: [users.id],
+    relationName: "caseAuthor",
+  }),
+  assignee: one(users, {
+    fields: [cases.assigneeId],
+    references: [users.id],
+    relationName: "caseAssignee",
   }),
   results: many(runResults),
   linkedIssues: many(linkedIssues),
@@ -315,6 +454,12 @@ export const runsRelations = relations(runs, ({ one, many }) => ({
   createdBy: one(users, {
     fields: [runs.createdById],
     references: [users.id],
+    relationName: "runAuthor",
+  }),
+  assignee: one(users, {
+    fields: [runs.assigneeId],
+    references: [users.id],
+    relationName: "runAssignee",
   }),
   results: many(runResults),
   shards: many(runShards),
@@ -330,7 +475,49 @@ export const runResultsRelations = relations(runResults, ({ one, many }) => ({
     fields: [runResults.caseId],
     references: [cases.id],
   }),
+  executedBy: one(users, {
+    fields: [runResults.executedById],
+    references: [users.id],
+    relationName: "resultExecutor",
+  }),
+  assignee: one(users, {
+    fields: [runResults.assigneeId],
+    references: [users.id],
+    relationName: "resultAssignee",
+  }),
   linkedIssues: many(linkedIssues),
+  comments: many(resultComments),
+  attachments: many(attachments),
+}));
+
+export const resultCommentsRelations = relations(
+  resultComments,
+  ({ one, many }) => ({
+    result: one(runResults, {
+      fields: [resultComments.resultId],
+      references: [runResults.id],
+    }),
+    user: one(users, {
+      fields: [resultComments.userId],
+      references: [users.id],
+    }),
+    attachments: many(attachments),
+  }),
+);
+
+export const attachmentsRelations = relations(attachments, ({ one }) => ({
+  result: one(runResults, {
+    fields: [attachments.resultId],
+    references: [runResults.id],
+  }),
+  comment: one(resultComments, {
+    fields: [attachments.commentId],
+    references: [resultComments.id],
+  }),
+  uploadedBy: one(users, {
+    fields: [attachments.uploadedById],
+    references: [users.id],
+  }),
 }));
 
 export const runShardsRelations = relations(runShards, ({ one }) => ({
@@ -393,3 +580,9 @@ export type Milestone = typeof milestones.$inferSelect;
 export type TriageItem = typeof triageItems.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type LinkedIssue = typeof linkedIssues.$inferSelect;
+export type Workspace = typeof workspaces.$inferSelect;
+export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
+export type WorkspaceInvite = typeof workspaceInvites.$inferSelect;
+export type ResultComment = typeof resultComments.$inferSelect;
+export type Attachment = typeof attachments.$inferSelect;
+export type WorkspaceRole = (typeof workspaceRoleEnum.enumValues)[number];

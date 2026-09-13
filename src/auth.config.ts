@@ -13,8 +13,20 @@ export const authConfig = {
         pathname.startsWith("/login") || pathname.startsWith("/api/auth");
       const isCiApi = pathname.startsWith("/api/ci");
       const isAgentApi = pathname.startsWith("/api/agent");
+      const isHealth = pathname === "/api/health" || pathname === "/health";
+      const isInviteApi = pathname.startsWith("/api/invites/");
+      const isInvitePage = pathname.startsWith("/invite/");
 
-      if (isAuthRoute || isCiApi || isAgentApi) return true;
+      if (
+        isAuthRoute ||
+        isCiApi ||
+        isAgentApi ||
+        isHealth ||
+        isInviteApi ||
+        isInvitePage
+      ) {
+        return true;
+      }
       if (pathname.startsWith("/_next")) return true;
       return isLoggedIn;
     },

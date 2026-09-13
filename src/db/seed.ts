@@ -2,12 +2,14 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { hashToken } from "../lib/ci-auth";
+import { ensureMembership } from "../lib/workspace";
 import { db } from "./index";
 import {
   apiTokens,
   cases,
   folders,
   milestones,
+  resultComments,
   runResults,
   runs,
   users,
@@ -34,6 +36,8 @@ async function seed() {
             emailVerified: new Date(),
           })
           .returning();
+
+  await ensureMembership(user.id, "admin");
 
   const demoToken =
     process.env.TOPOLOGY_API_TOKEN ?? "topo_demo_token_local_dev_only";
@@ -98,6 +102,7 @@ async function seed() {
         folderId: smoke.id,
         tags: ["smoke", "ui"],
         createdById: user.id,
+        assigneeId: user.id,
       },
       {
         key: "TOP-2",
@@ -159,18 +164,35 @@ async function seed() {
       kind: "manual",
       environment: "local",
       createdById: user.id,
+      assigneeId: user.id,
     })
     .returning();
 
-  await db.insert(runResults).values(
-    seededCases.map((c) => ({
-      runId: run.id,
-      caseId: c.id,
-      status: "untested" as const,
-    })),
-  );
+  const results = await db
+    .insert(runResults)
+    .values(
+      seededCases.map((c, index) => ({
+        runId: run.id,
+        caseId: c.id,
+        status: index === 0 ? ("failed" as const) : ("untested" as const),
+        notes: index === 0 ? "Seeded failure for Create issue demo" : "",
+        assigneeId: user.id,
+      })),
+    )
+    .returning();
 
-  console.log(`Seeded ${seededCases.length} cases, 2 folders, 1 run, 1 milestone`);
+  const failed = results.find((r) => r.status === "failed");
+  if (failed) {
+    await db.insert(resultComments).values({
+      resultId: failed.id,
+      userId: user.id,
+      body: "Seeded comment — try Create issue from this failure on the 15-minute path.",
+    });
+  }
+
+  console.log(
+    `Seeded ${seededCases.length} cases, 2 folders, 1 run, 1 milestone, workspace admin`,
+  );
   console.log(`Demo login: ${email} / ${password}`);
   console.log(`CLI token: ${demoToken}`);
 }

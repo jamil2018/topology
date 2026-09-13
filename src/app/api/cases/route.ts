@@ -20,6 +20,7 @@ const createCaseSchema = z.object({
     .default("draft"),
   folderId: z.string().uuid().nullable().optional(),
   tags: z.array(z.string()).optional().default([]),
+  assigneeId: z.string().uuid().nullable().optional(),
 });
 
 export async function GET(request: Request) {

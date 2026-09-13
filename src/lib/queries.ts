@@ -239,9 +239,16 @@ export async function getRunWithResults(runId: string) {
     where: eq(runs.id, runId),
     with: {
       results: {
-        with: { case: true, linkedIssues: true },
+        with: {
+          case: true,
+          linkedIssues: true,
+          comments: { with: { user: true } },
+          attachments: true,
+          assignee: true,
+        },
       },
       linkedIssues: true,
+      assignee: true,
     },
   });
 }
