@@ -1,31 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import type { Selection } from "@heroui/react";
+import { useMemo, useState } from "react";
 import {
   Button,
-  Disclosure,
   Input,
   Label,
   ListBox,
   Select,
-  TextArea,
   TextField,
 } from "@heroui/react";
 import { motion } from "motion/react";
 import { PageHeader } from "./page-header";
-import { RunCasePickerTable } from "./run-case-picker-table";
 import { SavedViewsBar, type SavedViewRow } from "./saved-views-bar";
 import { StatusChip, statusToneForRun } from "./status-chip";
-import {
-  collectCaseTags,
-  defaultReadySelection,
-  visiblePickerCases,
-  type CasePickerSort,
-  type PickerCase,
-} from "@/lib/run-case-picker";
 import {
   filterAndSortRuns,
   paginateRuns,
@@ -43,8 +31,6 @@ type RunRow = {
   updatedAt: string | Date;
 };
 
-type Folder = { id: string; name: string };
-
 const runListSorts: { id: RunListSort; label: string }[] = [
   { id: "updated", label: "Updated" },
   { id: "created", label: "Created" },
@@ -54,56 +40,15 @@ const runListSorts: { id: RunListSort; label: string }[] = [
 
 export function RunsWorkspace({
   initialRuns,
-  cases,
-  folders,
   initialViews = [],
 }: {
   initialRuns: RunRow[];
-  cases: PickerCase[];
-  folders: Folder[];
   initialViews?: SavedViewRow[];
 }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [pending, startTransition] = useTransition();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<string>("ready");
-  const [priority, setPriority] = useState<string>("all");
-  const [folderId, setFolderId] = useState<string>("all");
-  const [tag, setTag] = useState<string>("all");
-  const [sort, setSort] = useState<CasePickerSort>("updated");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    () => new Set(defaultReadySelection(cases)),
-  );
-
   const [runSearch, setRunSearch] = useState("");
   const [runSort, setRunSort] = useState<RunListSort>("updated");
   const [runPage, setRunPage] = useState(1);
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
-  const forceNew = searchParams.get("new") === "1";
-  const [startExpanded, setStartExpanded] = useState(
-    () => forceNew || initialRuns.length === 0,
-  );
-  const [seenNewParam, setSeenNewParam] = useState(forceNew);
-  if (forceNew && !seenNewParam) {
-    setSeenNewParam(true);
-    if (!startExpanded) setStartExpanded(true);
-  }
-
-  const tags = useMemo(() => collectCaseTags(cases), [cases]);
-  const visible = useMemo(
-    () =>
-      visiblePickerCases(
-        cases,
-        { search, status, priority, folderId, tag },
-        sort,
-      ),
-    [cases, search, status, priority, folderId, tag, sort],
-  );
 
   const filteredRuns = useMemo(
     () => filterAndSortRuns(initialRuns, runSearch, runSort),
@@ -115,9 +60,6 @@ export function RunsWorkspace({
     [filteredRuns, runPage],
   );
 
-  const visibleIds = visible.map((c) => c.id);
-  const selectedCount = selectedIds.size;
-  const readyCount = cases.filter((c) => c.status === "ready").length;
   const showRunListPagination = runPageData.total > RUN_LIST_PAGE_SIZE;
 
   function applyRunView(view: SavedViewRow) {
@@ -126,56 +68,6 @@ export function RunsWorkspace({
     setRunSort(config.sort);
     setRunPage(1);
     setActiveViewId(view.id);
-  }
-
-  function resetToReady() {
-    setStatus("ready");
-    setPriority("all");
-    setFolderId("all");
-    setTag("all");
-    setSearch("");
-    setSelectedIds(new Set(defaultReadySelection(cases)));
-  }
-
-  /** Preserve selections outside the current filter while Table manages visible rows. */
-  function handlePickerSelectionChange(keys: Selection) {
-    const visibleSet = new Set(visibleIds);
-    setSelectedIds((prev) => {
-      const next = new Set([...prev].filter((id) => !visibleSet.has(id)));
-      if (keys === "all") {
-        for (const id of visibleIds) next.add(id);
-        return next;
-      }
-      for (const key of keys) next.add(String(key));
-      return next;
-    });
-  }
-
-  async function createRun() {
-    setError(null);
-    if (selectedIds.size === 0) {
-      setError("Select at least one case, or reset to all ready.");
-      return;
-    }
-    const res = await fetch("/api/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        description,
-        caseIds: [...selectedIds],
-      }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(typeof data.error === "string" ? data.error : "Failed to create run");
-      return;
-    }
-    const data = await res.json();
-    setName("");
-    setDescription("");
-    setSelectedIds(new Set(defaultReadySelection(cases)));
-    startTransition(() => router.push(`/runs/${data.run.id}`));
   }
 
   const runRangeStart =
@@ -194,85 +86,15 @@ export function RunsWorkspace({
         title="Test Runs"
         description="Plan a pass, attach ready cases, and record results as you execute."
         meta={<StatusChip mono>{initialRuns.length} runs</StatusChip>}
+        actions={
+          <Link
+            href="/runs/new"
+            className="inline-flex h-9 items-center justify-center rounded-md bg-[color:var(--topo-ink)] px-3 text-sm font-medium text-[color:var(--topo-panel)] transition active:scale-[0.98]"
+          >
+            Start a run
+          </Link>
+        }
       />
-
-      <Disclosure
-        isExpanded={startExpanded}
-        onExpandedChange={setStartExpanded}
-        className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3"
-      >
-        <Disclosure.Heading className="m-0">
-          <Disclosure.Trigger className="flex w-full items-center gap-2 rounded-sm text-left text-[color:var(--topo-ink)] outline-none">
-            <span className="min-w-0 flex-1 text-sm font-semibold">
-              Start a run
-            </span>
-            <span className="hidden text-xs font-normal text-[color:var(--topo-muted)] sm:inline">
-              {readyCount} ready · {selectedCount} selected
-            </span>
-            <Disclosure.Indicator className="text-[color:var(--topo-muted)]" />
-          </Disclosure.Trigger>
-        </Disclosure.Heading>
-        <Disclosure.Content>
-          <Disclosure.Body className="space-y-3 pt-3">
-            <p className="text-xs text-[color:var(--topo-muted)]">
-              Defaults to all ready cases ({readyCount}). Search, filter, and
-              multi-select to narrow before create — selection is required.
-            </p>
-
-            <div className="space-y-3">
-              <TextField name="run-name" className="w-full">
-                <Label>Run name</Label>
-                <Input
-                  placeholder="Release 1.0 smoke"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full"
-                />
-              </TextField>
-              <TextField name="run-notes" className="w-full">
-                <Label>Notes</Label>
-                <TextArea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full"
-                />
-              </TextField>
-            </div>
-
-            <RunCasePickerTable
-              visible={visible}
-              folders={folders}
-              tags={tags}
-              search={search}
-              status={status}
-              priority={priority}
-              folderId={folderId}
-              tag={tag}
-              sort={sort}
-              selectedIds={selectedIds}
-              onSearchChange={setSearch}
-              onStatusChange={setStatus}
-              onPriorityChange={setPriority}
-              onFolderChange={setFolderId}
-              onTagChange={setTag}
-              onSortChange={setSort}
-              onSelectionChange={handlePickerSelectionChange}
-              onResetToReady={resetToReady}
-            />
-
-            {error ? (
-              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-            ) : null}
-            <Button
-              variant="primary"
-              isDisabled={pending || !name.trim() || selectedCount === 0}
-              onPress={() => void createRun()}
-            >
-              Create run · {selectedCount}
-            </Button>
-          </Disclosure.Body>
-        </Disclosure.Content>
-      </Disclosure>
 
       <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
         {initialRuns.length > 0 ? (
@@ -342,9 +164,15 @@ export function RunsWorkspace({
         ) : null}
 
         {initialRuns.length === 0 ? (
-          <p className="border-dashed px-3 py-10 text-center text-sm text-[color:var(--topo-muted)]">
-            No runs yet.
-          </p>
+          <div className="space-y-3 border-dashed px-3 py-10 text-center">
+            <p className="text-sm text-[color:var(--topo-muted)]">No runs yet.</p>
+            <Link
+              href="/runs/new"
+              className="inline-flex h-9 items-center justify-center rounded-md bg-[color:var(--topo-ink)] px-3 text-sm font-medium text-[color:var(--topo-panel)] transition active:scale-[0.98]"
+            >
+              Start a run
+            </Link>
+          </div>
         ) : runPageData.items.length === 0 ? (
           <p className="px-3 py-10 text-center text-sm text-[color:var(--topo-muted)]">
             No runs match this search.
