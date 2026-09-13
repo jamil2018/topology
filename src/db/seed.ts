@@ -37,7 +37,8 @@ async function seed() {
           })
           .returning();
 
-  await ensureMembership(user.id, "admin");
+  const { workspace } = await ensureMembership(user.id, "admin");
+  const workspaceId = workspace.id;
 
   const demoToken =
     process.env.TOPOLOGY_API_TOKEN ?? "topo_demo_token_local_dev_only";
@@ -47,6 +48,7 @@ async function seed() {
   });
   if (!existingToken) {
     await db.insert(apiTokens).values({
+      workspaceId,
       name: "Local demo CLI token",
       tokenHash,
       tokenPrefix: demoToken.slice(0, 12),
@@ -64,6 +66,7 @@ async function seed() {
         .where(eq(folders.name, "Smoke"))
         .limit(1);
       await db.insert(milestones).values({
+        workspaceId,
         name: "v1 launch gate",
         description: "Smoke suite must stay green for launch.",
         folderId: smoke?.id,
@@ -82,21 +85,22 @@ async function seed() {
 
   const [smoke] = await db
     .insert(folders)
-    .values({ name: "Smoke" })
+    .values({ workspaceId, name: "Smoke" })
     .returning();
   const [smokeAuth] = await db
     .insert(folders)
-    .values({ name: "Auth", parentId: smoke.id })
+    .values({ workspaceId, name: "Auth", parentId: smoke.id })
     .returning();
   const [regression] = await db
     .insert(folders)
-    .values({ name: "Regression" })
+    .values({ workspaceId, name: "Regression" })
     .returning();
 
   const seededCases = await db
     .insert(cases)
     .values([
       {
+        workspaceId,
         key: "TOP-1",
         title: "Operator can open the hub",
         description: "Landing shell loads with navigation and pulse summary.",
@@ -111,6 +115,7 @@ async function seed() {
         assigneeId: user.id,
       },
       {
+        workspaceId,
         key: "TOP-2",
         title: "Create a case in a folder",
         description: "Operators can add cases under a folder.",
@@ -124,6 +129,7 @@ async function seed() {
         createdById: user.id,
       },
       {
+        workspaceId,
         key: "TOP-3",
         title: "Import cases from CSV",
         description: "CSV upload creates cases and folders as needed.",
@@ -137,6 +143,7 @@ async function seed() {
         createdById: user.id,
       },
       {
+        workspaceId,
         key: "TOP-4",
         title: "Execute a manual run",
         description: "Mark pass/fail on cases inside a run.",
@@ -153,6 +160,7 @@ async function seed() {
     .returning();
 
   await db.insert(milestones).values({
+    workspaceId,
     name: "v1 launch gate",
     description: "Smoke suite must stay green for launch.",
     folderId: smoke.id,
@@ -166,6 +174,7 @@ async function seed() {
   const [run] = await db
     .insert(runs)
     .values({
+      workspaceId,
       name: "Local smoke — bootstrap",
       description: "First manual pass after Topology bootstrap.",
       status: "planned",

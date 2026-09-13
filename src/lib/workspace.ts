@@ -53,8 +53,18 @@ export async function ensureMembership(
   return { workspace, membership };
 }
 
-export async function getMembership(userId: string) {
-  const workspace = await ensureDefaultWorkspace();
+/** Membership for a specific project, or the default workspace when omitted. */
+export async function getMembership(userId: string, projectId?: string) {
+  const workspace = projectId
+    ? await db.query.workspaces.findFirst({
+        where: eq(workspaces.id, projectId),
+      })
+    : await ensureDefaultWorkspace();
+
+  if (!workspace) {
+    return { workspace: null, membership: null };
+  }
+
   const membership = await db.query.workspaceMembers.findFirst({
     where: and(
       eq(workspaceMembers.workspaceId, workspace.id),

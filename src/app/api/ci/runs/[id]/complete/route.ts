@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { mergeShardResults, summarizeResults } from "@topology/domain";
 import { authenticateCiRequest } from "@/lib/ci-auth";
 import {
@@ -22,7 +22,9 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const { id } = await params;
-  const run = await db.query.runs.findFirst({ where: eq(runs.id, id) });
+  const run = await db.query.runs.findFirst({
+    where: and(eq(runs.id, id), eq(runs.workspaceId, authResult.workspaceId)),
+  });
   if (!run) {
     return NextResponse.json({ error: "Run not found" }, { status: 404 });
   }
@@ -30,7 +32,12 @@ export async function POST(request: Request, { params }: Params) {
   const shards = await loadShardResults(id);
   if (shards.length > 0) {
     const merged = mergeShardResults(shards);
-    await upsertRunResultsFromNormalized(id, merged, authResult.userId);
+    await upsertRunResultsFromNormalized(
+      id,
+      merged,
+      authResult.userId,
+      authResult.workspaceId,
+    );
   }
 
   const [updated] = await db
@@ -52,7 +59,7 @@ export async function POST(request: Request, { params }: Params) {
   );
   const data = await buildRunCompletedPayload(id);
   if (data) {
-    void dispatchWebhook("run.completed", data);
+    void dispatchWebhook("run.completed", data, authResult.workspaceId);
   }
 
   return NextResponse.json({

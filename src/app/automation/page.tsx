@@ -1,20 +1,36 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
+import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { AutomationWorkspace } from "@/components/automation-workspace";
+import { resolveActiveProject } from "@/lib/project";
+import { projectShellProps } from "@/lib/project-shell";
 import { getFlakeHints, listRuns } from "@/lib/queries";
+import { ensureMembership } from "@/lib/workspace";
 
 export default async function AutomationPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
 
+  await ensureMembership(session.user.id);
+  const ctx = await resolveActiveProject(session.user.id);
+  if (!ctx) {
+    return (
+      <HubShell userEmail={session.user.email} {...projectShellProps(null)}>
+        <NoProjectEmptyState />
+      </HubShell>
+    );
+  }
+
+  const workspaceId = ctx.project.id;
+  const shell = projectShellProps(ctx);
   const [runs, flakeHints] = await Promise.all([
-    listRuns("automation"),
-    getFlakeHints(20),
+    listRuns(workspaceId, "automation"),
+    getFlakeHints(workspaceId, 20),
   ]);
 
   return (
-    <HubShell userEmail={session.user.email}>
+    <HubShell userEmail={session.user.email} {...shell}>
       <AutomationWorkspace
         initialRuns={runs.map((r) => ({
           id: r.id,

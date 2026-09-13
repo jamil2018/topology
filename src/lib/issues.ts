@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   buildFailureIssueBody,
   resolveIssueProvider,
@@ -6,7 +6,7 @@ import {
   type RemoteIssue,
 } from "@topology/issue-providers";
 import { db } from "@/db";
-import { linkedIssues, runResults, runs, triageItems } from "@/db/schema";
+import { cases, linkedIssues, runResults, runs, triageItems } from "@/db/schema";
 import { dispatchWebhook } from "@/lib/webhooks";
 
 export type LinkedIssueRow = typeof linkedIssues.$inferSelect;
@@ -14,6 +14,7 @@ export type LinkedIssueRow = typeof linkedIssues.$inferSelect;
 function toRowValues(
   remote: RemoteIssue,
   meta: {
+    workspaceId: string;
     resultId?: string | null;
     caseId?: string | null;
     runId?: string | null;
@@ -26,6 +27,7 @@ function toRowValues(
     meta.previousStatus !== "done" &&
     remote.status === "done";
   return {
+    workspaceId: meta.workspaceId,
     provider: remote.provider,
     remoteId: remote.id,
     remoteKey: remote.key,
@@ -61,6 +63,9 @@ export async function createIssueFromResult(input: {
     throw new Error("Issues can only be filed from failed or blocked results");
   }
 
+  const workspaceId = result.run?.workspaceId ?? result.case?.workspaceId;
+  if (!workspaceId) throw new Error("Result is missing workspace scope");
+
   const caseKey = result.case?.key ?? result.externalKey ?? "unknown";
   const caseTitle = result.case?.title ?? result.title ?? "Untitled failure";
   const provider = resolveIssueProvider({ provider: input.provider });
@@ -91,6 +96,7 @@ export async function createIssueFromResult(input: {
     .insert(linkedIssues)
     .values(
       toRowValues(remote, {
+        workspaceId,
         resultId: result.id,
         caseId: result.caseId,
         runId: result.runId,
@@ -104,23 +110,27 @@ export async function createIssueFromResult(input: {
     .set({ status: "resolved", updatedAt: new Date() })
     .where(eq(triageItems.resultId, result.id));
 
-  void dispatchWebhook("issue.created", {
-    issue: {
-      id: row.id,
-      provider: row.provider,
-      remoteKey: row.remoteKey,
-      url: row.url,
-      title: row.title,
-      remoteStatus: row.remoteStatus,
+  void dispatchWebhook(
+    "issue.created",
+    {
+      issue: {
+        id: row.id,
+        provider: row.provider,
+        remoteKey: row.remoteKey,
+        url: row.url,
+        title: row.title,
+        remoteStatus: row.remoteStatus,
+      },
+      result: {
+        id: result.id,
+        status: result.status,
+        caseKey,
+        caseTitle,
+        runId: result.runId,
+      },
     },
-    result: {
-      id: result.id,
-      status: result.status,
-      caseKey,
-      caseTitle,
-      runId: result.runId,
-    },
-  });
+    workspaceId,
+  );
 
   return row;
 }
@@ -137,6 +147,9 @@ export async function linkExistingIssue(input: {
   });
   if (!result) throw new Error("Result not found");
 
+  const workspaceId = result.run?.workspaceId ?? result.case?.workspaceId;
+  if (!workspaceId) throw new Error("Result is missing workspace scope");
+
   const provider = resolveIssueProvider({ provider: input.provider });
   const remote = await provider.linkExisting(input.remoteKey);
 
@@ -144,6 +157,7 @@ export async function linkExistingIssue(input: {
     .insert(linkedIssues)
     .values(
       toRowValues(remote, {
+        workspaceId,
         resultId: result.id,
         caseId: result.caseId,
         runId: result.runId,
@@ -172,6 +186,7 @@ export async function refreshLinkedIssue(id: string) {
   const remote = await provider.getIssue(existing.remoteId);
 
   const values = toRowValues(remote, {
+    workspaceId: existing.workspaceId,
     resultId: existing.resultId,
     caseId: existing.caseId,
     runId: existing.runId,
@@ -231,9 +246,10 @@ export async function listIssuesForRun(runId: string) {
   });
 }
 
-export async function listRetestQueue() {
+export async function listRetestQueue(workspaceId: string) {
   return db.query.linkedIssues.findMany({
     where: and(
+      eq(linkedIssues.workspaceId, workspaceId),
       eq(linkedIssues.needsRetest, 1),
       eq(linkedIssues.remoteStatus, "done"),
     ),
@@ -241,9 +257,12 @@ export async function listRetestQueue() {
   });
 }
 
-export async function getScenarioContext(query: string) {
+export async function getScenarioContext(workspaceId: string, query: string) {
   const q = query.trim().toLowerCase();
-  const allCases = await db.query.cases.findMany({ limit: 200 });
+  const allCases = await db.query.cases.findMany({
+    where: eq(cases.workspaceId, workspaceId),
+    limit: 200,
+  });
   const matched = allCases.filter(
     (c) =>
       c.key.toLowerCase().includes(q) ||
@@ -261,17 +280,23 @@ export async function getScenarioContext(query: string) {
       limit: 5,
       with: { run: true },
     });
-    recentResults.push(...rows);
+    recentResults.push(
+      ...rows.filter((r) => r.run?.workspaceId === workspaceId),
+    );
   }
 
   const openIssues = await db.query.linkedIssues.findMany({
-    where: eq(linkedIssues.remoteStatus, "open"),
+    where: and(
+      eq(linkedIssues.workspaceId, workspaceId),
+      eq(linkedIssues.remoteStatus, "open"),
+    ),
   });
   const relatedIssues = openIssues.filter(
     (i) => i.caseId && caseIds.includes(i.caseId),
   );
 
   const runsLatest = await db.query.runs.findMany({
+    where: eq(runs.workspaceId, workspaceId),
     orderBy: [desc(runs.updatedAt)],
     limit: 5,
   });
@@ -293,25 +318,54 @@ export async function getScenarioContext(query: string) {
   };
 }
 
-export async function whatsPending() {
-  const untested = await db.query.runResults.findMany({
-    where: eq(runResults.status, "untested"),
-    limit: 50,
-    with: { case: true, run: true },
-  });
+export async function whatsPending(workspaceId: string) {
+  const workspaceRunIds = (
+    await db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(eq(runs.workspaceId, workspaceId))
+  ).map((r) => r.id);
 
-  const failures = await db.query.runResults.findMany({
-    where: eq(runResults.status, "failed"),
-    limit: 50,
-  });
+  const untested =
+    workspaceRunIds.length === 0
+      ? []
+      : await db.query.runResults.findMany({
+          where: and(
+            eq(runResults.status, "untested"),
+            inArray(runResults.runId, workspaceRunIds),
+          ),
+          limit: 50,
+          with: { case: true, run: true },
+        });
 
-  const blocked = await db.query.runResults.findMany({
-    where: eq(runResults.status, "blocked"),
-    limit: 50,
-  });
+  const failures =
+    workspaceRunIds.length === 0
+      ? []
+      : await db.query.runResults.findMany({
+          where: and(
+            eq(runResults.status, "failed"),
+            inArray(runResults.runId, workspaceRunIds),
+          ),
+          limit: 50,
+        });
+
+  const blocked =
+    workspaceRunIds.length === 0
+      ? []
+      : await db.query.runResults.findMany({
+          where: and(
+            eq(runResults.status, "blocked"),
+            inArray(runResults.runId, workspaceRunIds),
+          ),
+          limit: 50,
+        });
 
   const linkedResultIds = new Set(
-    (await db.query.linkedIssues.findMany())
+    (
+      await db.query.linkedIssues.findMany({
+        where: eq(linkedIssues.workspaceId, workspaceId),
+      })
+    )
       .map((i) => i.resultId)
       .filter(Boolean),
   );
@@ -319,9 +373,12 @@ export async function whatsPending() {
   const triage = [...failures, ...blocked].filter(
     (r) => !linkedResultIds.has(r.id),
   );
-  const retest = await listRetestQueue();
+  const retest = await listRetestQueue(workspaceId);
   const openIssues = await db.query.linkedIssues.findMany({
-    where: eq(linkedIssues.remoteStatus, "open"),
+    where: and(
+      eq(linkedIssues.workspaceId, workspaceId),
+      eq(linkedIssues.remoteStatus, "open"),
+    ),
     limit: 30,
   });
 

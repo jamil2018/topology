@@ -2,23 +2,39 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
+import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { RunsWorkspace } from "@/components/runs-workspace";
 import { RunsPageSkeleton } from "@/components/skeletons";
+import { resolveActiveProject } from "@/lib/project";
+import { projectShellProps } from "@/lib/project-shell";
 import { listCases, listFolders, listRuns, listSavedViews } from "@/lib/queries";
+import { ensureMembership } from "@/lib/workspace";
 
 export default async function RunsPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
 
+  await ensureMembership(session.user.id);
+  const ctx = await resolveActiveProject(session.user.id);
+  if (!ctx) {
+    return (
+      <HubShell userEmail={session.user.email} {...projectShellProps(null)}>
+        <NoProjectEmptyState />
+      </HubShell>
+    );
+  }
+
+  const workspaceId = ctx.project.id;
+  const shell = projectShellProps(ctx);
   const [runs, cases, folders, views] = await Promise.all([
-    listRuns("manual"),
-    listCases(),
-    listFolders(),
-    listSavedViews("runs", session.user.id),
+    listRuns(workspaceId, "manual"),
+    listCases(workspaceId),
+    listFolders(workspaceId),
+    listSavedViews(workspaceId, "runs", session.user.id),
   ]);
 
   return (
-    <HubShell userEmail={session.user.email}>
+    <HubShell userEmail={session.user.email} {...shell}>
       <Suspense fallback={<RunsPageSkeleton />}>
         <RunsWorkspace
           initialRuns={runs.map((r) => ({

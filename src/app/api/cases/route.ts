@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
@@ -8,6 +8,7 @@ import {
   recordCaseActivity,
   recordCaseFieldChanges,
 } from "@/lib/case-activity";
+import { requireProjectAccess } from "@/lib/project";
 import { listCases } from "@/lib/queries";
 
 const createCaseSchema = z.object({
@@ -38,21 +39,36 @@ const bulkUpdateSchema = z.object({
 
 export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
+
   const { searchParams } = new URL(request.url);
   const folderId = searchParams.get("folderId");
-  const data = await listCases(folderId);
+  const data = await listCases(workspaceId, folderId);
   return NextResponse.json({ cases: data });
 }
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const body = await request.json();
   const parsed = createCaseSchema.safeParse(body);
@@ -65,7 +81,10 @@ export async function POST(request: Request) {
 
   if (parsed.data.folderId) {
     const folder = await db.query.folders.findFirst({
-      where: eq(folders.id, parsed.data.folderId),
+      where: and(
+        eq(folders.id, parsed.data.folderId),
+        eq(folders.workspaceId, workspaceId),
+      ),
     });
     if (!folder) {
       return NextResponse.json({ error: "Folder not found" }, { status: 400 });
@@ -77,6 +96,7 @@ export async function POST(request: Request) {
       .insert(cases)
       .values({
         ...parsed.data,
+        workspaceId,
         createdById: session.user.id,
       })
       .returning();
@@ -104,9 +124,18 @@ export async function POST(request: Request) {
 /** Bulk edit status / priority / folder / tags. */
 export async function PATCH(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   let body: unknown;
   try {
@@ -138,7 +167,10 @@ export async function PATCH(request: Request) {
 
   if (folderId) {
     const folder = await db.query.folders.findFirst({
-      where: eq(folders.id, folderId),
+      where: and(
+        eq(folders.id, folderId),
+        eq(folders.workspaceId, workspaceId),
+      ),
     });
     if (!folder) {
       return NextResponse.json({ error: "Folder not found" }, { status: 400 });
@@ -146,14 +178,19 @@ export async function PATCH(request: Request) {
   }
 
   const existing = await db.query.cases.findMany({
-    where: inArray(cases.id, caseIds),
+    where: and(
+      inArray(cases.id, caseIds),
+      eq(cases.workspaceId, workspaceId),
+    ),
   });
   if (existing.length === 0) {
     return NextResponse.json({ error: "No matching cases" }, { status: 404 });
   }
 
   const folderNameById = new Map<string, string>();
-  const allFolders = await db.query.folders.findMany();
+  const allFolders = await db.query.folders.findMany({
+    where: eq(folders.workspaceId, workspaceId),
+  });
   for (const f of allFolders) folderNameById.set(f.id, f.name);
 
   const updated = [];

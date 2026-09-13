@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { runs, webhookEndpoints } from "@/db/schema";
 
@@ -87,6 +87,7 @@ async function deliverToEndpoint(
 export async function dispatchWebhook(
   event: WebhookEvent,
   data: Record<string, unknown>,
+  workspaceId?: string | null,
 ): Promise<WebhookPayload> {
   const payload: WebhookPayload = {
     id: randomUUID(),
@@ -96,7 +97,12 @@ export async function dispatchWebhook(
   };
 
   const endpoints = await db.query.webhookEndpoints.findMany({
-    where: eq(webhookEndpoints.enabled, 1),
+    where: workspaceId
+      ? and(
+          eq(webhookEndpoints.enabled, 1),
+          eq(webhookEndpoints.workspaceId, workspaceId),
+        )
+      : eq(webhookEndpoints.enabled, 1),
   });
 
   const deliveries: Promise<unknown>[] = [];

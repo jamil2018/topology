@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { caseActivities, cases, users } from "@/db/schema";
+import { requireProjectAccess } from "@/lib/project";
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   const { id } = await params;
@@ -19,7 +25,7 @@ export async function GET(_request: Request, { params }: Params) {
   }
 
   const existing = await db.query.cases.findFirst({
-    where: eq(cases.id, id),
+    where: and(eq(cases.id, id), eq(cases.workspaceId, access.ctx.project.id)),
   });
   if (!existing) {
     return NextResponse.json({ error: "Case not found" }, { status: 404 });

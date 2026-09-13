@@ -1,17 +1,24 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { triageItems } from "@/db/schema";
+import { requireProjectAccess } from "@/lib/project";
 import { getTriageQueue } from "@/lib/queries";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const queue = await getTriageQueue();
+
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
+  const queue = await getTriageQueue(access.ctx.project.id);
   return NextResponse.json({ queue });
 }
 
@@ -22,9 +29,18 @@ const patchSchema = z.object({
 
 export async function PATCH(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const parsed = patchSchema.safeParse(await request.json());
   if (!parsed.success) {
@@ -40,7 +56,12 @@ export async function PATCH(request: Request) {
       status: parsed.data.status,
       updatedAt: new Date(),
     })
-    .where(eq(triageItems.id, parsed.data.id))
+    .where(
+      and(
+        eq(triageItems.id, parsed.data.id),
+        eq(triageItems.workspaceId, workspaceId),
+      ),
+    )
     .returning();
 
   if (!updated) {

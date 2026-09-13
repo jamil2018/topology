@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { cases, folders } from "@/db/schema";
 import { parseCasesCsv, serializeCasesCsv } from "@/lib/csv";
+import { requireProjectAccess } from "@/lib/project";
 import { listCases } from "@/lib/queries";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const data = await listCases();
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
+  const data = await listCases(access.ctx.project.id);
   const csv = serializeCasesCsv(
     data.map((c) => ({
       key: c.key,
@@ -38,9 +44,18 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const contentType = request.headers.get("content-type") ?? "";
   let raw = "";
@@ -65,7 +80,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const existingFolders = await db.select().from(folders);
+  const existingFolders = await db
+    .select()
+    .from(folders)
+    .where(eq(folders.workspaceId, workspaceId));
   const folderByName = new Map(
     existingFolders.map((f) => [f.name.toLowerCase(), f]),
   );
@@ -81,7 +99,7 @@ export async function POST(request: Request) {
       if (!folder) {
         const [inserted] = await db
           .insert(folders)
-          .values({ name: row.folder })
+          .values({ workspaceId, name: row.folder })
           .returning();
         folder = inserted;
         folderByName.set(key, inserted);
@@ -96,7 +114,7 @@ export async function POST(request: Request) {
 
     try {
       const existing = await db.query.cases.findFirst({
-        where: eq(cases.key, row.key),
+        where: and(eq(cases.key, row.key), eq(cases.workspaceId, workspaceId)),
       });
       if (existing) {
         skipped.push(row.key);
@@ -106,6 +124,7 @@ export async function POST(request: Request) {
       const [c] = await db
         .insert(cases)
         .values({
+          workspaceId,
           key: row.key,
           title: row.title,
           description: row.description,

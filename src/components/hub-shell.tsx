@@ -23,6 +23,10 @@ import {
 } from "@phosphor-icons/react";
 import { BrandMark } from "./brand-mark";
 import { openCommandPalette } from "./command-palette";
+import {
+  ProjectSwitcher,
+  type ProjectOption,
+} from "./project-switcher";
 import { ThemeToggle } from "./theme-toggle";
 
 type NavItem = {
@@ -153,11 +157,15 @@ function SidebarChrome({
   pathname,
   onNavigate,
   collapsed = false,
+  projects = [],
+  activeProjectId = null,
 }: {
   userEmail?: string | null;
   pathname: string;
   onNavigate?: () => void;
   collapsed?: boolean;
+  projects?: ProjectOption[];
+  activeProjectId?: string | null;
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -180,6 +188,12 @@ function SidebarChrome({
           />
         </Link>
       </div>
+
+      <ProjectSwitcher
+        projects={projects}
+        activeProjectId={activeProjectId}
+        collapsed={collapsed}
+      />
 
       <div className="flex-1 overflow-y-auto py-2">
         <NavLinks
@@ -225,9 +239,13 @@ function SidebarChrome({
 export function HubShell({
   children,
   userEmail,
+  projects = [],
+  activeProjectId = null,
 }: {
   children: React.ReactNode;
   userEmail?: string | null;
+  projects?: ProjectOption[];
+  activeProjectId?: string | null;
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -288,6 +306,8 @@ export function HubShell({
           userEmail={userEmail}
           pathname={pathname}
           collapsed={desktopCollapsed}
+          projects={projects}
+          activeProjectId={activeProjectId}
         />
       </aside>
 
@@ -326,6 +346,8 @@ export function HubShell({
                 userEmail={userEmail}
                 pathname={pathname}
                 onNavigate={() => setMobileOpen(false)}
+                projects={projects}
+                activeProjectId={activeProjectId}
               />
             </motion.aside>
           </>

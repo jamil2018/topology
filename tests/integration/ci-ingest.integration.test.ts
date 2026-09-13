@@ -85,11 +85,14 @@ describe.skipIf(!hasDb)("CI ingest API (integration)", () => {
       }),
     );
     expect(authResult.ok).toBe(true);
-    const userId = authResult.ok ? authResult.userId : null;
+    if (!authResult.ok) throw new Error("auth failed");
+    const userId = authResult.userId;
+    const workspaceId = authResult.workspaceId;
 
     const [run] = await db
       .insert(runs)
       .values({
+        workspaceId,
         name: `Shard merge ${Date.now()}`,
         kind: "automation",
         source: "github",

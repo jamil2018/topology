@@ -1,18 +1,26 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { webhookEndpoints } from "@/db/schema";
+import { requireProjectAccess } from "@/lib/project";
 import { dispatchWebhook } from "@/lib/webhooks";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
+
   const endpoints = await db.query.webhookEndpoints.findMany({
+    where: eq(webhookEndpoints.workspaceId, workspaceId),
     orderBy: [desc(webhookEndpoints.createdAt)],
   });
 
@@ -35,34 +43,47 @@ const createSchema = z.object({
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const body = await request.json();
 
   if (body?.action === "test") {
-    const payload = await dispatchWebhook("run.completed", {
-      run: {
-        id: "00000000-0000-0000-0000-000000000000",
-        name: "Webhook test delivery",
-        kind: "manual",
-        status: "completed",
-        source: "test",
-        branch: null,
-        commitSha: null,
-        completedAt: new Date().toISOString(),
+    const payload = await dispatchWebhook(
+      "run.completed",
+      {
+        run: {
+          id: "00000000-0000-0000-0000-000000000000",
+          name: "Webhook test delivery",
+          kind: "manual",
+          status: "completed",
+          source: "test",
+          branch: null,
+          commitSha: null,
+          completedAt: new Date().toISOString(),
+        },
+        summary: {
+          total: 0,
+          passed: 0,
+          failed: 0,
+          blocked: 0,
+          skipped: 0,
+          untested: 0,
+        },
+        test: true,
       },
-      summary: {
-        total: 0,
-        passed: 0,
-        failed: 0,
-        blocked: 0,
-        skipped: 0,
-        untested: 0,
-      },
-      test: true,
-    });
+      workspaceId,
+    );
     return NextResponse.json({ ok: true, payload });
   }
 
@@ -77,6 +98,7 @@ export async function POST(request: Request) {
   const [row] = await db
     .insert(webhookEndpoints)
     .values({
+      workspaceId,
       url: parsed.data.url,
       secret: parsed.data.secret,
       events: parsed.data.events,
@@ -99,9 +121,18 @@ const patchSchema = z.object({
 
 export async function PATCH(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const parsed = patchSchema.safeParse(await request.json());
   if (!parsed.success) {
@@ -119,7 +150,12 @@ export async function PATCH(request: Request) {
       ...(enabled === undefined ? {} : { enabled: enabled ? 1 : 0 }),
       updatedAt: new Date(),
     })
-    .where(eq(webhookEndpoints.id, id))
+    .where(
+      and(
+        eq(webhookEndpoints.id, id),
+        eq(webhookEndpoints.workspaceId, workspaceId),
+      ),
+    )
     .returning();
 
   if (!updated) {
@@ -134,9 +170,18 @@ const deleteSchema = z.object({
 
 export async function DELETE(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const parsed = deleteSchema.safeParse(await request.json());
   if (!parsed.success) {
@@ -148,7 +193,12 @@ export async function DELETE(request: Request) {
 
   await db
     .delete(webhookEndpoints)
-    .where(eq(webhookEndpoints.id, parsed.data.id));
+    .where(
+      and(
+        eq(webhookEndpoints.id, parsed.data.id),
+        eq(webhookEndpoints.workspaceId, workspaceId),
+      ),
+    );
 
   return NextResponse.json({ ok: true });
 }

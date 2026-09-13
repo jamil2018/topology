@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { runResults, runs } from "@/db/schema";
 import { openTriageForResult } from "@/lib/ci-ingest";
+import { requireProjectAccess } from "@/lib/project";
 import {
   buildRunCompletedPayload,
   dispatchWebhook,
@@ -18,15 +19,21 @@ const updateResultSchema = z.object({
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
+
   const { id } = await params;
   const run = await db.query.runs.findFirst({
-    where: eq(runs.id, id),
+    where: and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)),
     with: {
       results: {
         with: { case: true },
@@ -43,11 +50,27 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function PATCH(request: Request, { params }: Params) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
+
   const { id } = await params;
+  const existing = await db.query.runs.findFirst({
+    where: and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)),
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const body = await request.json();
 
   if (body?.action === "start") {
@@ -58,7 +81,7 @@ export async function PATCH(request: Request, { params }: Params) {
         startedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(runs.id, id))
+      .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
       .returning();
     return NextResponse.json({ run: updated });
   }
@@ -71,12 +94,12 @@ export async function PATCH(request: Request, { params }: Params) {
         completedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(runs.id, id))
+      .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
       .returning();
 
     const data = await buildRunCompletedPayload(id);
     if (data) {
-      void dispatchWebhook("run.completed", data);
+      void dispatchWebhook("run.completed", data, workspaceId);
     }
 
     return NextResponse.json({ run: updated });
@@ -93,7 +116,7 @@ export async function PATCH(request: Request, { params }: Params) {
         assigneeId,
         updatedAt: new Date(),
       })
-      .where(eq(runs.id, id))
+      .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
       .returning();
     return NextResponse.json({ run: updated });
   }
@@ -150,7 +173,7 @@ export async function PATCH(request: Request, { params }: Params) {
       startedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(runs.id, id));
+    .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)));
 
   if (parsed.data.status === "failed") {
     await openTriageForResult(updated.id);
