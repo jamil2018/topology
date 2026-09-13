@@ -11,6 +11,13 @@ export type SavedViewRow = {
   config: unknown;
 };
 
+function errorMessage(data: unknown, fallback: string): string {
+  if (!data || typeof data !== "object") return fallback;
+  const error = (data as { error?: unknown }).error;
+  if (typeof error === "string" && error.trim()) return error;
+  return fallback;
+}
+
 export function SavedViewsBar({
   entity,
   initialViews = [],
@@ -19,6 +26,7 @@ export function SavedViewsBar({
   onSaved,
   canSave,
   buildConfig,
+  className,
 }: {
   entity: "cases" | "runs";
   initialViews?: SavedViewRow[];
@@ -27,6 +35,7 @@ export function SavedViewsBar({
   onSaved?: (view: SavedViewRow) => void;
   canSave: boolean;
   buildConfig: () => unknown;
+  className?: string;
 }) {
   const [views, setViews] = useState<SavedViewRow[]>(initialViews);
   const [saving, setSaving] = useState(false);
@@ -60,9 +69,7 @@ export function SavedViewsBar({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(
-          typeof data.error === "string" ? data.error : "Failed to save view",
-        );
+        setError(errorMessage(data, "Failed to save view"));
         return;
       }
       setName("");
@@ -71,6 +78,8 @@ export function SavedViewsBar({
         setViews((prev) => [data.view, ...prev]);
         onSaved?.(data.view);
       }
+    } catch {
+      setError("Failed to save view");
     } finally {
       setSaving(false);
     }
@@ -83,7 +92,9 @@ export function SavedViewsBar({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div
+      className={`flex flex-wrap items-center gap-1.5${className ? ` ${className}` : ""}`}
+    >
       <span className="mr-1 inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
         <BookmarkSimpleIcon size={12} weight="bold" />
         Views
@@ -130,14 +141,16 @@ export function SavedViewsBar({
             />
           </TextField>
           <Button
+            type="button"
             size="sm"
             variant="primary"
             isDisabled={saving || !canSave}
             onPress={() => void saveView()}
           >
-            Save
+            {saving ? "Saving…" : "Save"}
           </Button>
           <Button
+            type="button"
             size="sm"
             variant="tertiary"
             onPress={() => {
@@ -150,6 +163,7 @@ export function SavedViewsBar({
         </div>
       ) : (
         <Button
+          type="button"
           size="sm"
           variant="secondary"
           isDisabled={!canSave}
@@ -159,7 +173,9 @@ export function SavedViewsBar({
         </Button>
       )}
       {error ? (
-        <span className="text-xs text-red-600 dark:text-red-300">{error}</span>
+        <span role="alert" className="text-xs text-red-600 dark:text-red-300">
+          {error}
+        </span>
       ) : null}
     </div>
   );

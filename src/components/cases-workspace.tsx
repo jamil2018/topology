@@ -733,88 +733,93 @@ export function CasesWorkspace({
         </Modal.Backdrop>
       </Modal.Root>
 
-      <div className="flex flex-wrap items-end gap-2">
-        <Select
-          className="w-[8.5rem]"
-          variant="secondary"
-          value={statusFilter}
-          onChange={(value) => {
-            if (value == null) return;
-            setActiveViewId(null);
-            setStatusFilter(String(value));
-          }}
-        >
-          <Label className="text-xs text-[color:var(--topo-muted)]">Status</Label>
-          <Select.Trigger>
-            <Select.Value />
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              <ListBox.Item id="all" textValue="All">
-                All
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
-              {statuses.map((s) => (
-                <ListBox.Item key={s} id={s} textValue={s}>
-                  {s}
+      <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <Select
+            className="w-[8.5rem]"
+            variant="secondary"
+            value={statusFilter}
+            onChange={(value) => {
+              if (value == null) return;
+              setActiveViewId(null);
+              setStatusFilter(String(value));
+            }}
+          >
+            <Label className="text-xs text-[color:var(--topo-muted)]">
+              Status
+            </Label>
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item id="all" textValue="All">
+                  All
                   <ListBox.ItemIndicator />
                 </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+                {statuses.map((s) => (
+                  <ListBox.Item key={s} id={s} textValue={s}>
+                    {s}
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                ))}
+              </ListBox>
+            </Select.Popover>
+          </Select>
 
-        <Select
-          className="w-[8rem]"
-          variant="secondary"
-          value={priorityFilter}
-          onChange={(value) => {
-            if (value == null) return;
-            setActiveViewId(null);
-            setPriorityFilter(String(value));
-          }}
-        >
-          <Label className="text-xs text-[color:var(--topo-muted)]">
-            Priority
-          </Label>
-          <Select.Trigger>
-            <Select.Value />
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              <ListBox.Item id="all" textValue="All">
-                All
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
-              {priorities.map((p) => (
-                <ListBox.Item key={p} id={p} textValue={p}>
-                  {p}
+          <Select
+            className="w-[8rem]"
+            variant="secondary"
+            value={priorityFilter}
+            onChange={(value) => {
+              if (value == null) return;
+              setActiveViewId(null);
+              setPriorityFilter(String(value));
+            }}
+          >
+            <Label className="text-xs text-[color:var(--topo-muted)]">
+              Priority
+            </Label>
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item id="all" textValue="All">
+                  All
                   <ListBox.ItemIndicator />
                 </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+                {priorities.map((p) => (
+                  <ListBox.Item key={p} id={p} textValue={p}>
+                    {p}
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                ))}
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        </div>
+
+        <SavedViewsBar
+          className="min-w-0 sm:justify-end"
+          entity="cases"
+          initialViews={initialViews}
+          activeViewId={activeViewId}
+          canSave
+          buildConfig={() => ({
+            folderFilter: activeFolderFilter,
+            search,
+            statusFilter,
+            priorityFilter,
+            sort,
+            sortDir,
+          })}
+          onApply={applySavedView}
+          onSaved={(view) => setActiveViewId(view.id)}
+        />
       </div>
-
-      <SavedViewsBar
-        entity="cases"
-        initialViews={initialViews}
-        activeViewId={activeViewId}
-        canSave
-        buildConfig={() => ({
-          folderFilter: activeFolderFilter,
-          search,
-          statusFilter,
-          priorityFilter,
-          sort,
-          sortDir,
-        })}
-        onApply={applySavedView}
-        onSaved={(view) => setActiveViewId(view.id)}
-      />
 
       <AnimatePresence>
         {someSelected ? (
