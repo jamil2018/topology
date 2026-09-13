@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { LoginForm } from "@/components/login-form";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default async function LoginPage() {
   const session = await auth();
@@ -15,7 +16,10 @@ export default async function LoginPage() {
   const airGap = process.env.TOPOLOGY_AIR_GAP === "1" || (!github && !google);
 
   return (
-    <div className="topology-shell flex min-h-screen items-center justify-center px-4 py-12">
+    <div className="topology-shell login-atmosphere relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 py-16 sm:px-8">
+      <div className="absolute top-4 right-4 z-10 sm:top-6 sm:right-6">
+        <ThemeToggle compact />
+      </div>
       <LoginForm oauth={{ github, google }} airGap={airGap} />
     </div>
   );
