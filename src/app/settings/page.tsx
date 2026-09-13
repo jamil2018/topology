@@ -6,6 +6,7 @@ import { SettingsWorkspace } from "@/components/settings-workspace";
 import { SettingsPageSkeleton } from "@/components/skeletons";
 import { resolveActiveProject } from "@/lib/project";
 import { projectShellProps } from "@/lib/project-shell";
+import { resolveSettingsSection } from "@/lib/settings-sections";
 import { ensureMembership } from "@/lib/workspace";
 
 export default async function SettingsPage({
@@ -21,17 +22,7 @@ export default async function SettingsPage({
   const shell = projectShellProps(ctx);
 
   const params = await searchParams;
-  const section = params.section;
-  const initialSection =
-    section === "preferences" ||
-    section === "projects" ||
-    section === "members" ||
-    section === "connections" ||
-    section === "ci" ||
-    section === "webhooks" ||
-    section === "profile"
-      ? section
-      : "profile";
+  const initialSection = resolveSettingsSection(params.section).page;
 
   const defaultUrl =
     process.env.AUTH_URL ??
