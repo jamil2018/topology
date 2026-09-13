@@ -117,20 +117,6 @@ function SidebarChrome({
       </div>
 
       <div className="space-y-2 border-t border-[color:var(--topo-line)] p-3">
-        <Button
-          size="sm"
-          variant="secondary"
-          className="w-full justify-between gap-2"
-          onPress={() => openCommandPalette()}
-        >
-          <span className="inline-flex items-center gap-2">
-            <MagnifyingGlassIcon size={14} weight="bold" />
-            Search
-          </span>
-          <kbd className="rounded border border-[color:var(--topo-line)] px-1 py-0.5 font-mono text-[10px] text-[color:var(--topo-muted)]">
-            ⌘K
-          </kbd>
-        </Button>
         <ThemeToggle />
         {userEmail ? (
           <p
@@ -232,25 +218,40 @@ export function HubShell({
       </AnimatePresence>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]/90 px-3 backdrop-blur-md lg:hidden">
+        <header className="sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]/90 px-3 backdrop-blur-md sm:px-5 lg:px-6">
           <Button
             size="sm"
             variant="secondary"
             aria-label="Open sidebar"
-            className="min-w-0 px-2"
+            className="min-w-0 px-2 lg:hidden"
             onPress={() => setMobileOpen(true)}
           >
             <SidebarSimpleIcon size={16} weight="bold" />
           </Button>
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <BrandMark size={22} showWordmark={false} />
+            <span className="lg:hidden">
+              <BrandMark size={22} showWordmark={false} />
+            </span>
             <div className="min-w-0">
               <div className="truncate font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
                 {current?.label ?? "App"}
               </div>
             </div>
           </div>
-          <ThemeToggle compact />
+          <span title="Search ⌘K">
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-label="Search ⌘K"
+              className="min-w-0 px-2"
+              onPress={() => openCommandPalette()}
+            >
+              <MagnifyingGlassIcon size={16} weight="bold" />
+            </Button>
+          </span>
+          <span className="lg:hidden">
+            <ThemeToggle compact />
+          </span>
         </header>
 
         <main className="mx-auto w-full max-w-[1200px] flex-1 px-3 py-4 sm:px-5 sm:py-5 lg:px-6">
