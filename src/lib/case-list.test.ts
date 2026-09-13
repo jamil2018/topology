@@ -61,6 +61,19 @@ describe("filterAndSortCases", () => {
       filterAndSortCases(cases, "all", "", "title", "desc").map((c) => c.title),
     ).toEqual(["Regression path", "Logout works", "Login works"]);
   });
+
+  it("filters by status and priority", () => {
+    expect(
+      filterAndSortCases(cases, "all", "", "key", "asc", "ready", "all").map(
+        (c) => c.key,
+      ),
+    ).toEqual(["TOP-1", "TOP-3"]);
+    expect(
+      filterAndSortCases(cases, "all", "", "key", "asc", "all", "P0").map(
+        (c) => c.key,
+      ),
+    ).toEqual(["TOP-1"]);
+  });
 });
 
 describe("paginateCases", () => {

@@ -26,14 +26,29 @@ const PRIORITY_RANK: Record<string, number> = {
   P3: 3,
 };
 
+export type CaseListFilters = {
+  folderFilter?: string;
+  search?: string;
+  statusFilter?: string;
+  priorityFilter?: string;
+};
+
 export function filterCases(
   cases: CaseListItem[],
   folderFilter: string,
   search: string,
+  statusFilter: string = "all",
+  priorityFilter: string = "all",
 ): CaseListItem[] {
   const q = search.trim().toLowerCase();
   return cases.filter((c) => {
     if (folderFilter !== "all" && (c.folder?.id ?? "") !== folderFilter) {
+      return false;
+    }
+    if (statusFilter !== "all" && c.status !== statusFilter) {
+      return false;
+    }
+    if (priorityFilter !== "all" && c.priority !== priorityFilter) {
       return false;
     }
     if (!q) return true;
@@ -95,8 +110,14 @@ export function filterAndSortCases(
   search: string,
   sort: CaseListSort,
   dir: CaseListSortDir = "asc",
+  statusFilter: string = "all",
+  priorityFilter: string = "all",
 ): CaseListItem[] {
-  return sortCases(filterCases(cases, folderFilter, search), sort, dir);
+  return sortCases(
+    filterCases(cases, folderFilter, search, statusFilter, priorityFilter),
+    sort,
+    dir,
+  );
 }
 
 export function paginateCases<T>(

@@ -1,0 +1,60 @@
+import { z } from "zod";
+import type { CaseListSort, CaseListSortDir } from "@/lib/case-list";
+import type { RunListSort } from "@/lib/run-list";
+
+export const caseViewConfigSchema = z.object({
+  folderFilter: z.string().default("all"),
+  search: z.string().default(""),
+  statusFilter: z.string().default("all"),
+  priorityFilter: z.string().default("all"),
+  sort: z
+    .enum(["key", "title", "folder", "priority", "status"])
+    .default("key"),
+  sortDir: z.enum(["asc", "desc"]).default("asc"),
+});
+
+export const runViewConfigSchema = z.object({
+  search: z.string().default(""),
+  sort: z.enum(["updated", "created", "name", "status"]).default("updated"),
+});
+
+export type CaseViewConfig = z.infer<typeof caseViewConfigSchema>;
+export type RunViewConfig = z.infer<typeof runViewConfigSchema>;
+
+export function parseCaseViewConfig(raw: string): CaseViewConfig {
+  try {
+    const parsed = caseViewConfigSchema.safeParse(JSON.parse(raw));
+    if (parsed.success) return parsed.data;
+  } catch {
+    /* fall through */
+  }
+  return caseViewConfigSchema.parse({});
+}
+
+export function parseRunViewConfig(raw: string): RunViewConfig {
+  try {
+    const parsed = runViewConfigSchema.safeParse(JSON.parse(raw));
+    if (parsed.success) return parsed.data;
+  } catch {
+    /* fall through */
+  }
+  return runViewConfigSchema.parse({});
+}
+
+export function serializeCaseViewConfig(config: {
+  folderFilter: string;
+  search: string;
+  statusFilter: string;
+  priorityFilter: string;
+  sort: CaseListSort;
+  sortDir: CaseListSortDir;
+}): string {
+  return JSON.stringify(caseViewConfigSchema.parse(config));
+}
+
+export function serializeRunViewConfig(config: {
+  search: string;
+  sort: RunListSort;
+}): string {
+  return JSON.stringify(runViewConfigSchema.parse(config));
+}

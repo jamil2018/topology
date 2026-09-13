@@ -392,6 +392,42 @@ export const webhookEndpoints = pgTable("webhook_endpoints", {
 
 export type WebhookEndpoint = typeof webhookEndpoints.$inferSelect;
 
+export const savedViewEntityEnum = pgEnum("saved_view_entity", [
+  "cases",
+  "runs",
+]);
+
+/** Named filter+sort presets (Linear-style saved views). */
+export const savedViews = pgTable("saved_views", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  entity: savedViewEntityEnum("entity").notNull(),
+  /** JSON: filters + sort for the entity list. */
+  configJson: text("config_json").notNull(),
+  createdById: uuid("created_by_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+/** Minimal case change log (who changed what). */
+export const caseActivities = pgTable("case_activities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  caseId: uuid("case_id")
+    .notNull()
+    .references(() => cases.id, { onDelete: "cascade" }),
+  actorId: uuid("actor_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  action: text("action").notNull(),
+  field: text("field"),
+  fromValue: text("from_value"),
+  toValue: text("to_value"),
+  summary: text("summary").notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
   sessions: many(sessions),
@@ -466,6 +502,25 @@ export const casesRelations = relations(cases, ({ one, many }) => ({
   }),
   results: many(runResults),
   linkedIssues: many(linkedIssues),
+  activities: many(caseActivities),
+}));
+
+export const savedViewsRelations = relations(savedViews, ({ one }) => ({
+  createdBy: one(users, {
+    fields: [savedViews.createdById],
+    references: [users.id],
+  }),
+}));
+
+export const caseActivitiesRelations = relations(caseActivities, ({ one }) => ({
+  case: one(cases, {
+    fields: [caseActivities.caseId],
+    references: [cases.id],
+  }),
+  actor: one(users, {
+    fields: [caseActivities.actorId],
+    references: [users.id],
+  }),
 }));
 
 export const runsRelations = relations(runs, ({ one, many }) => ({
@@ -604,3 +659,5 @@ export type WorkspaceInvite = typeof workspaceInvites.$inferSelect;
 export type ResultComment = typeof resultComments.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type WorkspaceRole = (typeof workspaceRoleEnum.enumValues)[number];
+export type SavedView = typeof savedViews.$inferSelect;
+export type CaseActivity = typeof caseActivities.$inferSelect;
