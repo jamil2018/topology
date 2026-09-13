@@ -11,7 +11,6 @@ import {
   updateProject,
   userIsProjectAdminAnywhere,
 } from "@/lib/project";
-import { canAdmin } from "@/lib/workspace-roles";
 import { ensureDefaultWorkspace } from "@/lib/workspace";
 
 const createSchema = z.object({
@@ -144,6 +143,7 @@ export async function PATCH(request: Request) {
   const access = await requireProjectAccess(session.user.id, {
     preferredId: parsed.data.id,
     admin: true,
+    allowArchived: true,
   });
   if (!access.ok) {
     return NextResponse.json(
@@ -184,17 +184,13 @@ export async function DELETE(request: Request) {
   const access = await requireProjectAccess(session.user.id, {
     preferredId: id,
     admin: true,
+    allowArchived: true,
   });
   if (!access.ok) {
     return NextResponse.json(
       { error: access.error },
       { status: access.status },
     );
-  }
-
-  // Allow delete even if archived — re-check admin membership including archived
-  if (!canAdmin(access.ctx.membership.role)) {
-    return NextResponse.json({ error: "Admin role required" }, { status: 403 });
   }
 
   try {

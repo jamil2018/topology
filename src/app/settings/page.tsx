@@ -4,6 +4,9 @@ import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
 import { SettingsWorkspace } from "@/components/settings-workspace";
 import { SettingsPageSkeleton } from "@/components/skeletons";
+import { resolveActiveProject } from "@/lib/project";
+import { projectShellProps } from "@/lib/project-shell";
+import { ensureMembership } from "@/lib/workspace";
 
 export default async function SettingsPage({
   searchParams,
@@ -11,14 +14,21 @@ export default async function SettingsPage({
   searchParams: Promise<{ section?: string }>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
+
+  await ensureMembership(session.user.id);
+  const ctx = await resolveActiveProject(session.user.id);
+  const shell = projectShellProps(ctx);
 
   const params = await searchParams;
   const section = params.section;
   const initialSection =
     section === "preferences" ||
+    section === "projects" ||
+    section === "members" ||
     section === "connections" ||
     section === "ci" ||
+    section === "webhooks" ||
     section === "profile"
       ? section
       : "profile";
@@ -29,7 +39,7 @@ export default async function SettingsPage({
     "http://127.0.0.1:4317";
 
   return (
-    <HubShell userEmail={session.user.email}>
+    <HubShell userEmail={session.user.email} {...shell}>
       <Suspense fallback={<SettingsPageSkeleton />}>
         <SettingsWorkspace
           defaultUrl={defaultUrl}

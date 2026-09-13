@@ -2,9 +2,11 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
+import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { RunsWorkspace } from "@/components/runs-workspace";
 import { RunsPageSkeleton } from "@/components/skeletons";
 import { resolveActiveProject } from "@/lib/project";
+import { projectShellProps } from "@/lib/project-shell";
 import { listCases, listFolders, listRuns, listSavedViews } from "@/lib/queries";
 import { ensureMembership } from "@/lib/workspace";
 
@@ -16,13 +18,14 @@ export default async function RunsPage() {
   const ctx = await resolveActiveProject(session.user.id);
   if (!ctx) {
     return (
-      <HubShell userEmail={session.user.email}>
-        <p>No accessible project.</p>
+      <HubShell userEmail={session.user.email} {...projectShellProps(null)}>
+        <NoProjectEmptyState />
       </HubShell>
     );
   }
 
   const workspaceId = ctx.project.id;
+  const shell = projectShellProps(ctx);
   const [runs, cases, folders, views] = await Promise.all([
     listRuns(workspaceId, "manual"),
     listCases(workspaceId),
@@ -31,7 +34,7 @@ export default async function RunsPage() {
   ]);
 
   return (
-    <HubShell userEmail={session.user.email}>
+    <HubShell userEmail={session.user.email} {...shell}>
       <Suspense fallback={<RunsPageSkeleton />}>
         <RunsWorkspace
           initialRuns={runs.map((r) => ({

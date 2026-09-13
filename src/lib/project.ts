@@ -128,6 +128,8 @@ export async function requireProjectAccess(
     request?: Request | null;
     write?: boolean;
     admin?: boolean;
+    /** Allow resolving an archived project (admin manage flows). */
+    allowArchived?: boolean;
   },
 ): Promise<
   | { ok: true; ctx: ActiveProjectContext }
@@ -135,11 +137,33 @@ export async function requireProjectAccess(
 > {
   const preferred =
     options?.preferredId ?? (await readPreferredProjectId(options?.request));
+
+  if (options?.allowArchived && preferred) {
+    const membership = await getMembershipForProject(userId, preferred);
+    if (membership?.workspace) {
+      const projects = await listUserProjects(userId, {
+        includeArchived: true,
+      });
+      const ctx: ActiveProjectContext = {
+        project: membership.workspace,
+        membership,
+        projects,
+      };
+      if (options.admin && !canAdmin(ctx.membership.role)) {
+        return { ok: false, status: 403, error: "Admin role required" };
+      }
+      if (options.write && !canWrite(ctx.membership.role)) {
+        return { ok: false, status: 403, error: "Write access required" };
+      }
+      return { ok: true, ctx };
+    }
+  }
+
   const ctx = await resolveActiveProject(userId, preferred);
   if (!ctx) {
     return { ok: false, status: 403, error: "No accessible project" };
   }
-  if (ctx.project.archivedAt) {
+  if (ctx.project.archivedAt && !options?.allowArchived) {
     return { ok: false, status: 403, error: "Project is archived" };
   }
   if (options?.admin && !canAdmin(ctx.membership.role)) {
