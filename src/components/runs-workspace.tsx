@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { Selection } from "@heroui/react";
 import {
   Button,
@@ -17,6 +17,7 @@ import {
 import { motion } from "motion/react";
 import { PageHeader } from "./page-header";
 import { RunCasePickerTable } from "./run-case-picker-table";
+import { SavedViewsBar, type SavedViewRow } from "./saved-views-bar";
 import { StatusChip, statusToneForRun } from "./status-chip";
 import {
   collectCaseTags,
@@ -31,6 +32,7 @@ import {
   RUN_LIST_PAGE_SIZE,
   type RunListSort,
 } from "@/lib/run-list";
+import { parseRunViewConfig } from "@/lib/saved-views";
 
 type RunRow = {
   id: string;
@@ -54,12 +56,15 @@ export function RunsWorkspace({
   initialRuns,
   cases,
   folders,
+  initialViews = [],
 }: {
   initialRuns: RunRow[];
   cases: PickerCase[];
   folders: Folder[];
+  initialViews?: SavedViewRow[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -78,6 +83,16 @@ export function RunsWorkspace({
   const [runSearch, setRunSearch] = useState("");
   const [runSort, setRunSort] = useState<RunListSort>("updated");
   const [runPage, setRunPage] = useState(1);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const forceNew = searchParams.get("new") === "1";
+  const [startExpanded, setStartExpanded] = useState(
+    () => forceNew || initialRuns.length === 0,
+  );
+  const [seenNewParam, setSeenNewParam] = useState(forceNew);
+  if (forceNew && !seenNewParam) {
+    setSeenNewParam(true);
+    if (!startExpanded) setStartExpanded(true);
+  }
 
   const tags = useMemo(() => collectCaseTags(cases), [cases]);
   const visible = useMemo(
@@ -103,9 +118,15 @@ export function RunsWorkspace({
   const visibleIds = visible.map((c) => c.id);
   const selectedCount = selectedIds.size;
   const readyCount = cases.filter((c) => c.status === "ready").length;
-  /** Collapse create form when runs already exist; expand on empty for first-run UX. */
-  const startRunDefaultExpanded = initialRuns.length === 0;
   const showRunListPagination = runPageData.total > RUN_LIST_PAGE_SIZE;
+
+  function applyRunView(view: SavedViewRow) {
+    const config = parseRunViewConfig(JSON.stringify(view.config));
+    setRunSearch(config.search);
+    setRunSort(config.sort);
+    setRunPage(1);
+    setActiveViewId(view.id);
+  }
 
   function resetToReady() {
     setStatus("ready");
@@ -176,7 +197,8 @@ export function RunsWorkspace({
       />
 
       <Disclosure
-        defaultExpanded={startRunDefaultExpanded}
+        isExpanded={startExpanded}
+        onExpandedChange={setStartExpanded}
         className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3"
       >
         <Disclosure.Heading className="m-0">
@@ -254,55 +276,68 @@ export function RunsWorkspace({
 
       <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
         {initialRuns.length > 0 ? (
-          <div className="flex flex-col gap-2 border-b border-[color:var(--topo-line)] p-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2">
-            <TextField name="run-list-search" className="min-w-0 flex-1">
-              <Label className="sr-only">Search runs</Label>
-              <Input
-                aria-label="Search runs"
-                placeholder="Search name, id, or status"
-                value={runSearch}
-                onChange={(e) => {
-                  setRunSearch(e.target.value);
-                  setRunPage(1);
-                }}
-                className="w-full"
-              />
-            </TextField>
-            <div className="flex items-center gap-1.5">
-              <span
-                id="run-list-sort-label"
-                className="shrink-0 text-xs text-[color:var(--topo-muted)]"
-              >
-                Sort
-              </span>
-              <Select
-                aria-labelledby="run-list-sort-label"
-                className="w-[9.5rem] shrink-0"
-                variant="secondary"
-                placeholder="Updated"
-                value={runSort}
-                onChange={(value) => {
-                  if (value == null) return;
-                  setRunSort(String(value) as RunListSort);
-                  setRunPage(1);
-                }}
-              >
-                <Select.Trigger className="h-9 min-h-9 py-0 md:h-8 md:min-h-8">
-                  <Select.Value className="text-center" />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {runListSorts.map((s) => (
-                      <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
-                        {s.label}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
+          <div className="space-y-2 border-b border-[color:var(--topo-line)] p-2.5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2">
+              <TextField name="run-list-search" className="min-w-0 flex-1">
+                <Label className="sr-only">Search runs</Label>
+                <Input
+                  aria-label="Search runs"
+                  placeholder="Search name, id, or status"
+                  value={runSearch}
+                  onChange={(e) => {
+                    setActiveViewId(null);
+                    setRunSearch(e.target.value);
+                    setRunPage(1);
+                  }}
+                  className="w-full"
+                />
+              </TextField>
+              <div className="flex items-center gap-1.5">
+                <span
+                  id="run-list-sort-label"
+                  className="shrink-0 text-xs text-[color:var(--topo-muted)]"
+                >
+                  Sort
+                </span>
+                <Select
+                  aria-labelledby="run-list-sort-label"
+                  className="w-[9.5rem] shrink-0"
+                  variant="secondary"
+                  placeholder="Updated"
+                  value={runSort}
+                  onChange={(value) => {
+                    if (value == null) return;
+                    setActiveViewId(null);
+                    setRunSort(String(value) as RunListSort);
+                    setRunPage(1);
+                  }}
+                >
+                  <Select.Trigger className="h-9 min-h-9 py-0 md:h-8 md:min-h-8">
+                    <Select.Value className="text-center" />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      {runListSorts.map((s) => (
+                        <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
+                          {s.label}
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                      ))}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </div>
             </div>
+            <SavedViewsBar
+              entity="runs"
+              initialViews={initialViews}
+              activeViewId={activeViewId}
+              canSave
+              buildConfig={() => ({ search: runSearch, sort: runSort })}
+              onApply={applyRunView}
+              onSaved={(view) => setActiveViewId(view.id)}
+            />
           </div>
         ) : null}
 

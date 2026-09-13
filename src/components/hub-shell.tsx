@@ -14,12 +14,14 @@ import {
   FlagIcon,
   GearIcon,
   ListChecksIcon,
+  MagnifyingGlassIcon,
   PlayCircleIcon,
   SidebarSimpleIcon,
   SignOutIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { BrandMark } from "./brand-mark";
+import { openCommandPalette } from "./command-palette";
 import { ThemeToggle } from "./theme-toggle";
 
 const nav = [
@@ -115,6 +117,20 @@ function SidebarChrome({
       </div>
 
       <div className="space-y-2 border-t border-[color:var(--topo-line)] p-3">
+        <Button
+          size="sm"
+          variant="secondary"
+          className="w-full justify-between gap-2"
+          onPress={() => openCommandPalette()}
+        >
+          <span className="inline-flex items-center gap-2">
+            <MagnifyingGlassIcon size={14} weight="bold" />
+            Search
+          </span>
+          <kbd className="rounded border border-[color:var(--topo-line)] px-1 py-0.5 font-mono text-[10px] text-[color:var(--topo-muted)]">
+            ⌘K
+          </kbd>
+        </Button>
         <ThemeToggle />
         {userEmail ? (
           <p

@@ -74,6 +74,13 @@ See [`.env.example`](.env.example):
 
 Tracker tokens stay server-side; never expose them to the browser or MCP process beyond Topology’s own API token.
 
+### Linear-like UX
+
+- **Command palette** — `⌘K` / `Ctrl+K` (or sidebar Search) to create a case, start a run, file an issue, or jump to pages/cases/runs/folders.
+- **Saved views** — name and reuse filter+sort presets on Cases and Runs.
+- **Bulk edit** — select cases, then change status, move folder, or add tags.
+- **Case history** — click a case key/title to open a minimal activity log (who changed what).
+
 ## Scripts
 
 | Script | Purpose |

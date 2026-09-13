@@ -16,6 +16,7 @@ import {
   milestones,
   runResults,
   runs,
+  savedViews,
   triageItems,
 } from "@/db/schema";
 import { listRetestQueue } from "@/lib/issues";
@@ -232,6 +233,25 @@ export async function listFolders() {
   return db.query.folders.findMany({
     orderBy: [folders.name],
   });
+}
+
+export async function listSavedViews(
+  entity: "cases" | "runs",
+  userId: string,
+) {
+  const rows = await db.query.savedViews.findMany({
+    where: and(
+      eq(savedViews.entity, entity),
+      eq(savedViews.createdById, userId),
+    ),
+    orderBy: [desc(savedViews.updatedAt)],
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    entity: row.entity,
+    config: JSON.parse(row.configJson) as unknown,
+  }));
 }
 
 export async function getRunWithResults(runId: string) {

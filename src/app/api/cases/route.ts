@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { cases, folders } from "@/db/schema";
+import {
+  recordCaseActivity,
+  recordCaseFieldChanges,
+} from "@/lib/case-activity";
 import { listCases } from "@/lib/queries";
 
 const createCaseSchema = z.object({
@@ -21,6 +25,15 @@ const createCaseSchema = z.object({
   folderId: z.string().uuid().nullable().optional(),
   tags: z.array(z.string()).optional().default([]),
   assigneeId: z.string().uuid().nullable().optional(),
+});
+
+const bulkUpdateSchema = z.object({
+  caseIds: z.array(z.string().uuid()).min(1).max(500),
+  status: z.enum(["draft", "ready", "blocked", "deprecated"]).optional(),
+  priority: z.enum(["P0", "P1", "P2", "P3"]).optional(),
+  folderId: z.string().uuid().nullable().optional(),
+  tags: z.array(z.string()).optional(),
+  tagMode: z.enum(["replace", "add"]).optional().default("replace"),
 });
 
 export async function GET(request: Request) {
@@ -67,12 +80,154 @@ export async function POST(request: Request) {
         createdById: session.user.id,
       })
       .returning();
+
+    await recordCaseActivity({
+      caseId: created.id,
+      actorId: session.user.id,
+      action: "created",
+      summary: `Created case ${created.key}`,
+    });
+
     return NextResponse.json({ case: created }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to create case";
     if (message.includes("unique") || message.includes("duplicate")) {
-      return NextResponse.json({ error: "Case key already exists" }, { status: 409 });
+      return NextResponse.json(
+        { error: "Case key already exists" },
+        { status: 409 },
+      );
     }
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+/** Bulk edit status / priority / folder / tags. */
+export async function PATCH(request: Request) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const parsed = bulkUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.flatten() },
+      { status: 400 },
+    );
+  }
+
+  const { caseIds, status, priority, folderId, tags, tagMode } = parsed.data;
+  if (
+    status === undefined &&
+    priority === undefined &&
+    folderId === undefined &&
+    tags === undefined
+  ) {
+    return NextResponse.json(
+      { error: "Provide status, priority, folderId, and/or tags" },
+      { status: 400 },
+    );
+  }
+
+  if (folderId) {
+    const folder = await db.query.folders.findFirst({
+      where: eq(folders.id, folderId),
+    });
+    if (!folder) {
+      return NextResponse.json({ error: "Folder not found" }, { status: 400 });
+    }
+  }
+
+  const existing = await db.query.cases.findMany({
+    where: inArray(cases.id, caseIds),
+  });
+  if (existing.length === 0) {
+    return NextResponse.json({ error: "No matching cases" }, { status: 404 });
+  }
+
+  const folderNameById = new Map<string, string>();
+  const allFolders = await db.query.folders.findMany();
+  for (const f of allFolders) folderNameById.set(f.id, f.name);
+
+  const updated = [];
+  for (const row of existing) {
+    const patch: Partial<typeof cases.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    const fields: string[] = [];
+
+    if (status !== undefined && status !== row.status) {
+      before.status = row.status;
+      after.status = status;
+      patch.status = status;
+      fields.push("status");
+    }
+    if (priority !== undefined && priority !== row.priority) {
+      before.priority = row.priority;
+      after.priority = priority;
+      patch.priority = priority;
+      fields.push("priority");
+    }
+    if (folderId !== undefined && folderId !== row.folderId) {
+      before.folderId = row.folderId
+        ? (folderNameById.get(row.folderId) ?? row.folderId)
+        : "unfiled";
+      after.folderId = folderId
+        ? (folderNameById.get(folderId) ?? folderId)
+        : "unfiled";
+      patch.folderId = folderId;
+      fields.push("folderId");
+    }
+    if (tags !== undefined) {
+      const nextTags =
+        tagMode === "add"
+          ? Array.from(new Set([...(row.tags ?? []), ...tags]))
+          : tags;
+      const same =
+        JSON.stringify([...(row.tags ?? [])].sort()) ===
+        JSON.stringify([...nextTags].sort());
+      if (!same) {
+        before.tags = row.tags ?? [];
+        after.tags = nextTags;
+        patch.tags = nextTags;
+        fields.push("tags");
+      }
+    }
+
+    if (fields.length === 0) {
+      updated.push(row);
+      continue;
+    }
+
+    const [next] = await db
+      .update(cases)
+      .set(patch)
+      .where(eq(cases.id, row.id))
+      .returning();
+
+    await recordCaseFieldChanges({
+      caseId: row.id,
+      actorId: session.user.id,
+      action: "bulk_updated",
+      before,
+      after,
+      fields,
+    });
+
+    updated.push(next);
+  }
+
+  return NextResponse.json({
+    updated: updated.length,
+    cases: updated,
+  });
 }

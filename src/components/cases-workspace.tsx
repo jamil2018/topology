@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useRef, useState, useTransition } from "react";
 import {
   Button,
   Input,
@@ -35,7 +35,10 @@ import {
   type CaseListSort,
   type CaseListSortDir,
 } from "@/lib/case-list";
+import { parseCaseViewConfig } from "@/lib/saved-views";
+import { CaseHistoryPanel } from "./case-history-panel";
 import { PageHeader } from "./page-header";
+import { SavedViewsBar, type SavedViewRow } from "./saved-views-bar";
 import { StatusChip, statusToneForRun } from "./status-chip";
 
 type Folder = { id: string; name: string };
@@ -63,19 +66,50 @@ const sortColumns: { id: CaseListSort; label: string }[] = [
 export function CasesWorkspace({
   initialCases,
   folders,
+  initialViews = [],
 }: {
   initialCases: CaseRow[];
   folders: Folder[];
+  initialViews?: SavedViewRow[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const paramsKey = searchParams.toString();
   const [pending, startTransition] = useTransition();
-  const [folderFilter, setFolderFilter] = useState<string>("all");
+  const [folderFilter, setFolderFilter] = useState<string>(
+    () => searchParams.get("folder") ?? "all",
+  );
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [sort, setSort] = useState<CaseListSort>("key");
   const [sortDir, setSortDir] = useState<CaseListSortDir>("asc");
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(
+    () => searchParams.get("new") === "1",
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkPending, setBulkPending] = useState(false);
+  const [bulkTags, setBulkTags] = useState("");
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [historyCase, setHistoryCase] = useState<CaseRow | null>(() => {
+    const caseParam = searchParams.get("case");
+    if (!caseParam) return null;
+    return initialCases.find((c) => c.id === caseParam) ?? null;
+  });
+  const [appliedParams, setAppliedParams] = useState(paramsKey);
+  if (appliedParams !== paramsKey) {
+    setAppliedParams(paramsKey);
+    if (searchParams.get("new") === "1") setShowCreate(true);
+    const folderParam = searchParams.get("folder");
+    if (folderParam) setFolderFilter(folderParam);
+    const caseParam = searchParams.get("case");
+    if (caseParam) {
+      const found = initialCases.find((c) => c.id === caseParam);
+      if (found) setHistoryCase(found);
+    }
+  }
   const [folderModalMode, setFolderModalMode] = useState<"create" | "rename">(
     "create",
   );
@@ -131,8 +165,18 @@ export function CasesWorkspace({
         search,
         sort,
         sortDir,
+        statusFilter,
+        priorityFilter,
       ),
-    [initialCases, activeFolderFilter, search, sort, sortDir],
+    [
+      initialCases,
+      activeFolderFilter,
+      search,
+      sort,
+      sortDir,
+      statusFilter,
+      priorityFilter,
+    ],
   );
 
   const pageData = useMemo(
@@ -141,25 +185,97 @@ export function CasesWorkspace({
   );
 
   const hasSearch = search.trim().length > 0;
+  const pageIds = pageData.items.map((c) => c.id);
+  const allPageSelected =
+    pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const someSelected = selectedIds.size > 0;
 
-  useEffect(() => {
-    setPage(1);
-  }, [folderFilter, search, sort, sortDir]);
-
-  useEffect(() => {
-    if (page !== pageData.page) setPage(pageData.page);
-  }, [page, pageData.page]);
+  const listFilterKey = `${folderFilter}|${search}|${sort}|${sortDir}|${statusFilter}|${priorityFilter}`;
+  const [pageFilterKey, setPageFilterKey] = useState(listFilterKey);
+  if (pageFilterKey !== listFilterKey) {
+    setPageFilterKey(listFilterKey);
+    if (page !== 1) setPage(1);
+  } else if (page !== pageData.page) {
+    setPage(pageData.page);
+  }
 
   const rangeStart =
     pageData.total === 0 ? 0 : (pageData.page - 1) * CASE_LIST_PAGE_SIZE + 1;
   const rangeEnd = Math.min(pageData.page * CASE_LIST_PAGE_SIZE, pageData.total);
 
   function toggleSort(next: CaseListSort) {
+    setActiveViewId(null);
     if (sort === next) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSort(next);
       setSortDir("asc");
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectPage() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function applySavedView(view: SavedViewRow) {
+    const config = parseCaseViewConfig(JSON.stringify(view.config));
+    setFolderFilter(config.folderFilter);
+    setSearch(config.search);
+    setStatusFilter(config.statusFilter);
+    setPriorityFilter(config.priorityFilter);
+    setSort(config.sort);
+    setSortDir(config.sortDir);
+    setActiveViewId(view.id);
+  }
+
+  async function bulkUpdate(patch: {
+    status?: string;
+    priority?: string;
+    folderId?: string | null;
+    tags?: string[];
+    tagMode?: "replace" | "add";
+  }) {
+    if (selectedIds.size === 0) return;
+    setBulkPending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/cases", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caseIds: Array.from(selectedIds),
+          ...patch,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string" ? data.error : "Bulk update failed",
+        );
+        return;
+      }
+      setSelectedIds(new Set());
+      setBulkTags("");
+      startTransition(() => router.refresh());
+    } finally {
+      setBulkPending(false);
     }
   }
 
@@ -542,6 +658,7 @@ export function CasesWorkspace({
           selectedKey={activeFolderFilter}
           onSelectionChange={(key) => {
             if (key == null) return;
+            setActiveViewId(null);
             setFolderFilter(String(key));
           }}
           aria-label="Filter by folder"
@@ -579,6 +696,70 @@ export function CasesWorkspace({
           </ComboBox.Popover>
         </ComboBox>
 
+        <Select
+          className="w-[8.5rem]"
+          variant="secondary"
+          value={statusFilter}
+          onChange={(value) => {
+            if (value == null) return;
+            setActiveViewId(null);
+            setStatusFilter(String(value));
+          }}
+        >
+          <Label className="text-xs text-[color:var(--topo-muted)]">Status</Label>
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              <ListBox.Item id="all" textValue="All">
+                All
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+              {statuses.map((s) => (
+                <ListBox.Item key={s} id={s} textValue={s}>
+                  {s}
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+
+        <Select
+          className="w-[8rem]"
+          variant="secondary"
+          value={priorityFilter}
+          onChange={(value) => {
+            if (value == null) return;
+            setActiveViewId(null);
+            setPriorityFilter(String(value));
+          }}
+        >
+          <Label className="text-xs text-[color:var(--topo-muted)]">
+            Priority
+          </Label>
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              <ListBox.Item id="all" textValue="All">
+                All
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+              {priorities.map((p) => (
+                <ListBox.Item key={p} id={p} textValue={p}>
+                  {p}
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+
         {selectedFolder ? (
           <Dropdown.Root>
             <Dropdown.Trigger
@@ -612,6 +793,127 @@ export function CasesWorkspace({
           </Dropdown.Root>
         ) : null}
       </div>
+
+      <SavedViewsBar
+        entity="cases"
+        initialViews={initialViews}
+        activeViewId={activeViewId}
+        canSave
+        buildConfig={() => ({
+          folderFilter: activeFolderFilter,
+          search,
+          statusFilter,
+          priorityFilter,
+          sort,
+          sortDir,
+        })}
+        onApply={applySavedView}
+        onSaved={(view) => setActiveViewId(view.id)}
+      />
+
+      <AnimatePresence>
+        {someSelected ? (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-accent-soft)] px-3 py-2"
+          >
+            <span className="text-xs font-medium text-[color:var(--topo-ink)]">
+              {selectedIds.size} selected
+            </span>
+            <Select
+              className="w-[8.5rem]"
+              variant="secondary"
+              placeholder="Status"
+              onChange={(value) => {
+                if (value == null) return;
+                void bulkUpdate({ status: String(value) });
+              }}
+            >
+              <Label className="sr-only">Bulk status</Label>
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {statuses.map((s) => (
+                    <ListBox.Item key={s} id={s} textValue={s}>
+                      {s}
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
+            </Select>
+            <Select
+              className="w-[9rem]"
+              variant="secondary"
+              placeholder="Move folder"
+              onChange={(value) => {
+                if (value == null) return;
+                const next = String(value);
+                void bulkUpdate({
+                  folderId: next === "none" ? null : next,
+                });
+              }}
+            >
+              <Label className="sr-only">Bulk folder</Label>
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  <ListBox.Item id="none" textValue="Unfiled">
+                    Unfiled
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                  {folders.map((f) => (
+                    <ListBox.Item key={f.id} id={f.id} textValue={f.name}>
+                      {f.name}
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
+            </Select>
+            <TextField name="bulk-tags" className="w-40">
+              <Label className="sr-only">Add tags</Label>
+              <Input
+                placeholder="Add tags…"
+                value={bulkTags}
+                onChange={(e) => setBulkTags(e.target.value)}
+              />
+            </TextField>
+            <Button
+              size="sm"
+              variant="secondary"
+              isDisabled={bulkPending || !bulkTags.trim()}
+              onPress={() =>
+                void bulkUpdate({
+                  tags: bulkTags
+                    .split(/[;,]/)
+                    .map((t) => t.trim())
+                    .filter(Boolean),
+                  tagMode: "add",
+                })
+              }
+            >
+              Add tags
+            </Button>
+            <Button
+              size="sm"
+              variant="tertiary"
+              isDisabled={bulkPending}
+              onPress={() => setSelectedIds(new Set())}
+            >
+              Clear
+            </Button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showCreate ? (
@@ -766,6 +1068,9 @@ export function CasesWorkspace({
         ) : null}
       </AnimatePresence>
 
+      <div
+        className={`grid gap-3 ${historyCase ? "lg:grid-cols-[minmax(0,1fr)_18rem]" : ""}`}
+      >
       <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
         <div className="flex flex-col gap-2 border-b border-[color:var(--topo-line)] p-2.5 sm:flex-row sm:items-center sm:gap-3">
           <TextField name="case-list-search" className="min-w-0 flex-1">
@@ -774,7 +1079,10 @@ export function CasesWorkspace({
               aria-label="Search cases"
               placeholder="Search title, key, tags, or folder"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setActiveViewId(null);
+                setSearch(e.target.value);
+              }}
               className="w-full"
             />
           </TextField>
@@ -789,6 +1097,15 @@ export function CasesWorkspace({
         <table className="w-full text-left text-sm">
           <thead className="border-b border-[color:var(--topo-line)] font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
             <tr>
+              <th className="w-10 px-2 py-2">
+                <input
+                  type="checkbox"
+                  aria-label="Select page"
+                  checked={allPageSelected}
+                  onChange={toggleSelectPage}
+                  className="accent-[color:var(--topo-accent)]"
+                />
+              </th>
               {sortColumns.map((col) => {
                 const active = sort === col.id;
                 return (
@@ -823,7 +1140,7 @@ export function CasesWorkspace({
             {initialCases.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="px-3 py-10 text-center text-[color:var(--topo-muted)]"
                 >
                   No cases yet. Create one or import a CSV.
@@ -832,7 +1149,7 @@ export function CasesWorkspace({
             ) : pageData.items.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="px-3 py-10 text-center text-[color:var(--topo-muted)]"
                 >
                   No cases match this search or folder.
@@ -845,24 +1162,49 @@ export function CasesWorkspace({
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: Math.min(i, 12) * 0.02 }}
-                  className="border-b border-[color:var(--topo-line)] last:border-0"
+                  className={`border-b border-[color:var(--topo-line)] last:border-0 ${
+                    historyCase?.id === c.id
+                      ? "bg-[color:var(--topo-accent-soft)]"
+                      : ""
+                  }`}
                 >
+                  <td className="px-2 py-2">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${c.key}`}
+                      checked={selectedIds.has(c.id)}
+                      onChange={() => toggleSelect(c.id)}
+                      className="accent-[color:var(--topo-accent)]"
+                    />
+                  </td>
                   <td className="px-3 py-2 font-mono text-xs text-[color:var(--topo-accent)]">
-                    {c.key}
+                    <button
+                      type="button"
+                      className="hover:underline"
+                      onClick={() => setHistoryCase(c)}
+                    >
+                      {c.key}
+                    </button>
                   </td>
                   <td className="px-3 py-2">
-                    <div className="font-medium text-[color:var(--topo-ink)]">
-                      {c.title}
-                    </div>
-                    {c.tags.length > 0 ? (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {c.tags.map((t) => (
-                          <Chip key={t} size="sm" variant="soft">
-                            {t}
-                          </Chip>
-                        ))}
+                    <button
+                      type="button"
+                      className="text-left"
+                      onClick={() => setHistoryCase(c)}
+                    >
+                      <div className="font-medium text-[color:var(--topo-ink)]">
+                        {c.title}
                       </div>
-                    ) : null}
+                      {c.tags.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {c.tags.map((t) => (
+                            <Chip key={t} size="sm" variant="soft">
+                              {t}
+                            </Chip>
+                          ))}
+                        </div>
+                      ) : null}
+                    </button>
                   </td>
                   <td className="px-3 py-2 text-xs text-[color:var(--topo-muted)]">
                     {c.folder?.name ?? "unfiled"}
@@ -908,6 +1250,17 @@ export function CasesWorkspace({
             </div>
           </div>
         ) : null}
+      </div>
+
+      {historyCase ? (
+        <CaseHistoryPanel
+          key={historyCase.id}
+          caseId={historyCase.id}
+          caseKey={historyCase.key}
+          caseTitle={historyCase.title}
+          onClose={() => setHistoryCase(null)}
+        />
+      ) : null}
       </div>
     </div>
   );
