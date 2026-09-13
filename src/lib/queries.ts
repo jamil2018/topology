@@ -565,10 +565,13 @@ export async function getFlakeHints(workspaceId: string, limit = 20) {
   return hints.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
-/** One report per run — list summaries for the Reports surface. */
+/** One report per completed run — list summaries for the Reports surface. */
 export async function listRunReports(workspaceId: string) {
   const allRuns = await db.query.runs.findMany({
-    where: eq(runs.workspaceId, workspaceId),
+    where: and(
+      eq(runs.workspaceId, workspaceId),
+      eq(runs.status, "completed"),
+    ),
     orderBy: [desc(runs.updatedAt)],
     limit: 100,
   });
@@ -650,10 +653,14 @@ export async function listRunReports(workspaceId: string) {
   });
 }
 
-/** Full report for a single run (manual or CI). */
+/** Full report for a single completed run (manual or CI). */
 export async function getRunReport(workspaceId: string, runId: string) {
   const run = await db.query.runs.findFirst({
-    where: and(eq(runs.id, runId), eq(runs.workspaceId, workspaceId)),
+    where: and(
+      eq(runs.id, runId),
+      eq(runs.workspaceId, workspaceId),
+      eq(runs.status, "completed"),
+    ),
     with: {
       results: {
         with: {

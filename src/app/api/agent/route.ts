@@ -10,6 +10,10 @@ import {
   linkExistingIssue,
   whatsPending,
 } from "@/lib/issues";
+import {
+  isRunFrozen,
+  runImmutableResponse,
+} from "@/lib/run-immutability";
 
 async function requireToken(request: Request) {
   return authenticateApiToken(request);
@@ -248,7 +252,9 @@ export async function POST(request: Request) {
       if (!run) {
         return NextResponse.json({ error: "Run not found" }, { status: 404 });
       }
-
+      if (isRunFrozen(run.status)) {
+        return runImmutableResponse();
+      }
       let caseId = parsed.data.caseId;
       if (!caseId && parsed.data.caseKey) {
         const c = await db.query.cases.findFirst({

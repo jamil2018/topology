@@ -9,6 +9,10 @@ import {
 } from "@/lib/ci-ingest";
 import { db } from "@/db";
 import { runs } from "@/db/schema";
+import {
+  isRunFrozen,
+  runImmutableResponse,
+} from "@/lib/run-immutability";
 
 const resultSchema = z.object({
   externalKey: z.string().min(1),
@@ -58,6 +62,9 @@ export async function POST(request: Request) {
     });
     if (!run) {
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
+    }
+    if (isRunFrozen(run.status)) {
+      return runImmutableResponse();
     }
   } else {
     const [created] = await db

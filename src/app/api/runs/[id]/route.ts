@@ -7,6 +7,10 @@ import { runResults, runs } from "@/db/schema";
 import { openTriageForResult } from "@/lib/ci-ingest";
 import { requireProjectAccess } from "@/lib/project";
 import {
+  isRunFrozen,
+  runImmutableResponse,
+} from "@/lib/run-immutability";
+import {
   buildRunCompletedPayload,
   dispatchWebhook,
 } from "@/lib/webhooks";
@@ -74,6 +78,9 @@ export async function PATCH(request: Request, { params }: Params) {
   const body = await request.json();
 
   if (body?.action === "start") {
+    if (isRunFrozen(existing.status)) {
+      return runImmutableResponse();
+    }
     const [updated] = await db
       .update(runs)
       .set({
@@ -87,6 +94,10 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   if (body?.action === "complete") {
+    if (isRunFrozen(existing.status)) {
+      // Idempotent: already completed — do not re-dispatch or rewrite.
+      return NextResponse.json({ run: existing });
+    }
     const [updated] = await db
       .update(runs)
       .set({
@@ -146,6 +157,10 @@ export async function PATCH(request: Request, { params }: Params) {
     );
   }
 
+  if (isRunFrozen(existing.status)) {
+    return runImmutableResponse();
+  }
+
   const [updated] = await db
     .update(runResults)
     .set({
@@ -170,7 +185,7 @@ export async function PATCH(request: Request, { params }: Params) {
     .update(runs)
     .set({
       status: "in_progress",
-      startedAt: new Date(),
+      startedAt: existing.startedAt ?? new Date(),
       updatedAt: new Date(),
     })
     .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)));

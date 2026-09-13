@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Button } from "@heroui/react";
+import { Button, Modal, useOverlayState } from "@heroui/react";
 import { motion } from "motion/react";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
+import { isRunFrozen } from "@/lib/run-immutability";
 
 type LinkedIssue = {
   id: string;
@@ -142,6 +143,8 @@ export function RunExecutor({
   );
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const completeModal = useOverlayState();
+  const frozen = isRunFrozen(run.status);
   const done = run.results.filter((r) => r.status !== "untested").length;
   const pct =
     run.results.length === 0
@@ -160,10 +163,21 @@ export function RunExecutor({
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      setError("Update failed");
-      return;
+      const data = (await res.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      setError(
+        typeof data?.error === "string" ? data.error : "Update failed",
+      );
+      return false;
     }
     refresh();
+    return true;
+  }
+
+  async function confirmComplete() {
+    const ok = await patch({ action: "complete" });
+    if (ok) completeModal.close();
   }
 
   async function issueAction(body: Record<string, unknown>) {
@@ -249,25 +263,37 @@ export function RunExecutor({
                 Start
               </Button>
             ) : null}
-            {run.status !== "completed" ? (
+            {!frozen ? (
               <Button
                 size="sm"
                 variant="secondary"
                 isDisabled={pending}
-                onPress={() => void patch({ action: "complete" })}
+                onPress={() => completeModal.open()}
               >
                 Complete
               </Button>
             ) : null}
-            <Link
-              href={`/reports/${run.id}`}
-              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
-            >
-              View report
-            </Link>
+            {frozen ? (
+              <Link
+                href={`/reports/${run.id}`}
+                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+              >
+                View report
+              </Link>
+            ) : null}
           </>
         }
       />
+
+      {frozen ? (
+        <p
+          role="status"
+          className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/40 px-3 py-2 text-xs text-[color:var(--topo-muted)]"
+        >
+          This run is completed and locked. Results and structure can no longer
+          be edited. Comments and attachments are still allowed.
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 text-xs">
         <span className="text-[color:var(--topo-muted)]">Run assignee</span>
@@ -335,7 +361,7 @@ export function RunExecutor({
                   <button
                     key={status}
                     type="button"
-                    disabled={pending}
+                    disabled={pending || frozen}
                     onClick={() =>
                       void patch({
                         caseId: result.case.id,
@@ -347,7 +373,7 @@ export function RunExecutor({
                       result.status === status
                         ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-panel)]"
                         : "bg-[color:var(--topo-chip)] text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-                    }`}
+                    } ${frozen ? "cursor-not-allowed opacity-60" : ""}`}
                   >
                     {status}
                   </button>
@@ -410,7 +436,8 @@ export function RunExecutor({
                   }
                 />
               ))}
-              {result.status === "failed" || result.status === "blocked" ? (
+              {(result.status === "failed" || result.status === "blocked") &&
+              !frozen ? (
                 <>
                   <Button
                     size="sm"
@@ -469,6 +496,7 @@ export function RunExecutor({
                   }))
                 }
                 onBlur={() => {
+                  if (frozen) return;
                   const next = notesDraft[result.id] ?? "";
                   if (next === result.notes) return;
                   void patch({
@@ -478,7 +506,9 @@ export function RunExecutor({
                   });
                 }}
                 rows={2}
-                className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
+                readOnly={frozen}
+                disabled={frozen}
+                className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm disabled:opacity-70"
                 placeholder="Optional notes for this result"
               />
             </label>
@@ -582,6 +612,41 @@ export function RunExecutor({
           </motion.article>
         ))}
       </div>
+
+      <Modal.Root state={completeModal}>
+        <Modal.Backdrop isDismissable={!pending}>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog className="outline-none">
+              <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+                <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                  Complete this run?
+                </Modal.Heading>
+                <p className="text-sm text-[color:var(--topo-muted)]">
+                  Completing is permanent. Results and case structure will be
+                  locked and can no longer be edited. You can still add comments
+                  and attachments afterward.
+                </p>
+              </Modal.Header>
+              <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
+                <Button
+                  variant="tertiary"
+                  isDisabled={pending}
+                  onPress={() => completeModal.close()}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  isDisabled={pending}
+                  onPress={() => void confirmComplete()}
+                >
+                  {pending ? "Completing…" : "Complete run"}
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal.Root>
     </div>
   );
 }
