@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
 import { CasesWorkspace } from "@/components/cases-workspace";
+import { CasesPageSkeleton } from "@/components/skeletons";
 import { listCases, listFolders, listSavedViews } from "@/lib/queries";
 
 export const metadata: Metadata = {
@@ -24,13 +25,7 @@ export default async function CasesPage() {
 
   return (
     <HubShell userEmail={session.user.email}>
-      <Suspense
-        fallback={
-          <p className="text-sm text-[color:var(--topo-muted)]">
-            Loading test cases…
-          </p>
-        }
-      >
+      <Suspense fallback={<CasesPageSkeleton />}>
         <CasesWorkspace
           initialCases={cases.map((c) => ({
             id: c.id,

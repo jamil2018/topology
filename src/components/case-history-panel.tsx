@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@heroui/react";
 import { ClockCounterClockwiseIcon, XIcon } from "@phosphor-icons/react";
+import { Bone } from "./skeletons";
 
 export type ActivityRow = {
   id: string;
@@ -96,7 +97,21 @@ export function CaseHistoryPanel({
 
       <div className="flex-1 overflow-y-auto px-3 py-3">
         {loading ? (
-          <p className="text-sm text-[color:var(--topo-muted)]">Loading activity…</p>
+          <ol
+            className="space-y-3"
+            aria-busy="true"
+            aria-label="Loading activity"
+          >
+            {Array.from({ length: 4 }).map((_, i) => (
+              <li
+                key={i}
+                className="relative space-y-1.5 border-l-2 border-[color:var(--topo-line)] pl-3"
+              >
+                <Bone className="h-4 w-48 max-w-full" />
+                <Bone className="h-3 w-32" />
+              </li>
+            ))}
+          </ol>
         ) : error ? (
           <p className="text-sm text-red-600 dark:text-red-300">{error}</p>
         ) : activities.length === 0 ? (

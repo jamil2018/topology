@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
 import { RunsWorkspace } from "@/components/runs-workspace";
+import { RunsPageSkeleton } from "@/components/skeletons";
 import { listCases, listFolders, listRuns, listSavedViews } from "@/lib/queries";
 
 export default async function RunsPage() {
@@ -18,11 +19,7 @@ export default async function RunsPage() {
 
   return (
     <HubShell userEmail={session.user.email}>
-      <Suspense
-        fallback={
-          <p className="text-sm text-[color:var(--topo-muted)]">Loading runs…</p>
-        }
-      >
+      <Suspense fallback={<RunsPageSkeleton />}>
         <RunsWorkspace
           initialRuns={runs.map((r) => ({
             id: r.id,
