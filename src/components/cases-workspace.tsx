@@ -11,7 +11,6 @@ import {
   TextField,
   ListBox,
   Select,
-  ComboBox,
   Modal,
   Dropdown,
   useOverlayState,
@@ -19,14 +18,11 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import {
   CaretDownIcon,
-  DotsThreeVerticalIcon,
   FileArrowDownIcon,
   FileArrowUpIcon,
   FileCsvIcon,
   FolderPlusIcon,
-  PencilSimpleIcon,
   PlusIcon,
-  TrashIcon,
 } from "@phosphor-icons/react";
 import {
   CASE_LIST_PAGE_SIZE,
@@ -35,13 +31,22 @@ import {
   type CaseListSort,
   type CaseListSortDir,
 } from "@/lib/case-list";
+import {
+  buildFolderTree,
+  flattenFolderTree,
+  folderPathLabel,
+} from "@/lib/folder-tree";
 import { parseCaseViewConfig } from "@/lib/saved-views";
 import { CaseHistoryPanel } from "./case-history-panel";
+import {
+  FolderTreePane,
+  type FolderTreeSelection,
+} from "./folder-tree-pane";
 import { PageHeader } from "./page-header";
 import { SavedViewsBar, type SavedViewRow } from "./saved-views-bar";
 import { StatusChip, statusToneForRun } from "./status-chip";
 
-type Folder = { id: string; name: string };
+type Folder = { id: string; name: string; parentId: string | null };
 type CaseRow = {
   id: string;
   key: string;
@@ -49,7 +54,7 @@ type CaseRow = {
   priority: string;
   status: string;
   tags: string[];
-  folder: Folder | null;
+  folder: { id: string; name: string } | null;
 };
 
 const priorities = ["P0", "P1", "P2", "P3"] as const;
@@ -76,9 +81,12 @@ export function CasesWorkspace({
   const searchParams = useSearchParams();
   const paramsKey = searchParams.toString();
   const [pending, startTransition] = useTransition();
-  const [folderFilter, setFolderFilter] = useState<string>(
-    () => searchParams.get("folder") ?? "all",
+  const [folderFilter, setFolderFilter] = useState<FolderTreeSelection>(
+    () => (searchParams.get("folder") as FolderTreeSelection | null) ?? "all",
   );
+  const [treeCollapsed, setTreeCollapsed] = useState(true);
+  const [createParentId, setCreateParentId] = useState<string | null>(null);
+  const [folderActionId, setFolderActionId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -119,6 +127,8 @@ export function CasesWorkspace({
         setFolderName("");
         setFolderError(null);
         setFolderModalMode("create");
+        setCreateParentId(null);
+        setFolderActionId(null);
       }
     },
   });
@@ -146,15 +156,39 @@ export function CasesWorkspace({
     return counts;
   }, [initialCases]);
 
+  const unfiledCount = useMemo(
+    () => initialCases.filter((c) => !c.folder).length,
+    [initialCases],
+  );
+
+  const flatFolders = useMemo(
+    () => flattenFolderTree(buildFolderTree(folders)),
+    [folders],
+  );
+
   const selectedFolder =
-    folderFilter === "all"
+    folderFilter === "all" || folderFilter === "unfiled"
       ? null
       : (folders.find((f) => f.id === folderFilter) ?? null);
 
-  const activeFolderFilter = selectedFolder ? selectedFolder.id : "all";
+  const actionFolder =
+    (folderActionId
+      ? folders.find((f) => f.id === folderActionId)
+      : null) ?? selectedFolder;
 
-  const selectedFolderCount = selectedFolder
-    ? (folderCounts.get(selectedFolder.id) ?? 0)
+  const activeFolderFilter: FolderTreeSelection =
+    folderFilter === "unfiled"
+      ? "unfiled"
+      : selectedFolder
+        ? selectedFolder.id
+        : "all";
+
+  const selectedFolderCount = actionFolder
+    ? (folderCounts.get(actionFolder.id) ?? 0)
+    : 0;
+
+  const childFolderCount = actionFolder
+    ? folders.filter((f) => f.parentId === actionFolder.id).length
     : 0;
 
   const filteredSorted = useMemo(
@@ -236,7 +270,7 @@ export function CasesWorkspace({
 
   function applySavedView(view: SavedViewRow) {
     const config = parseCaseViewConfig(JSON.stringify(view.config));
-    setFolderFilter(config.folderFilter);
+    setFolderFilter(config.folderFilter as FolderTreeSelection);
     setSearch(config.search);
     setStatusFilter(config.statusFilter);
     setPriorityFilter(config.priorityFilter);
@@ -328,11 +362,11 @@ export function CasesWorkspace({
     setFolderPending(true);
     try {
       if (folderModalMode === "rename") {
-        if (!selectedFolder) {
+        if (!actionFolder) {
           setFolderError("Select a folder to rename");
           return;
         }
-        const res = await fetch(`/api/folders/${selectedFolder.id}`, {
+        const res = await fetch(`/api/folders/${actionFolder.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
@@ -347,6 +381,7 @@ export function CasesWorkspace({
           return;
         }
         setFolderName("");
+        setFolderActionId(null);
         folderModal.close();
         startTransition(() => router.refresh());
         return;
@@ -355,7 +390,10 @@ export function CasesWorkspace({
       const res = await fetch("/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({
+          name,
+          parentId: createParentId,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -367,6 +405,7 @@ export function CasesWorkspace({
         return;
       }
       setFolderName("");
+      setCreateParentId(null);
       folderModal.close();
       if (typeof data.folder?.id === "string") {
         setFolderFilter(data.folder.id);
@@ -384,11 +423,11 @@ export function CasesWorkspace({
   }
 
   async function deleteFolder() {
-    if (!selectedFolder) return;
+    if (!actionFolder) return;
     setError(null);
     setFolderPending(true);
     try {
-      const res = await fetch(`/api/folders/${selectedFolder.id}`, {
+      const res = await fetch(`/api/folders/${actionFolder.id}`, {
         method: "DELETE",
       });
       const data = await res.json().catch(() => ({}));
@@ -400,7 +439,8 @@ export function CasesWorkspace({
         );
         return;
       }
-      setFolderFilter("all");
+      if (folderFilter === actionFolder.id) setFolderFilter("all");
+      setFolderActionId(null);
       deleteModal.close();
       startTransition(() => router.refresh());
     } catch {
@@ -410,21 +450,37 @@ export function CasesWorkspace({
     }
   }
 
-  function openCreateFolder() {
+  function openCreateFolder(parentId: string | null = null) {
     setShowCreate(false);
     setFolderModalMode("create");
+    setCreateParentId(parentId);
+    setFolderActionId(null);
     setFolderName("");
     setFolderError(null);
     folderModal.open();
   }
 
-  function openRenameFolder() {
-    if (!selectedFolder) return;
+  function openRenameFolder(folderId?: string) {
+    const target =
+      (folderId ? folders.find((f) => f.id === folderId) : null) ??
+      selectedFolder;
+    if (!target) return;
     setShowCreate(false);
     setFolderModalMode("rename");
-    setFolderName(selectedFolder.name);
+    setFolderActionId(target.id);
+    setCreateParentId(null);
+    setFolderName(target.name);
     setFolderError(null);
     folderModal.open();
+  }
+
+  function openDeleteFolder(folderId?: string) {
+    const target =
+      (folderId ? folders.find((f) => f.id === folderId) : null) ??
+      selectedFolder;
+    if (!target) return;
+    setFolderActionId(target.id);
+    deleteModal.open();
   }
 
   async function importCsv(file: File) {
@@ -444,7 +500,7 @@ export function CasesWorkspace({
     <div className="space-y-4">
       <PageHeader
         eyebrow="Suites"
-        title="Cases"
+        title="Test Cases"
         description="Organize suites in folders, author cases, and import or export CSV."
         meta={
           <StatusChip mono>
@@ -458,7 +514,13 @@ export function CasesWorkspace({
               variant="primary"
               className="gap-1.5"
               onPress={() => {
-                setShowCreate((v) => !v);
+                setShowCreate((v) => {
+                  const next = !v;
+                  if (next && selectedFolder) {
+                    setForm((f) => ({ ...f, folderId: selectedFolder.id }));
+                  }
+                  return next;
+                });
                 folderModal.close();
               }}
             >
@@ -469,7 +531,7 @@ export function CasesWorkspace({
               size="sm"
               variant="secondary"
               className="gap-1.5"
-              onPress={openCreateFolder}
+              onPress={() => openCreateFolder(null)}
             >
               <FolderPlusIcon size={14} weight="bold" />
               New folder
@@ -549,12 +611,21 @@ export function CasesWorkspace({
             <Modal.Dialog className="outline-none">
               <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
                 <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
-                  {folderModalMode === "rename" ? "Rename folder" : "New folder"}
+                  {folderModalMode === "rename"
+                    ? "Rename folder"
+                    : createParentId
+                      ? "New subfolder"
+                      : "New folder"}
                 </Modal.Heading>
                 <p className="text-sm text-[color:var(--topo-muted)]">
                   {folderModalMode === "rename"
                     ? "Update the suite folder name."
-                    : "Name a suite folder to organize cases."}
+                    : createParentId
+                      ? `Create inside “${
+                          folders.find((f) => f.id === createParentId)?.name ??
+                          "folder"
+                        }”.`
+                      : "Name a suite folder to organize cases. Nest subfolders from the tree."}
                 </p>
               </Modal.Header>
               <Modal.Body className="space-y-3 px-4 py-4">
@@ -602,7 +673,9 @@ export function CasesWorkspace({
                       : "Creating…"
                     : folderModalMode === "rename"
                       ? "Save name"
-                      : "Create folder"}
+                      : createParentId
+                        ? "Create subfolder"
+                        : "Create folder"}
                 </Button>
               </Modal.Footer>
             </Modal.Dialog>
@@ -619,13 +692,19 @@ export function CasesWorkspace({
                   Delete folder
                 </Modal.Heading>
                 <p className="text-sm text-[color:var(--topo-muted)]">
-                  {selectedFolder
-                    ? `Delete “${selectedFolder.name}”? ${
+                  {actionFolder
+                    ? `Delete “${actionFolder.name}”? ${
                         selectedFolderCount === 0
                           ? "No cases are in this folder."
                           : selectedFolderCount === 1
                             ? "1 case in this folder will move to unfiled."
                             : `${selectedFolderCount} cases in this folder will move to unfiled.`
+                      }${
+                        childFolderCount > 0
+                          ? ` ${childFolderCount} subfolder${
+                              childFolderCount === 1 ? "" : "s"
+                            } will move to the root.`
+                          : ""
                       }`
                     : "Select a folder to delete."}
                 </p>
@@ -634,13 +713,16 @@ export function CasesWorkspace({
                 <Button
                   variant="tertiary"
                   isDisabled={folderPending}
-                  onPress={() => deleteModal.close()}
+                  onPress={() => {
+                    setFolderActionId(null);
+                    deleteModal.close();
+                  }}
                 >
                   Cancel
                 </Button>
                 <Button
                   variant="danger"
-                  isDisabled={folderPending || !selectedFolder}
+                  isDisabled={folderPending || !actionFolder}
                   onPress={() => void deleteFolder()}
                 >
                   {folderPending ? "Deleting…" : "Delete folder"}
@@ -652,50 +734,6 @@ export function CasesWorkspace({
       </Modal.Root>
 
       <div className="flex flex-wrap items-end gap-2">
-        <ComboBox
-          className="min-w-[14rem] max-w-full flex-1 sm:max-w-xs"
-          variant="secondary"
-          selectedKey={activeFolderFilter}
-          onSelectionChange={(key) => {
-            if (key == null) return;
-            setActiveViewId(null);
-            setFolderFilter(String(key));
-          }}
-          aria-label="Filter by folder"
-        >
-          <Label className="text-xs text-[color:var(--topo-muted)]">
-            Folder
-          </Label>
-          <ComboBox.InputGroup>
-            <Input placeholder="Search folders…" />
-            <ComboBox.Trigger />
-          </ComboBox.InputGroup>
-          <ComboBox.Popover>
-            <ListBox>
-              <ListBox.Item
-                id="all"
-                textValue={`All ${initialCases.length}`}
-              >
-                All ({initialCases.length})
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
-              {folders.map((f) => {
-                const count = folderCounts.get(f.id) ?? 0;
-                return (
-                  <ListBox.Item
-                    key={f.id}
-                    id={f.id}
-                    textValue={`${f.name} ${count}`}
-                  >
-                    {f.name} ({count})
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                );
-              })}
-            </ListBox>
-          </ComboBox.Popover>
-        </ComboBox>
-
         <Select
           className="w-[8.5rem]"
           variant="secondary"
@@ -759,39 +797,6 @@ export function CasesWorkspace({
             </ListBox>
           </Select.Popover>
         </Select>
-
-        {selectedFolder ? (
-          <Dropdown.Root>
-            <Dropdown.Trigger
-              aria-label={`Manage folder ${selectedFolder.name}`}
-              className="button button--sm button--secondary inline-flex items-center gap-1"
-            >
-              <DotsThreeVerticalIcon size={14} weight="bold" />
-              Manage
-            </Dropdown.Trigger>
-            <Dropdown.Popover placement="bottom end" className="min-w-[11rem]">
-              <Dropdown.Menu
-                aria-label="Folder actions"
-                onAction={(key) => {
-                  if (key === "rename") {
-                    openRenameFolder();
-                  } else if (key === "delete") {
-                    deleteModal.open();
-                  }
-                }}
-              >
-                <Dropdown.Item id="rename" textValue="Rename" className="gap-2">
-                  <PencilSimpleIcon size={14} weight="bold" />
-                  Rename
-                </Dropdown.Item>
-                <Dropdown.Item id="delete" textValue="Delete" className="gap-2">
-                  <TrashIcon size={14} weight="bold" />
-                  Delete
-                </Dropdown.Item>
-              </Dropdown.Menu>
-            </Dropdown.Popover>
-          </Dropdown.Root>
-        ) : null}
       </div>
 
       <SavedViewsBar
@@ -848,7 +853,7 @@ export function CasesWorkspace({
               </Select.Popover>
             </Select>
             <Select
-              className="w-[9rem]"
+              className="w-[12rem]"
               variant="secondary"
               placeholder="Move folder"
               onChange={(value) => {
@@ -870,12 +875,15 @@ export function CasesWorkspace({
                     Unfiled
                     <ListBox.ItemIndicator />
                   </ListBox.Item>
-                  {folders.map((f) => (
-                    <ListBox.Item key={f.id} id={f.id} textValue={f.name}>
-                      {f.name}
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                  ))}
+                  {flatFolders.map((f) => {
+                    const label = folderPathLabel(folders, f.id);
+                    return (
+                      <ListBox.Item key={f.id} id={f.id} textValue={label}>
+                        <span style={{ paddingLeft: f.depth * 10 }}>{label}</span>
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    );
+                  })}
                 </ListBox>
               </Select.Popover>
             </Select>
@@ -1033,12 +1041,17 @@ export function CasesWorkspace({
                       None
                       <ListBox.ItemIndicator />
                     </ListBox.Item>
-                    {folders.map((f) => (
-                      <ListBox.Item key={f.id} id={f.id} textValue={f.name}>
-                        {f.name}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
+                    {flatFolders.map((f) => {
+                      const label = folderPathLabel(folders, f.id);
+                      return (
+                        <ListBox.Item key={f.id} id={f.id} textValue={label}>
+                          <span style={{ paddingLeft: f.depth * 10 }}>
+                            {label}
+                          </span>
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                      );
+                    })}
                   </ListBox>
                 </Select.Popover>
               </Select>
@@ -1069,8 +1082,32 @@ export function CasesWorkspace({
       </AnimatePresence>
 
       <div
-        className={`grid gap-3 ${historyCase ? "lg:grid-cols-[minmax(0,1fr)_18rem]" : ""}`}
+        className={`grid gap-3 ${
+          historyCase
+            ? "lg:grid-cols-[15rem_minmax(0,1fr)_18rem]"
+            : "lg:grid-cols-[15rem_minmax(0,1fr)]"
+        }`}
       >
+      <div className="lg:sticky lg:top-3 lg:self-start">
+        <FolderTreePane
+          folders={folders}
+          folderCounts={folderCounts}
+          unfiledCount={unfiledCount}
+          totalCount={initialCases.length}
+          selected={activeFolderFilter}
+          collapsed={treeCollapsed}
+          onToggleCollapsed={() => setTreeCollapsed((v) => !v)}
+          onSelect={(id) => {
+            setActiveViewId(null);
+            setFolderFilter(id);
+            setTreeCollapsed(true);
+          }}
+          onCreateRoot={() => openCreateFolder(null)}
+          onCreateSubfolder={(parentId) => openCreateFolder(parentId)}
+          onRename={(folderId) => openRenameFolder(folderId)}
+          onDelete={(folderId) => openDeleteFolder(folderId)}
+        />
+      </div>
       <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
         <div className="flex flex-col gap-2 border-b border-[color:var(--topo-line)] p-2.5 sm:flex-row sm:items-center sm:gap-3">
           <TextField name="case-list-search" className="min-w-0 flex-1">

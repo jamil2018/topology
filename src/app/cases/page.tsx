@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
@@ -5,6 +6,12 @@ import { HubShell } from "@/components/hub-shell";
 import { CasesWorkspace } from "@/components/cases-workspace";
 import { CasesPageSkeleton } from "@/components/skeletons";
 import { listCases, listFolders, listSavedViews } from "@/lib/queries";
+
+export const metadata: Metadata = {
+  title: "Test Cases · Topology",
+  description:
+    "Organize suites in nested folders, author cases, and import or export CSV.",
+};
 
 export default async function CasesPage() {
   const session = await auth();
@@ -31,7 +38,11 @@ export default async function CasesPage() {
               ? { id: c.folder.id, name: c.folder.name }
               : null,
           }))}
-          folders={folders.map((f) => ({ id: f.id, name: f.name }))}
+          folders={folders.map((f) => ({
+            id: f.id,
+            name: f.name,
+            parentId: f.parentId ?? null,
+          }))}
           initialViews={views}
         />
       </Suspense>

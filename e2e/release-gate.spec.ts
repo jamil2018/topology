@@ -35,7 +35,7 @@ test("release gate: login → hub → case → run → fail → mock issue → t
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", {
     name: /Test Runs/,
   }).click();
-  await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Test Runs" })).toBeVisible({
     timeout: 15_000,
   });
 
