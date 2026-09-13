@@ -465,10 +465,10 @@ export function SettingsPageSkeleton() {
   return (
     <div className="space-y-4">
       <PageHeaderSkeleton descriptionLines={1} badgeCount={1} actionCount={0} />
-      <div className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] p-1">
-        <div className="flex gap-1 overflow-hidden">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Bone key={i} className="h-9 w-24 shrink-0 rounded-[5px]" />
+      <div className="overflow-hidden border-b border-[color:var(--topo-line)]">
+        <div className="flex gap-1">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Bone key={i} className="h-10 w-28 shrink-0 rounded-none" />
           ))}
         </div>
       </div>

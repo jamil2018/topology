@@ -88,4 +88,4 @@ Or from this repo:
 npm run start --workspace=@topology/mcp
 ```
 
-Topology UI has **Connect an agent** under [Settings → Connections](/settings?section=connections) (`/connect` redirects there) with a copyable snippet.
+Topology UI has **Connect an agent** under [Settings → Integrations](/settings?section=integrations#connections) (`/connect` redirects there) with a copyable snippet.

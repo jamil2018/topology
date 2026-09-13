@@ -62,7 +62,7 @@ npx topology runs complete --run-id <id>`}
         <p className="mt-2 text-xs">
           Full setup lives in{" "}
           <Link
-            href="/settings?section=ci"
+            href="/settings?section=integrations#ci"
             className="text-[color:var(--topo-accent)] underline-offset-2 hover:underline"
           >
             Settings → CI

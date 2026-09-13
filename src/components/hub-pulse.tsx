@@ -239,7 +239,7 @@ export function HubPulse({
               Cases
             </Link>
             <Link
-              href="/settings?section=ci"
+              href="/settings?section=integrations#ci"
               className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
             >
               CI setup
