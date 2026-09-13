@@ -276,10 +276,21 @@ describe.skipIf(!hasDb)("CI ingest API (integration)", () => {
     const { db } = await import("@/db");
     const { runs } = await import("@/db/schema");
     const { listRunReports, getRunReport } = await import("@/lib/queries");
+    const { authenticateCiRequest } = await import("@/lib/ci-auth");
+
+    const authResult = await authenticateCiRequest(
+      new Request("http://x", {
+        headers: { Authorization: `Bearer ${process.env.TOPOLOGY_API_TOKEN}` },
+      }),
+    );
+    expect(authResult.ok).toBe(true);
+    if (!authResult.ok) throw new Error("auth failed");
+    const workspaceId = authResult.workspaceId;
 
     const [planned] = await db
       .insert(runs)
       .values({
+        workspaceId,
         name: `Planned no report ${Date.now()}`,
         status: "planned",
         kind: "manual",
@@ -288,13 +299,13 @@ describe.skipIf(!hasDb)("CI ingest API (integration)", () => {
       })
       .returning();
 
-    const reports = await listRunReports();
+    const reports = await listRunReports(workspaceId);
     expect(reports.every((r) => r.status === "completed")).toBe(true);
     expect(reports.some((r) => r.runId === created.run.id)).toBe(true);
     expect(reports.some((r) => r.runId === planned.id)).toBe(false);
 
-    expect(await getRunReport(created.run.id)).not.toBeNull();
-    expect(await getRunReport(planned.id)).toBeNull();
+    expect(await getRunReport(workspaceId, created.run.id)).not.toBeNull();
+    expect(await getRunReport(workspaceId, planned.id)).toBeNull();
   });
 });
 
