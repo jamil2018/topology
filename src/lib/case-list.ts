@@ -42,7 +42,12 @@ export function filterCases(
 ): CaseListItem[] {
   const q = search.trim().toLowerCase();
   return cases.filter((c) => {
-    if (folderFilter !== "all" && (c.folder?.id ?? "") !== folderFilter) {
+    if (folderFilter === "unfiled") {
+      if (c.folder) return false;
+    } else if (
+      folderFilter !== "all" &&
+      (c.folder?.id ?? "") !== folderFilter
+    ) {
       return false;
     }
     if (statusFilter !== "all" && c.status !== statusFilter) {

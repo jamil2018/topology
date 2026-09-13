@@ -42,6 +42,18 @@ export async function POST(request: Request) {
   const name = parsed.data.name;
   const parentId = parsed.data.parentId ?? null;
 
+  if (parentId) {
+    const parent = await db.query.folders.findFirst({
+      where: eq(folders.id, parentId),
+    });
+    if (!parent) {
+      return NextResponse.json(
+        { error: "Parent folder not found" },
+        { status: 404 },
+      );
+    }
+  }
+
   const existing = await db
     .select({ id: folders.id })
     .from(folders)
@@ -55,7 +67,7 @@ export async function POST(request: Request) {
 
   if (existing.length > 0) {
     return NextResponse.json(
-      { error: "A folder with this name already exists" },
+      { error: "A folder with this name already exists in this location" },
       { status: 409 },
     );
   }
