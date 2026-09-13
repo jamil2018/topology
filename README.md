@@ -84,10 +84,6 @@ Tracker tokens stay server-side; never expose them to the browser or MCP process
 | `npm run db:seed` | Seed demo user, workspace admin, cases, run, milestone, token |
 | `npm run topology` | Topology CLI |
 | `npm run mcp` | Start `@topology/mcp` stdio server |
-<<<<<<< HEAD
-| `npm run test` | Vitest unit tests |
-| `npm run test:e2e` | Playwright smoke |
-=======
 | `npm run test` / `test:unit` | Vitest unit tests (domain, auth helpers, packages) |
 | `npm run test:integration` | Vitest API/DB/CLI/MCP integration (needs Postgres) |
 | `npm run test:ui` | Vitest + Testing Library component tests |
@@ -109,7 +105,6 @@ npm run test:e2e
 ```
 
 GitHub Actions (`.github/workflows/ci.yml`) runs the same suites against a Postgres service container. Issue providers stay on `TOPOLOGY_ISSUE_PROVIDER=mock`; OAuth IdPs are not contacted in CI.
->>>>>>> c0da2db (test: expand F10 release-gate unit, integration, and UI coverage)
 
 Contributor test instructions: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 

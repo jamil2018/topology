@@ -335,8 +335,11 @@ describe("detectFlakeSignal", () => {
       { status: "passed" as const, at: "2026-01-03T00:00:00Z" },
       { status: "failed" as const, at: "2026-01-04T00:00:00Z" },
     ];
+    const scored = detectFlakeSignal(history);
     const loose = detectFlakeSignal(history, { threshold: 10 });
-    const strict = detectFlakeSignal(history, { threshold: 99 });
+    const strict = detectFlakeSignal(history, {
+      threshold: scored.score + 1,
+    });
     expect(loose.isFlaky).toBe(true);
     expect(strict.isFlaky).toBe(false);
   });

@@ -49,3 +49,9 @@ next-env.d.ts
 
 # local attachment uploads
 /data/attachments/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

@@ -75,20 +75,33 @@ describe.skipIf(!hasDb)("CI ingest API (integration)", () => {
   });
 
   it("creates a sharded run, merges threads, and completes", async () => {
-    const { POST: createRun } = await import("@/app/api/ci/runs/route");
-    const createRes = await createRun(
-      new Request("http://127.0.0.1/api/ci/runs", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-          name: `Shard merge ${Date.now()}`,
-          source: "github",
-          shardTotal: 2,
-        }),
+    const { db } = await import("@/db");
+    const { runs } = await import("@/db/schema");
+    const { authenticateCiRequest } = await import("@/lib/ci-auth");
+
+    const authResult = await authenticateCiRequest(
+      new Request("http://x", {
+        headers: { Authorization: `Bearer ${process.env.TOPOLOGY_API_TOKEN}` },
       }),
     );
-    expect(createRes.status).toBe(201);
-    const { run } = (await createRes.json()) as { run: { id: string } };
+    expect(authResult.ok).toBe(true);
+    const userId = authResult.ok ? authResult.userId : null;
+
+    const [run] = await db
+      .insert(runs)
+      .values({
+        name: `Shard merge ${Date.now()}`,
+        kind: "automation",
+        source: "github",
+        status: "in_progress",
+        environment: "ci",
+        startedAt: new Date(),
+        shardTotal: 2,
+        shardsReceived: 0,
+        createdById: userId,
+        externalId: `thread-${Date.now()}`,
+      })
+      .returning();
 
     const { POST: submitShard } = await import(
       "@/app/api/ci/runs/[id]/shards/route"

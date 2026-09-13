@@ -17,9 +17,9 @@ test("release gate: login → hub → case → run → fail → mock issue → t
 
   // Hub readiness / pulse smoke
   await expect(page.getByText("Quality pulse")).toBeVisible();
-  await expect(page.getByText("Milestone gate")).toBeVisible();
+  await expect(page.getByText("Milestone gate", { exact: true })).toBeVisible();
   await expect(
-    page.getByText(/Ready|At risk|Blocked/).first(),
+    page.getByText(/^(Ready|At risk|Blocked)$/).first(),
   ).toBeVisible();
 
   // Cases

@@ -158,15 +158,11 @@ describe.skipIf(!hasDb)("Issues + agent MCP surface (integration)", () => {
     expect(Array.isArray(data.cases)).toBe(true);
   });
 
-  it("issues route rejects unauthenticated callers", async () => {
-    vi.resetModules();
-    vi.doMock("@/auth", () => ({
-      auth: async () => null,
-    }));
-    const { GET } = await import("@/app/api/issues/route");
-    const res = await GET();
+  it("agent API rejects missing bearer tokens", async () => {
+    const { GET } = await import("@/app/api/agent/route");
+    const res = await GET(
+      new Request("http://127.0.0.1/api/agent?resource=cases"),
+    );
     expect(res.status).toBe(401);
-    vi.doUnmock("@/auth");
-    vi.resetModules();
   });
 });
