@@ -43,6 +43,7 @@ export function statusToneForRun(status: string): StatusTone {
     case "passed":
     case "ready":
     case "healthy":
+    case "go":
       return "success";
     case "in_progress":
     case "running":
@@ -52,6 +53,7 @@ export function statusToneForRun(status: string): StatusTone {
     case "failed":
     case "blocked":
     case "critical":
+    case "no_go":
       return "danger";
     case "automation":
       return "info";

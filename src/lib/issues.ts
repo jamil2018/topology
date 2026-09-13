@@ -6,7 +6,8 @@ import {
   type RemoteIssue,
 } from "@topology/issue-providers";
 import { db } from "@/db";
-import { linkedIssues, runResults, runs } from "@/db/schema";
+import { linkedIssues, runResults, runs, triageItems } from "@/db/schema";
+import { dispatchWebhook } from "@/lib/webhooks";
 
 export type LinkedIssueRow = typeof linkedIssues.$inferSelect;
 
@@ -98,6 +99,29 @@ export async function createIssueFromResult(input: {
     )
     .returning();
 
+  await db
+    .update(triageItems)
+    .set({ status: "resolved", updatedAt: new Date() })
+    .where(eq(triageItems.resultId, result.id));
+
+  void dispatchWebhook("issue.created", {
+    issue: {
+      id: row.id,
+      provider: row.provider,
+      remoteKey: row.remoteKey,
+      url: row.url,
+      title: row.title,
+      remoteStatus: row.remoteStatus,
+    },
+    result: {
+      id: result.id,
+      status: result.status,
+      caseKey,
+      caseTitle,
+      runId: result.runId,
+    },
+  });
+
   return row;
 }
 
@@ -127,6 +151,13 @@ export async function linkExistingIssue(input: {
       }),
     )
     .returning();
+
+  if (result.id) {
+    await db
+      .update(triageItems)
+      .set({ status: "resolved", updatedAt: new Date() })
+      .where(eq(triageItems.resultId, result.id));
+  }
 
   return row;
 }
@@ -165,6 +196,30 @@ export async function clearRetestFlag(id: string) {
   const [row] = await db
     .update(linkedIssues)
     .set({ needsRetest: 0, updatedAt: new Date() })
+    .where(eq(linkedIssues.id, id))
+    .returning();
+  return row;
+}
+
+/**
+ * Stub for limited provider sync: mark a linked issue closed locally so the
+ * retest queue surfaces without waiting on a remote pull.
+ */
+export async function markIssueClosedLocally(id: string) {
+  const existing = await db.query.linkedIssues.findFirst({
+    where: eq(linkedIssues.id, id),
+  });
+  if (!existing) throw new Error("Linked issue not found");
+
+  const wasOpen = existing.remoteStatus !== "done";
+  const [row] = await db
+    .update(linkedIssues)
+    .set({
+      remoteStatus: "done",
+      needsRetest: wasOpen || existing.needsRetest === 1 ? 1 : 0,
+      lastSyncedAt: new Date(),
+      updatedAt: new Date(),
+    })
     .where(eq(linkedIssues.id, id))
     .returning();
   return row;

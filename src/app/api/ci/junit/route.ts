@@ -95,6 +95,14 @@ export async function POST(request: Request) {
 
   await openTriageForFailures(runId!);
 
+  const { buildRunCompletedPayload, dispatchWebhook } = await import(
+    "@/lib/webhooks"
+  );
+  const data = await buildRunCompletedPayload(runId!);
+  if (data) {
+    void dispatchWebhook("run.completed", data);
+  }
+
   return NextResponse.json({
     run: { id: runId, name: run.name },
     summary: summarizeResults(parsed.data.results),

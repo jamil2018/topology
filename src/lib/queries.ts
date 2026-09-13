@@ -287,6 +287,23 @@ export async function getActiveMilestoneReadiness() {
     return null;
   }
 
+  return computeReadinessForMilestone(milestone);
+}
+
+export async function listMilestonesWithReadiness() {
+  const rows = await db.query.milestones.findMany({
+    orderBy: [desc(milestones.updatedAt)],
+  });
+  const results = [];
+  for (const milestone of rows) {
+    results.push(await computeReadinessForMilestone(milestone));
+  }
+  return results;
+}
+
+async function computeReadinessForMilestone(
+  milestone: typeof milestones.$inferSelect,
+) {
   const suiteCases = milestone.folderId
     ? await db.query.cases.findMany({
         where: eq(cases.folderId, milestone.folderId),
@@ -312,11 +329,27 @@ export async function getActiveMilestoneReadiness() {
     lastResult: (latestByCase.get(c.id) as MilestoneCase["lastResult"]) ?? null,
   }));
 
-  const readiness = computeMilestoneReadiness(milestoneCases, {
-    minPassRate: milestone.passRateThreshold,
-    maxOpenP0Failures: milestone.maxOpenP0Failures,
-    requireReadyCases: true,
+  const caseIds = new Set(suiteCases.map((c) => c.id));
+  const openBlockers = await db.query.linkedIssues.findMany({
+    where: eq(linkedIssues.remoteStatus, "open"),
   });
+  const openBlockerIssues = openBlockers.filter(
+    (i) =>
+      (i.caseId && caseIds.has(i.caseId)) ||
+      // Treat open issues without a case as blockers for project-wide milestones
+      (!milestone.folderId && !i.caseId),
+  ).length;
+
+  const readiness = computeMilestoneReadiness(
+    { cases: milestoneCases, openBlockerIssues },
+    {
+      minPassRate: milestone.passRateThreshold,
+      maxOpenP0Failures: milestone.maxOpenP0Failures,
+      minExecutedPct: milestone.minExecutedPct,
+      maxOpenBlockers: milestone.maxOpenBlockers,
+      requireReadyCases: true,
+    },
+  );
 
   return {
     milestone,
@@ -332,7 +365,17 @@ export async function getTriageQueue() {
     orderBy: [desc(triageItems.lastSeenAt)],
   });
 
-  const failures: TriageFailure[] = open.map((item) => ({
+  const linked = await db.query.linkedIssues.findMany();
+  const linkedResultIds = new Set(
+    linked.map((i) => i.resultId).filter(Boolean) as string[],
+  );
+
+  // Failure triage = open items whose result still lacks a linked issue
+  const withoutIssue = open.filter(
+    (item) => !item.resultId || !linkedResultIds.has(item.resultId),
+  );
+
+  const failures: TriageFailure[] = withoutIssue.map((item) => ({
     id: item.id,
     caseKey: item.case?.key ?? "unknown",
     caseTitle: item.title,
@@ -345,11 +388,11 @@ export async function getTriageQueue() {
   }));
 
   const flakeHints = await getFlakeHintsForCaseIds(
-    open.map((o) => o.caseId).filter(Boolean) as string[],
+    withoutIssue.map((o) => o.caseId).filter(Boolean) as string[],
   );
 
   const withFlake = failures.map((f) => {
-    const item = open.find((o) => o.id === f.id);
+    const item = withoutIssue.find((o) => o.id === f.id);
     const hint = item?.caseId ? flakeHints.get(item.caseId) : undefined;
     return {
       ...f,
@@ -357,12 +400,17 @@ export async function getTriageQueue() {
     };
   });
 
-  return buildTriageQueue(withFlake).map((item) => ({
-    ...item,
-    flakeHint: open.find((o) => o.id === item.id)?.caseId
-      ? flakeHints.get(open.find((o) => o.id === item.id)!.caseId!)?.hint
-      : null,
-  }));
+  return buildTriageQueue(withFlake).map((item) => {
+    const source = withoutIssue.find((o) => o.id === item.id);
+    return {
+      ...item,
+      resultId: source?.resultId ?? null,
+      caseId: source?.caseId ?? null,
+      flakeHint: source?.caseId
+        ? (flakeHints.get(source.caseId)?.hint ?? null)
+        : null,
+    };
+  });
 }
 
 async function getFlakeHintsForCaseIds(caseIds: string[]) {
