@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { folders } from "@/db/schema";
 import { wouldCreateFolderCycle } from "@/lib/folder-tree";
+import { requireProjectAccess } from "@/lib/project";
 
 const updateFolderSchema = z
   .object({
@@ -19,9 +20,18 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: Params) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) {
@@ -42,7 +52,7 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   const existing = await db.query.folders.findFirst({
-    where: eq(folders.id, id),
+    where: and(eq(folders.id, id), eq(folders.workspaceId, workspaceId)),
   });
   if (!existing) {
     return NextResponse.json({ error: "Folder not found" }, { status: 404 });
@@ -56,12 +66,16 @@ export async function PATCH(request: Request, { params }: Params) {
 
   if (parentId) {
     const parent = await db.query.folders.findFirst({
-      where: eq(folders.id, parentId),
+      where: and(
+        eq(folders.id, parentId),
+        eq(folders.workspaceId, workspaceId),
+      ),
     });
     if (!parent) {
       return NextResponse.json({ error: "Parent folder not found" }, { status: 404 });
     }
     const allFolders = await db.query.folders.findMany({
+      where: eq(folders.workspaceId, workspaceId),
       columns: { id: true, name: true, parentId: true },
     });
     if (
@@ -87,6 +101,7 @@ export async function PATCH(request: Request, { params }: Params) {
     .from(folders)
     .where(
       and(
+        eq(folders.workspaceId, workspaceId),
         ne(folders.id, id),
         sql`lower(${folders.name}) = ${name.toLowerCase()}`,
         parentId ? eq(folders.parentId, parentId) : isNull(folders.parentId),
@@ -105,7 +120,7 @@ export async function PATCH(request: Request, { params }: Params) {
     const [updated] = await db
       .update(folders)
       .set({ name, parentId, updatedAt: new Date() })
-      .where(eq(folders.id, id))
+      .where(and(eq(folders.id, id), eq(folders.workspaceId, workspaceId)))
       .returning();
 
     return NextResponse.json({ folder: updated });
@@ -117,11 +132,20 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) {
@@ -129,7 +153,7 @@ export async function DELETE(_request: Request, { params }: Params) {
   }
 
   const existing = await db.query.folders.findFirst({
-    where: eq(folders.id, id),
+    where: and(eq(folders.id, id), eq(folders.workspaceId, workspaceId)),
   });
   if (!existing) {
     return NextResponse.json({ error: "Folder not found" }, { status: 404 });
@@ -140,12 +164,14 @@ export async function DELETE(_request: Request, { params }: Params) {
     await db
       .update(folders)
       .set({ parentId: null, updatedAt: new Date() })
-      .where(eq(folders.parentId, id));
+      .where(
+        and(eq(folders.parentId, id), eq(folders.workspaceId, workspaceId)),
+      );
 
     // Cases + milestones use ON DELETE SET NULL → become unfiled.
     const [deleted] = await db
       .delete(folders)
-      .where(eq(folders.id, id))
+      .where(and(eq(folders.id, id), eq(folders.workspaceId, workspaceId)))
       .returning();
 
     return NextResponse.json({ folder: deleted });

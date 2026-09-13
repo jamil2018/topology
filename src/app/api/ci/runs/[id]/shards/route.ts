@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { mergeShardResults, summarizeResults } from "@topology/domain";
 import { authenticateCiRequest } from "@/lib/ci-auth";
 import {
   loadShardResults,
-  openTriageForFailures,
   storeShardPayload,
   upsertRunResultsFromNormalized,
 } from "@/lib/ci-ingest";
@@ -40,7 +39,9 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const { id } = await params;
-  const run = await db.query.runs.findFirst({ where: eq(runs.id, id) });
+  const run = await db.query.runs.findFirst({
+    where: and(eq(runs.id, id), eq(runs.workspaceId, authResult.workspaceId)),
+  });
   if (!run) {
     return NextResponse.json({ error: "Run not found" }, { status: 404 });
   }
@@ -58,7 +59,12 @@ export async function POST(request: Request, { params }: Params) {
   const shards = await loadShardResults(id);
   const merged = mergeShardResults(shards);
 
-  await upsertRunResultsFromNormalized(id, merged, authResult.userId);
+  await upsertRunResultsFromNormalized(
+    id,
+    merged,
+    authResult.userId,
+    authResult.workspaceId,
+  );
 
   const [updated] = await db
     .update(runs)

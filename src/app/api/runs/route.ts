@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { cases, runResults, runs } from "@/db/schema";
+import { requireProjectAccess } from "@/lib/project";
 import { listRuns } from "@/lib/queries";
 
 /** Create a manual run.
@@ -19,20 +20,35 @@ const createRunSchema = z.object({
   assigneeId: z.string().uuid().nullable().optional(),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const data = await listRuns();
+
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
+  const data = await listRuns(access.ctx.project.id);
   return NextResponse.json({ runs: data });
 }
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const body = await request.json();
   const parsed = createRunSchema.safeParse(body);
@@ -48,13 +64,15 @@ export async function POST(request: Request) {
     const ready = await db
       .select({ id: cases.id })
       .from(cases)
-      .where(eq(cases.status, "ready"));
+      .where(and(eq(cases.status, "ready"), eq(cases.workspaceId, workspaceId)));
     caseIds = ready.map((c) => c.id);
   } else {
     const found = await db
       .select({ id: cases.id })
       .from(cases)
-      .where(inArray(cases.id, caseIds));
+      .where(
+        and(inArray(cases.id, caseIds), eq(cases.workspaceId, workspaceId)),
+      );
     if (found.length !== caseIds.length) {
       return NextResponse.json(
         { error: "One or more case ids are invalid" },
@@ -66,6 +84,7 @@ export async function POST(request: Request) {
   const [run] = await db
     .insert(runs)
     .values({
+      workspaceId,
       name: parsed.data.name,
       description: parsed.data.description,
       environment: parsed.data.environment,

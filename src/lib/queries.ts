@@ -27,7 +27,7 @@ import {
   failureRowsFromResults,
 } from "@/lib/report-stats";
 
-export async function getHubPulse() {
+export async function getHubPulse(workspaceId: string) {
   const [caseStats] = await db
     .select({
       total: count(),
@@ -35,7 +35,8 @@ export async function getHubPulse() {
       blocked: sql<number>`count(*) filter (where ${cases.status} = 'blocked')`,
       draft: sql<number>`count(*) filter (where ${cases.status} = 'draft')`,
     })
-    .from(cases);
+    .from(cases)
+    .where(eq(cases.workspaceId, workspaceId));
 
   const [runStats] = await db
     .select({
@@ -44,7 +45,8 @@ export async function getHubPulse() {
       completed: sql<number>`count(*) filter (where ${runs.status} = 'completed')`,
       automation: sql<number>`count(*) filter (where ${runs.kind} = 'automation')`,
     })
-    .from(runs);
+    .from(runs)
+    .where(eq(runs.workspaceId, workspaceId));
 
   const [resultStats] = await db
     .select({
@@ -53,17 +55,24 @@ export async function getHubPulse() {
       untested: sql<number>`count(*) filter (where ${runResults.status} = 'untested')`,
       total: count(),
     })
-    .from(runResults);
+    .from(runResults)
+    .innerJoin(runs, eq(runResults.runId, runs.id))
+    .where(eq(runs.workspaceId, workspaceId));
 
   const [triageStats] = await db
     .select({
       open: sql<number>`count(*) filter (where ${triageItems.status} = 'open')`,
     })
-    .from(triageItems);
+    .from(triageItems)
+    .where(eq(triageItems.workspaceId, workspaceId));
 
-  const folderCount = await db.select({ value: count() }).from(folders);
+  const folderCount = await db
+    .select({ value: count() })
+    .from(folders)
+    .where(eq(folders.workspaceId, workspaceId));
 
   const recentRuns = await db.query.runs.findMany({
+    where: eq(runs.workspaceId, workspaceId),
     orderBy: [desc(runs.updatedAt)],
     limit: 8,
   });
@@ -94,12 +103,17 @@ export async function getHubPulse() {
     ]),
   );
 
-  const flakeSuspects = await countFlakeSuspects();
+  const flakeSuspects = await countFlakeSuspects(workspaceId);
   const openLinked = await db
     .select({ value: count() })
     .from(linkedIssues)
-    .where(eq(linkedIssues.remoteStatus, "open"));
-  const retestQueue = await listRetestQueue();
+    .where(
+      and(
+        eq(linkedIssues.workspaceId, workspaceId),
+        eq(linkedIssues.remoteStatus, "open"),
+      ),
+    );
+  const retestQueue = await listRetestQueue(workspaceId);
 
   const passed = Number(resultStats?.passed ?? 0);
   const failed = Number(resultStats?.failed ?? 0);
@@ -182,13 +196,24 @@ export async function getHubPulse() {
   };
 }
 
-async function countFlakeSuspects(): Promise<number> {
-  const recent = await db.query.runResults.findMany({
-    where: sql`${runResults.status} in ('passed', 'failed')`,
-    orderBy: [desc(runResults.executedAt)],
-    limit: 500,
-    with: { case: true },
-  });
+async function countFlakeSuspects(workspaceId: string): Promise<number> {
+  const recent = await db
+    .select({
+      caseId: runResults.caseId,
+      status: runResults.status,
+      executedAt: runResults.executedAt,
+      createdAt: runResults.createdAt,
+    })
+    .from(runResults)
+    .innerJoin(runs, eq(runResults.runId, runs.id))
+    .where(
+      and(
+        eq(runs.workspaceId, workspaceId),
+        sql`${runResults.status} in ('passed', 'failed')`,
+      ),
+    )
+    .orderBy(desc(runResults.executedAt))
+    .limit(500);
 
   const byCase = new Map<
     string,
@@ -215,32 +240,42 @@ async function countFlakeSuspects(): Promise<number> {
   return suspects;
 }
 
-export async function listCases(folderId?: string | null) {
+export async function listCases(
+  workspaceId: string,
+  folderId?: string | null,
+) {
   if (folderId) {
     return db.query.cases.findMany({
-      where: eq(cases.folderId, folderId),
+      where: and(
+        eq(cases.workspaceId, workspaceId),
+        eq(cases.folderId, folderId),
+      ),
       with: { folder: true },
       orderBy: [desc(cases.updatedAt)],
     });
   }
   return db.query.cases.findMany({
+    where: eq(cases.workspaceId, workspaceId),
     with: { folder: true },
     orderBy: [desc(cases.updatedAt)],
   });
 }
 
-export async function listFolders() {
+export async function listFolders(workspaceId: string) {
   return db.query.folders.findMany({
+    where: eq(folders.workspaceId, workspaceId),
     orderBy: [folders.name],
   });
 }
 
 export async function listSavedViews(
+  workspaceId: string,
   entity: "cases" | "runs",
   userId: string,
 ) {
   const rows = await db.query.savedViews.findMany({
     where: and(
+      eq(savedViews.workspaceId, workspaceId),
       eq(savedViews.entity, entity),
       eq(savedViews.createdById, userId),
     ),
@@ -254,9 +289,9 @@ export async function listSavedViews(
   }));
 }
 
-export async function getRunWithResults(runId: string) {
+export async function getRunWithResults(workspaceId: string, runId: string) {
   return db.query.runs.findFirst({
-    where: eq(runs.id, runId),
+    where: and(eq(runs.id, runId), eq(runs.workspaceId, workspaceId)),
     with: {
       results: {
         with: {
@@ -273,14 +308,18 @@ export async function getRunWithResults(runId: string) {
   });
 }
 
-export async function listRuns(kind?: "manual" | "automation") {
+export async function listRuns(
+  workspaceId: string,
+  kind?: "manual" | "automation",
+) {
   if (kind) {
     return db.query.runs.findMany({
-      where: eq(runs.kind, kind),
+      where: and(eq(runs.workspaceId, workspaceId), eq(runs.kind, kind)),
       orderBy: [desc(runs.updatedAt)],
     });
   }
   return db.query.runs.findMany({
+    where: eq(runs.workspaceId, workspaceId),
     orderBy: [desc(runs.updatedAt)],
   });
 }
@@ -297,9 +336,12 @@ export function runProgress(
   };
 }
 
-export async function getActiveMilestoneReadiness() {
+export async function getActiveMilestoneReadiness(workspaceId: string) {
   const milestone = await db.query.milestones.findFirst({
-    where: eq(milestones.status, "active"),
+    where: and(
+      eq(milestones.workspaceId, workspaceId),
+      eq(milestones.status, "active"),
+    ),
     orderBy: [desc(milestones.updatedAt)],
   });
 
@@ -310,8 +352,9 @@ export async function getActiveMilestoneReadiness() {
   return computeReadinessForMilestone(milestone);
 }
 
-export async function listMilestonesWithReadiness() {
+export async function listMilestonesWithReadiness(workspaceId: string) {
   const rows = await db.query.milestones.findMany({
+    where: eq(milestones.workspaceId, workspaceId),
     orderBy: [desc(milestones.updatedAt)],
   });
   const results = [];
@@ -326,15 +369,27 @@ async function computeReadinessForMilestone(
 ) {
   const suiteCases = milestone.folderId
     ? await db.query.cases.findMany({
-        where: eq(cases.folderId, milestone.folderId),
+        where: and(
+          eq(cases.workspaceId, milestone.workspaceId),
+          eq(cases.folderId, milestone.folderId),
+        ),
       })
-    : await db.query.cases.findMany();
+    : await db.query.cases.findMany({
+        where: eq(cases.workspaceId, milestone.workspaceId),
+      });
 
   const latestByCase = new Map<string, string>();
-  const recentResults = await db.query.runResults.findMany({
-    orderBy: [desc(runResults.executedAt)],
-    limit: 1000,
-  });
+  const recentResults = await db
+    .select({
+      caseId: runResults.caseId,
+      status: runResults.status,
+      executedAt: runResults.executedAt,
+    })
+    .from(runResults)
+    .innerJoin(runs, eq(runResults.runId, runs.id))
+    .where(eq(runs.workspaceId, milestone.workspaceId))
+    .orderBy(desc(runResults.executedAt))
+    .limit(1000);
   for (const result of recentResults) {
     if (!result.caseId) continue;
     if (!latestByCase.has(result.caseId)) {
@@ -351,7 +406,10 @@ async function computeReadinessForMilestone(
 
   const caseIds = new Set(suiteCases.map((c) => c.id));
   const openBlockers = await db.query.linkedIssues.findMany({
-    where: eq(linkedIssues.remoteStatus, "open"),
+    where: and(
+      eq(linkedIssues.workspaceId, milestone.workspaceId),
+      eq(linkedIssues.remoteStatus, "open"),
+    ),
   });
   const openBlockerIssues = openBlockers.filter(
     (i) =>
@@ -378,14 +436,19 @@ async function computeReadinessForMilestone(
   };
 }
 
-export async function getTriageQueue() {
+export async function getTriageQueue(workspaceId: string) {
   const open = await db.query.triageItems.findMany({
-    where: eq(triageItems.status, "open"),
+    where: and(
+      eq(triageItems.workspaceId, workspaceId),
+      eq(triageItems.status, "open"),
+    ),
     with: { case: true, run: true },
     orderBy: [desc(triageItems.lastSeenAt)],
   });
 
-  const linked = await db.query.linkedIssues.findMany();
+  const linked = await db.query.linkedIssues.findMany({
+    where: eq(linkedIssues.workspaceId, workspaceId),
+  });
   const linkedResultIds = new Set(
     linked.map((i) => i.resultId).filter(Boolean) as string[],
   );
@@ -460,8 +523,11 @@ async function getFlakeHintsForCaseIds(caseIds: string[]) {
   return map;
 }
 
-export async function getFlakeHints(limit = 20) {
-  const allCases = await db.query.cases.findMany({ limit: 200 });
+export async function getFlakeHints(workspaceId: string, limit = 20) {
+  const allCases = await db.query.cases.findMany({
+    where: eq(cases.workspaceId, workspaceId),
+    limit: 200,
+  });
   const hints: Array<{
     caseId: string;
     caseKey: string;
@@ -500,8 +566,9 @@ export async function getFlakeHints(limit = 20) {
 }
 
 /** One report per run — list summaries for the Reports surface. */
-export async function listRunReports() {
+export async function listRunReports(workspaceId: string) {
   const allRuns = await db.query.runs.findMany({
+    where: eq(runs.workspaceId, workspaceId),
     orderBy: [desc(runs.updatedAt)],
     limit: 100,
   });
@@ -584,9 +651,9 @@ export async function listRunReports() {
 }
 
 /** Full report for a single run (manual or CI). */
-export async function getRunReport(runId: string) {
+export async function getRunReport(workspaceId: string, runId: string) {
   const run = await db.query.runs.findFirst({
-    where: eq(runs.id, runId),
+    where: and(eq(runs.id, runId), eq(runs.workspaceId, workspaceId)),
     with: {
       results: {
         with: {
@@ -645,7 +712,7 @@ export async function getRunReport(runId: string) {
     completedAt: run.completedAt,
   });
 
-  const recentPeerRuns = await listRunReports();
+  const recentPeerRuns = await listRunReports(workspaceId);
   const trend = recentPeerRuns
     .slice(0, 12)
     .map((r) => ({

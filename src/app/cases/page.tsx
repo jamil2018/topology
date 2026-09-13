@@ -5,7 +5,9 @@ import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
 import { CasesWorkspace } from "@/components/cases-workspace";
 import { CasesPageSkeleton } from "@/components/skeletons";
+import { resolveActiveProject } from "@/lib/project";
 import { listCases, listFolders, listSavedViews } from "@/lib/queries";
+import { ensureMembership } from "@/lib/workspace";
 
 export const metadata: Metadata = {
   title: "Test Cases · Topology",
@@ -15,12 +17,23 @@ export const metadata: Metadata = {
 
 export default async function CasesPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
 
+  await ensureMembership(session.user.id);
+  const ctx = await resolveActiveProject(session.user.id);
+  if (!ctx) {
+    return (
+      <HubShell userEmail={session.user.email}>
+        <p>No accessible project.</p>
+      </HubShell>
+    );
+  }
+
+  const workspaceId = ctx.project.id;
   const [cases, folders, views] = await Promise.all([
-    listCases(),
-    listFolders(),
-    listSavedViews("cases", session.user.id),
+    listCases(workspaceId),
+    listFolders(workspaceId),
+    listSavedViews(workspaceId, "cases", session.user.id),
   ]);
 
   return (

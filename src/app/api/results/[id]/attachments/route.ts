@@ -4,20 +4,32 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { attachments, runResults } from "@/db/schema";
 import { storeAttachmentFile } from "@/lib/attachments";
-import { canWrite, ensureMembership, getMembership } from "@/lib/workspace";
+import { requireProjectAccess } from "@/lib/project";
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, { params }: Params) {
+async function loadScopedResult(resultId: string, workspaceId: string) {
+  const result = await db.query.runResults.findFirst({
+    where: eq(runResults.id, resultId),
+    with: { run: true },
+  });
+  if (!result || result.run?.workspaceId !== workspaceId) return null;
+  return result;
+}
+
+export async function GET(request: Request, { params }: Params) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
   const { id: resultId } = await params;
-  const result = await db.query.runResults.findFirst({
-    where: eq(runResults.id, resultId),
-  });
+  const result = await loadScopedResult(resultId, access.ctx.project.id);
   if (!result) {
     return NextResponse.json({ error: "Result not found" }, { status: 404 });
   }
@@ -45,16 +57,16 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await ensureMembership(session.user.id);
-  const { membership } = await getMembership(session.user.id);
-  if (!membership || !canWrite(membership.role)) {
-    return NextResponse.json({ error: "Write access required" }, { status: 403 });
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   const { id: resultId } = await params;
-  const result = await db.query.runResults.findFirst({
-    where: eq(runResults.id, resultId),
-  });
+  const result = await loadScopedResult(resultId, access.ctx.project.id);
   if (!result) {
     return NextResponse.json({ error: "Result not found" }, { status: 404 });
   }

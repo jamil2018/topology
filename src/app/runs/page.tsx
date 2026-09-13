@@ -4,17 +4,30 @@ import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
 import { RunsWorkspace } from "@/components/runs-workspace";
 import { RunsPageSkeleton } from "@/components/skeletons";
+import { resolveActiveProject } from "@/lib/project";
 import { listCases, listFolders, listRuns, listSavedViews } from "@/lib/queries";
+import { ensureMembership } from "@/lib/workspace";
 
 export default async function RunsPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
 
+  await ensureMembership(session.user.id);
+  const ctx = await resolveActiveProject(session.user.id);
+  if (!ctx) {
+    return (
+      <HubShell userEmail={session.user.email}>
+        <p>No accessible project.</p>
+      </HubShell>
+    );
+  }
+
+  const workspaceId = ctx.project.id;
   const [runs, cases, folders, views] = await Promise.all([
-    listRuns("manual"),
-    listCases(),
-    listFolders(),
-    listSavedViews("runs", session.user.id),
+    listRuns(workspaceId, "manual"),
+    listCases(workspaceId),
+    listFolders(workspaceId),
+    listSavedViews(workspaceId, "runs", session.user.id),
   ]);
 
   return (

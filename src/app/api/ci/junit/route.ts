@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { summarizeResults } from "@topology/domain";
 import { authenticateCiRequest } from "@/lib/ci-auth";
@@ -8,7 +9,6 @@ import {
 } from "@/lib/ci-ingest";
 import { db } from "@/db";
 import { runs } from "@/db/schema";
-import { eq } from "drizzle-orm";
 
 const resultSchema = z.object({
   externalKey: z.string().min(1),
@@ -50,7 +50,12 @@ export async function POST(request: Request) {
   let run;
 
   if (runId) {
-    run = await db.query.runs.findFirst({ where: eq(runs.id, runId) });
+    run = await db.query.runs.findFirst({
+      where: and(
+        eq(runs.id, runId),
+        eq(runs.workspaceId, authResult.workspaceId),
+      ),
+    });
     if (!run) {
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
     }
@@ -58,6 +63,7 @@ export async function POST(request: Request) {
     const [created] = await db
       .insert(runs)
       .values({
+        workspaceId: authResult.workspaceId,
         name:
           parsed.data.name ??
           `JUnit submit ${new Date().toISOString()}`,
@@ -81,6 +87,7 @@ export async function POST(request: Request) {
     runId!,
     parsed.data.results,
     authResult.userId,
+    authResult.workspaceId,
   );
 
   await db
@@ -100,7 +107,7 @@ export async function POST(request: Request) {
   );
   const data = await buildRunCompletedPayload(runId!);
   if (data) {
-    void dispatchWebhook("run.completed", data);
+    void dispatchWebhook("run.completed", data, authResult.workspaceId);
   }
 
   return NextResponse.json({

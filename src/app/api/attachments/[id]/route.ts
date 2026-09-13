@@ -4,20 +4,27 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { attachments } from "@/db/schema";
 import { readAttachmentFile } from "@/lib/attachments";
+import { requireProjectAccess } from "@/lib/project";
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
   const { id } = await params;
   const row = await db.query.attachments.findFirst({
     where: eq(attachments.id, id),
+    with: { result: { with: { run: true } } },
   });
-  if (!row) {
+  if (!row || row.result?.run?.workspaceId !== access.ctx.project.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

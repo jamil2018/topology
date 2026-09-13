@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { savedViews } from "@/db/schema";
+import { requireProjectAccess } from "@/lib/project";
 import {
   caseViewConfigSchema,
   runViewConfigSchema,
@@ -17,9 +18,15 @@ const createSchema = z.object({
 
 export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const { searchParams } = new URL(request.url);
   const entity = searchParams.get("entity");
@@ -28,10 +35,14 @@ export async function GET(request: Request) {
   const rows = await db.query.savedViews.findMany({
     where: entityParsed.success
       ? and(
+          eq(savedViews.workspaceId, workspaceId),
           eq(savedViews.entity, entityParsed.data),
           eq(savedViews.createdById, session.user.id),
         )
-      : eq(savedViews.createdById, session.user.id),
+      : and(
+          eq(savedViews.workspaceId, workspaceId),
+          eq(savedViews.createdById, session.user.id),
+        ),
     orderBy: [desc(savedViews.updatedAt)],
   });
 
@@ -49,9 +60,18 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   let body: unknown;
   try {
@@ -82,6 +102,7 @@ export async function POST(request: Request) {
   const [created] = await db
     .insert(savedViews)
     .values({
+      workspaceId,
       name: parsed.data.name,
       entity: parsed.data.entity,
       configJson: JSON.stringify(configCheck.data),

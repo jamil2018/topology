@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apiTokens, users } from "@/db/schema";
+import { ensureDefaultWorkspace } from "@/lib/workspace";
 
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -19,6 +20,7 @@ export function generateApiToken(): { token: string; prefix: string; hash: strin
 export async function authenticateCiRequest(request: Request): Promise<{
   ok: true;
   userId: string | null;
+  workspaceId: string;
 } | { ok: false; status: number; error: string }> {
   const header = request.headers.get("authorization");
   if (!header?.startsWith("Bearer ")) {
@@ -37,7 +39,12 @@ export async function authenticateCiRequest(request: Request): Promise<{
     const user = await db.query.users.findFirst({
       where: eq(users.email, demoEmail),
     });
-    return { ok: true, userId: user?.id ?? null };
+    const workspace = await ensureDefaultWorkspace();
+    return {
+      ok: true,
+      userId: user?.id ?? null,
+      workspaceId: workspace.id,
+    };
   }
 
   const hash = hashToken(token);
@@ -54,5 +61,5 @@ export async function authenticateCiRequest(request: Request): Promise<{
     .set({ lastUsedAt: new Date() })
     .where(eq(apiTokens.id, row.id));
 
-  return { ok: true, userId: row.userId };
+  return { ok: true, userId: row.userId, workspaceId: row.workspaceId };
 }

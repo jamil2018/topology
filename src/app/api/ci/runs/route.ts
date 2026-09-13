@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { authenticateCiRequest } from "@/lib/ci-auth";
 import { db } from "@/db";
 import { runs } from "@/db/schema";
 import { auth } from "@/auth";
+import { requireProjectAccess } from "@/lib/project";
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
@@ -17,13 +18,24 @@ const createSchema = z.object({
 
 export async function GET(request: Request) {
   const session = await auth();
-  const ci = session?.user ? null : await authenticateCiRequest(request);
-  if (!session?.user && (!ci || !ci.ok)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let workspaceId: string | null = null;
+
+  if (session?.user?.id) {
+    const access = await requireProjectAccess(session.user.id, { request });
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+    workspaceId = access.ctx.project.id;
+  } else {
+    const ci = await authenticateCiRequest(request);
+    if (!ci.ok) {
+      return NextResponse.json({ error: ci.error }, { status: ci.status });
+    }
+    workspaceId = ci.workspaceId;
   }
 
   const data = await db.query.runs.findMany({
-    where: eq(runs.kind, "automation"),
+    where: and(eq(runs.kind, "automation"), eq(runs.workspaceId, workspaceId)),
     orderBy: [desc(runs.updatedAt)],
   });
 
@@ -50,6 +62,7 @@ export async function POST(request: Request) {
   const [run] = await db
     .insert(runs)
     .values({
+      workspaceId: authResult.workspaceId,
       name: parsed.data.name,
       kind: "automation",
       source: parsed.data.source,

@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       { status: authResult.status },
     );
   }
+  const workspaceId = authResult.workspaceId;
 
   const { searchParams } = new URL(request.url);
   const resource = searchParams.get("resource") ?? "cases";
@@ -30,6 +31,7 @@ export async function GET(request: Request) {
   if (resource === "cases") {
     const q = searchParams.get("q")?.toLowerCase();
     let rows = await db.query.cases.findMany({
+      where: eq(cases.workspaceId, workspaceId),
       orderBy: [desc(cases.updatedAt)],
       limit: 100,
     });
@@ -46,6 +48,7 @@ export async function GET(request: Request) {
 
   if (resource === "runs") {
     const rows = await db.query.runs.findMany({
+      where: eq(runs.workspaceId, workspaceId),
       orderBy: [desc(runs.updatedAt)],
       limit: 50,
       with: { results: true },
@@ -56,22 +59,31 @@ export async function GET(request: Request) {
   if (resource === "results") {
     const runId = searchParams.get("runId");
     const status = searchParams.get("status");
+    if (runId) {
+      const run = await db.query.runs.findFirst({
+        where: and(eq(runs.id, runId), eq(runs.workspaceId, workspaceId)),
+      });
+      if (!run) {
+        return NextResponse.json({ error: "Run not found" }, { status: 404 });
+      }
+    }
     const rows = await db.query.runResults.findMany({
       where: runId ? eq(runResults.runId, runId) : undefined,
       with: { case: true, run: true },
       limit: 200,
     });
-    const filtered = status ? rows.filter((r) => r.status === status) : rows;
+    const scoped = rows.filter((r) => r.run?.workspaceId === workspaceId);
+    const filtered = status ? scoped.filter((r) => r.status === status) : scoped;
     return NextResponse.json({ results: filtered });
   }
 
   if (resource === "whats_pending") {
-    return NextResponse.json(await whatsPending());
+    return NextResponse.json(await whatsPending(workspaceId));
   }
 
   if (resource === "scenario_context") {
     const q = searchParams.get("q") ?? "";
-    return NextResponse.json(await getScenarioContext(q));
+    return NextResponse.json(await getScenarioContext(workspaceId, q));
   }
 
   return NextResponse.json({ error: "Unknown resource" }, { status: 400 });
@@ -128,6 +140,7 @@ export async function POST(request: Request) {
       { status: authResult.status },
     );
   }
+  const workspaceId = authResult.workspaceId;
 
   const body = await request.json();
   const action = body?.action;
@@ -143,11 +156,13 @@ export async function POST(request: Request) {
       }
       const [{ value: caseCount }] = await db
         .select({ value: count() })
-        .from(cases);
+        .from(cases)
+        .where(eq(cases.workspaceId, workspaceId));
       const key = parsed.data.key ?? `TOP-${Number(caseCount) + 1}`;
       const [row] = await db
         .insert(cases)
         .values({
+          workspaceId,
           key,
           title: parsed.data.title,
           description: parsed.data.description,
@@ -173,15 +188,21 @@ export async function POST(request: Request) {
       let caseRows: Array<typeof cases.$inferSelect> = [];
       if (parsed.data.caseIds?.length) {
         caseRows = await db.query.cases.findMany({
-          where: inArray(cases.id, parsed.data.caseIds),
+          where: and(
+            inArray(cases.id, parsed.data.caseIds),
+            eq(cases.workspaceId, workspaceId),
+          ),
         });
       } else if (parsed.data.caseKeys?.length) {
         caseRows = await db.query.cases.findMany({
-          where: inArray(cases.key, parsed.data.caseKeys),
+          where: and(
+            inArray(cases.key, parsed.data.caseKeys),
+            eq(cases.workspaceId, workspaceId),
+          ),
         });
       } else {
         caseRows = await db.query.cases.findMany({
-          where: eq(cases.status, "ready"),
+          where: and(eq(cases.status, "ready"), eq(cases.workspaceId, workspaceId)),
           limit: 50,
         });
       }
@@ -189,6 +210,7 @@ export async function POST(request: Request) {
       const [run] = await db
         .insert(runs)
         .values({
+          workspaceId,
           name: parsed.data.name,
           description: parsed.data.description,
           status: "planned",
@@ -217,10 +239,23 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
+      const run = await db.query.runs.findFirst({
+        where: and(
+          eq(runs.id, parsed.data.runId),
+          eq(runs.workspaceId, workspaceId),
+        ),
+      });
+      if (!run) {
+        return NextResponse.json({ error: "Run not found" }, { status: 404 });
+      }
+
       let caseId = parsed.data.caseId;
       if (!caseId && parsed.data.caseKey) {
         const c = await db.query.cases.findFirst({
-          where: eq(cases.key, parsed.data.caseKey),
+          where: and(
+            eq(cases.key, parsed.data.caseKey),
+            eq(cases.workspaceId, workspaceId),
+          ),
         });
         caseId = c?.id;
       }

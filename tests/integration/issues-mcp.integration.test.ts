@@ -20,15 +20,19 @@ describe.skipIf(!hasDb)("Issues + agent MCP surface (integration)", () => {
     const { db } = await import("@/db");
     const { runs, runResults, cases, users } = await import("@/db/schema");
     const { createIssueFromResult } = await import("@/lib/issues");
+    const { ensureMembership } = await import("@/lib/workspace");
 
     const demo = await db.query.users.findFirst({
       where: eq(users.email, process.env.DEMO_USER_EMAIL!),
     });
     expect(demo?.id).toBeTruthy();
+    const { workspace } = await ensureMembership(demo!.id, "admin");
+    const workspaceId = workspace.id;
 
     const [run] = await db
       .insert(runs)
       .values({
+        workspaceId,
         name: `Issue integration ${Date.now()}`,
         kind: "manual",
         status: "in_progress",
@@ -38,11 +42,14 @@ describe.skipIf(!hasDb)("Issues + agent MCP surface (integration)", () => {
       })
       .returning();
 
-    let seededCase = await db.query.cases.findFirst();
+    let seededCase = await db.query.cases.findFirst({
+      where: eq(cases.workspaceId, workspaceId),
+    });
     if (!seededCase) {
       const [created] = await db
         .insert(cases)
         .values({
+          workspaceId,
           key: `TOP-INT-${Date.now()}`,
           title: "Integration failure case",
           description: "",
@@ -84,16 +91,22 @@ describe.skipIf(!hasDb)("Issues + agent MCP surface (integration)", () => {
     const { db } = await import("@/db");
     const { runs, runResults, cases, users } = await import("@/db/schema");
     const { createIssueFromResult } = await import("@/lib/issues");
+    const { ensureMembership } = await import("@/lib/workspace");
 
     const demo = await db.query.users.findFirst({
       where: eq(users.email, process.env.DEMO_USER_EMAIL!),
     });
-    const anyCase = await db.query.cases.findFirst();
+    const { workspace } = await ensureMembership(demo!.id, "admin");
+    const workspaceId = workspace.id;
+    const anyCase = await db.query.cases.findFirst({
+      where: eq(cases.workspaceId, workspaceId),
+    });
     expect(anyCase).toBeTruthy();
 
     const [run] = await db
       .insert(runs)
       .values({
+        workspaceId,
         name: `Passed result ${Date.now()}`,
         kind: "manual",
         status: "in_progress",

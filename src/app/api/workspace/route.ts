@@ -9,11 +9,11 @@ import {
   workspaceInvites,
   workspaceMembers,
 } from "@/db/schema";
+import { requireProjectAccess } from "@/lib/project";
 import {
   canAdmin,
   canWrite,
   ensureMembership,
-  getMembership,
 } from "@/lib/workspace";
 
 const inviteSchema = z.object({
@@ -26,17 +26,19 @@ const roleSchema = z.object({
   role: z.enum(["admin", "member", "viewer"]),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   await ensureMembership(session.user.id, "admin");
-  const { workspace, membership } = await getMembership(session.user.id);
-  if (!membership) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
+
+  const { project: workspace, membership } = access.ctx;
 
   const members = await db.query.workspaceMembers.findMany({
     where: eq(workspaceMembers.workspaceId, workspace.id),
@@ -89,10 +91,15 @@ export async function POST(request: Request) {
   }
 
   await ensureMembership(session.user.id, "admin");
-  const { workspace, membership } = await getMembership(session.user.id);
-  if (!membership || !canAdmin(membership.role)) {
-    return NextResponse.json({ error: "Admin role required" }, { status: 403 });
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    admin: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
+
+  const workspace = access.ctx.project;
 
   const body = await request.json();
   const parsed = inviteSchema.safeParse(body);
@@ -161,10 +168,15 @@ export async function PATCH(request: Request) {
   }
 
   await ensureMembership(session.user.id, "admin");
-  const { workspace, membership } = await getMembership(session.user.id);
-  if (!membership || !canAdmin(membership.role)) {
-    return NextResponse.json({ error: "Admin role required" }, { status: 403 });
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    admin: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
+
+  const workspace = access.ctx.project;
 
   const body = await request.json();
   const parsed = roleSchema.safeParse(body);

@@ -3,7 +3,8 @@ import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
 import { RunExecutor } from "@/components/run-executor";
 import { getRunWithResults } from "@/lib/queries";
-import { ensureMembership, getMembership } from "@/lib/workspace";
+import { resolveActiveProject } from "@/lib/project";
+import { ensureMembership } from "@/lib/workspace";
 import { db } from "@/db";
 import { eq } from "drizzle-orm";
 import { workspaceMembers } from "@/db/schema";
@@ -15,14 +16,23 @@ export default async function RunDetailPage({ params }: Props) {
   if (!session?.user?.id) redirect("/login");
 
   await ensureMembership(session.user.id);
-  const { workspace } = await getMembership(session.user.id);
+  const ctx = await resolveActiveProject(session.user.id);
+  if (!ctx) {
+    return (
+      <HubShell userEmail={session.user.email}>
+        <p>No accessible project.</p>
+      </HubShell>
+    );
+  }
+
+  const workspaceId = ctx.project.id;
   const members = await db.query.workspaceMembers.findMany({
-    where: eq(workspaceMembers.workspaceId, workspace.id),
+    where: eq(workspaceMembers.workspaceId, workspaceId),
     with: { user: true },
   });
 
   const { id } = await params;
-  const run = await getRunWithResults(id);
+  const run = await getRunWithResults(workspaceId, id);
   if (!run) notFound();
 
   return (

@@ -9,6 +9,7 @@ import { cases, runResults, runShards, runs, triageItems } from "@/db/schema";
 export async function findOrCreateCaseForExternal(
   result: NormalizedResult,
   userId: string | null,
+  workspaceId: string,
 ): Promise<string> {
   const keyBase = result.externalKey
     .replace(/[^a-zA-Z0-9:_-]+/g, "_")
@@ -16,13 +17,14 @@ export async function findOrCreateCaseForExternal(
   const key = keyBase.startsWith("AUTO-") ? keyBase : `AUTO-${keyBase}`;
 
   const existing = await db.query.cases.findFirst({
-    where: eq(cases.key, key),
+    where: and(eq(cases.key, key), eq(cases.workspaceId, workspaceId)),
   });
   if (existing) return existing.id;
 
   const [created] = await db
     .insert(cases)
     .values({
+      workspaceId,
       key,
       title: result.name || result.externalKey,
       description: `Imported from automation (${result.classname || "junit"})`,
@@ -42,6 +44,7 @@ export async function upsertRunResultsFromNormalized(
   runId: string,
   results: NormalizedResult[],
   userId: string | null,
+  workspaceId: string,
 ) {
   const existing = await db.query.runResults.findMany({
     where: eq(runResults.runId, runId),
@@ -56,7 +59,11 @@ export async function upsertRunResultsFromNormalized(
   );
 
   for (const result of results) {
-    const caseId = await findOrCreateCaseForExternal(result, userId);
+    const caseId = await findOrCreateCaseForExternal(
+      result,
+      userId,
+      workspaceId,
+    );
     const prior =
       byExternal.get(result.externalKey) ?? byCase.get(caseId) ?? null;
 
@@ -104,17 +111,17 @@ export async function openTriageForFailures(runId: string) {
   });
 
   for (const failure of failures) {
-    await upsertTriageItem(failure, runId);
+    await upsertTriageItem(failure, runId, run.workspaceId);
   }
 }
 
 export async function openTriageForResult(resultId: string) {
   const failure = await db.query.runResults.findFirst({
     where: eq(runResults.id, resultId),
-    with: { case: true },
+    with: { case: true, run: true },
   });
-  if (!failure || failure.status !== "failed") return;
-  await upsertTriageItem(failure, failure.runId);
+  if (!failure || failure.status !== "failed" || !failure.run) return;
+  await upsertTriageItem(failure, failure.runId, failure.run.workspaceId);
 }
 
 async function upsertTriageItem(
@@ -127,6 +134,7 @@ async function upsertTriageItem(
     case?: { key: string; title: string; priority: "P0" | "P1" | "P2" | "P3" } | null;
   },
   runId: string,
+  workspaceId: string,
 ) {
   const caseKey = failure.case?.key ?? failure.externalKey ?? failure.id;
   const fingerprint = failureFingerprint({
@@ -136,6 +144,7 @@ async function upsertTriageItem(
 
   const existing = await db.query.triageItems.findFirst({
     where: and(
+      eq(triageItems.workspaceId, workspaceId),
       eq(triageItems.fingerprint, fingerprint),
       inArray(triageItems.status, ["open", "snoozed"]),
     ),
@@ -156,6 +165,7 @@ async function upsertTriageItem(
       .where(eq(triageItems.id, existing.id));
   } else {
     await db.insert(triageItems).values({
+      workspaceId,
       fingerprint,
       title: failure.case?.title ?? failure.title ?? caseKey,
       priority: failure.case?.priority ?? "P2",
@@ -208,9 +218,9 @@ export async function loadShardResults(
   return shards.map((shard) => JSON.parse(shard.payloadJson) as NormalizedResult[]);
 }
 
-export async function listAutomationRuns() {
+export async function listAutomationRuns(workspaceId: string) {
   return db.query.runs.findMany({
-    where: eq(runs.kind, "automation"),
+    where: and(eq(runs.kind, "automation"), eq(runs.workspaceId, workspaceId)),
     orderBy: [desc(runs.updatedAt)],
   });
 }

@@ -128,6 +128,8 @@ export const workspaces = pgTable("workspaces", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
+  /** Soft-archive; archived projects are hidden from the switcher. */
+  archivedAt: timestamp("archived_at", { mode: "date" }),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
@@ -167,38 +169,51 @@ export const workspaceInvites = pgTable("workspace_invites", {
 
 export const folders = pgTable("folders", {
   id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   parentId: uuid("parent_id"),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
 
-export const cases = pgTable("cases", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  key: text("key").notNull().unique(),
-  title: text("title").notNull(),
-  description: text("description").default("").notNull(),
-  preconditions: text("preconditions").default("").notNull(),
-  steps: text("steps").default("").notNull(),
-  expectedResult: text("expected_result").default("").notNull(),
-  priority: casePriorityEnum("priority").default("P2").notNull(),
-  status: caseStatusEnum("status").default("draft").notNull(),
-  folderId: uuid("folder_id").references(() => folders.id, {
-    onDelete: "set null",
-  }),
-  tags: text("tags").array().default([]).notNull(),
-  createdById: uuid("created_by_id").references(() => users.id, {
-    onDelete: "set null",
-  }),
-  assigneeId: uuid("assignee_id").references(() => users.id, {
-    onDelete: "set null",
-  }),
-  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
-});
+export const cases = pgTable(
+  "cases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    title: text("title").notNull(),
+    description: text("description").default("").notNull(),
+    preconditions: text("preconditions").default("").notNull(),
+    steps: text("steps").default("").notNull(),
+    expectedResult: text("expected_result").default("").notNull(),
+    priority: casePriorityEnum("priority").default("P2").notNull(),
+    status: caseStatusEnum("status").default("draft").notNull(),
+    folderId: uuid("folder_id").references(() => folders.id, {
+      onDelete: "set null",
+    }),
+    tags: text("tags").array().default([]).notNull(),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    assigneeId: uuid("assignee_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [unique().on(table.workspaceId, table.key)],
+);
 
 export const runs = pgTable("runs", {
   id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description").default("").notNull(),
   status: runStatusEnum("status").default("planned").notNull(),
@@ -289,6 +304,9 @@ export const runShards = pgTable("run_shards", {
 
 export const apiTokens = pgTable("api_tokens", {
   id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   tokenHash: text("token_hash").notNull().unique(),
   tokenPrefix: text("token_prefix").notNull(),
@@ -299,6 +317,9 @@ export const apiTokens = pgTable("api_tokens", {
 
 export const milestones = pgTable("milestones", {
   id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description").default("").notNull(),
   status: milestoneStatusEnum("status").default("active").notNull(),
@@ -316,6 +337,9 @@ export const milestones = pgTable("milestones", {
 
 export const triageItems = pgTable("triage_items", {
   id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   fingerprint: text("fingerprint").notNull(),
   title: text("title").notNull(),
   status: triageStatusEnum("status").default("open").notNull(),
@@ -348,6 +372,9 @@ export const issueRemoteStatusEnum = pgEnum("issue_remote_status", [
 
 export const linkedIssues = pgTable("linked_issues", {
   id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   provider: issueProviderEnum("provider").notNull(),
   remoteId: text("remote_id").notNull(),
   remoteKey: text("remote_key").notNull(),
@@ -378,6 +405,9 @@ export const linkedIssues = pgTable("linked_issues", {
 
 export const webhookEndpoints = pgTable("webhook_endpoints", {
   id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   url: text("url").notNull(),
   secret: text("secret").default("").notNull(),
   /** Comma-separated event names: run.completed,issue.created */
@@ -400,6 +430,9 @@ export const savedViewEntityEnum = pgEnum("saved_view_entity", [
 /** Named filter+sort presets (Linear-style saved views). */
 export const savedViews = pgTable("saved_views", {
   id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   entity: savedViewEntityEnum("entity").notNull(),
   /** JSON: filters + sort for the entity list. */
@@ -447,6 +480,15 @@ export const usersRelations = relations(users, ({ many }) => ({
 export const workspacesRelations = relations(workspaces, ({ many }) => ({
   members: many(workspaceMembers),
   invites: many(workspaceInvites),
+  folders: many(folders),
+  cases: many(cases),
+  runs: many(runs),
+  milestones: many(milestones),
+  triageItems: many(triageItems),
+  linkedIssues: many(linkedIssues),
+  webhookEndpoints: many(webhookEndpoints),
+  apiTokens: many(apiTokens),
+  savedViews: many(savedViews),
 }));
 
 export const workspaceMembersRelations = relations(
@@ -478,6 +520,10 @@ export const workspaceInvitesRelations = relations(
 );
 
 export const foldersRelations = relations(folders, ({ many, one }) => ({
+  workspace: one(workspaces, {
+    fields: [folders.workspaceId],
+    references: [workspaces.id],
+  }),
   cases: many(cases),
   parent: one(folders, {
     fields: [folders.parentId],
@@ -486,6 +532,10 @@ export const foldersRelations = relations(folders, ({ many, one }) => ({
 }));
 
 export const casesRelations = relations(cases, ({ one, many }) => ({
+  workspace: one(workspaces, {
+    fields: [cases.workspaceId],
+    references: [workspaces.id],
+  }),
   folder: one(folders, {
     fields: [cases.folderId],
     references: [folders.id],
@@ -506,6 +556,10 @@ export const casesRelations = relations(cases, ({ one, many }) => ({
 }));
 
 export const savedViewsRelations = relations(savedViews, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [savedViews.workspaceId],
+    references: [workspaces.id],
+  }),
   createdBy: one(users, {
     fields: [savedViews.createdById],
     references: [users.id],
@@ -524,6 +578,10 @@ export const caseActivitiesRelations = relations(caseActivities, ({ one }) => ({
 }));
 
 export const runsRelations = relations(runs, ({ one, many }) => ({
+  workspace: one(workspaces, {
+    fields: [runs.workspaceId],
+    references: [workspaces.id],
+  }),
   createdBy: one(users, {
     fields: [runs.createdById],
     references: [users.id],
@@ -601,6 +659,10 @@ export const runShardsRelations = relations(runShards, ({ one }) => ({
 }));
 
 export const milestonesRelations = relations(milestones, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [milestones.workspaceId],
+    references: [workspaces.id],
+  }),
   folder: one(folders, {
     fields: [milestones.folderId],
     references: [folders.id],
@@ -608,6 +670,10 @@ export const milestonesRelations = relations(milestones, ({ one }) => ({
 }));
 
 export const triageItemsRelations = relations(triageItems, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [triageItems.workspaceId],
+    references: [workspaces.id],
+  }),
   case: one(cases, {
     fields: [triageItems.caseId],
     references: [cases.id],
@@ -619,6 +685,10 @@ export const triageItemsRelations = relations(triageItems, ({ one }) => ({
 }));
 
 export const linkedIssuesRelations = relations(linkedIssues, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [linkedIssues.workspaceId],
+    references: [workspaces.id],
+  }),
   result: one(runResults, {
     fields: [linkedIssues.resultId],
     references: [runResults.id],
@@ -638,11 +708,17 @@ export const linkedIssuesRelations = relations(linkedIssues, ({ one }) => ({
 }));
 
 export const apiTokensRelations = relations(apiTokens, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [apiTokens.workspaceId],
+    references: [workspaces.id],
+  }),
   user: one(users, {
     fields: [apiTokens.userId],
     references: [users.id],
   }),
 }));
+
+export type Project = Workspace;
 
 export type Case = typeof cases.$inferSelect;
 export type Folder = typeof folders.$inferSelect;

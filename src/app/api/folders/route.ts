@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { folders } from "@/db/schema";
+import { requireProjectAccess } from "@/lib/project";
 import { listFolders } from "@/lib/queries";
 
 const createFolderSchema = z.object({
@@ -11,20 +12,35 @@ const createFolderSchema = z.object({
   parentId: z.string().uuid().nullable().optional(),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const data = await listFolders();
+
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
+  const data = await listFolders(access.ctx.project.id);
   return NextResponse.json({ folders: data });
 }
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   let body: unknown;
   try {
@@ -44,7 +60,10 @@ export async function POST(request: Request) {
 
   if (parentId) {
     const parent = await db.query.folders.findFirst({
-      where: eq(folders.id, parentId),
+      where: and(
+        eq(folders.id, parentId),
+        eq(folders.workspaceId, workspaceId),
+      ),
     });
     if (!parent) {
       return NextResponse.json(
@@ -59,6 +78,7 @@ export async function POST(request: Request) {
     .from(folders)
     .where(
       and(
+        eq(folders.workspaceId, workspaceId),
         sql`lower(${folders.name}) = ${name.toLowerCase()}`,
         parentId ? eq(folders.parentId, parentId) : isNull(folders.parentId),
       ),
@@ -76,6 +96,7 @@ export async function POST(request: Request) {
     const [created] = await db
       .insert(folders)
       .values({
+        workspaceId,
         name,
         parentId,
       })

@@ -1,15 +1,22 @@
 import { NextResponse } from "next/server";
-import { desc, ilike, or } from "drizzle-orm";
+import { and, desc, eq, ilike, or } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { cases, folders, runs } from "@/db/schema";
+import { requireProjectAccess } from "@/lib/project";
 
 /** Lightweight search for the command palette. */
 export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get("q") ?? "").trim();
@@ -27,7 +34,12 @@ export async function GET(request: Request) {
         title: cases.title,
       })
       .from(cases)
-      .where(or(ilike(cases.key, pattern), ilike(cases.title, pattern)))
+      .where(
+        and(
+          eq(cases.workspaceId, workspaceId),
+          or(ilike(cases.key, pattern), ilike(cases.title, pattern)),
+        ),
+      )
       .orderBy(desc(cases.updatedAt))
       .limit(8),
     db
@@ -37,7 +49,9 @@ export async function GET(request: Request) {
         status: runs.status,
       })
       .from(runs)
-      .where(ilike(runs.name, pattern))
+      .where(
+        and(eq(runs.workspaceId, workspaceId), ilike(runs.name, pattern)),
+      )
       .orderBy(desc(runs.updatedAt))
       .limit(6),
     db
@@ -46,7 +60,12 @@ export async function GET(request: Request) {
         name: folders.name,
       })
       .from(folders)
-      .where(ilike(folders.name, pattern))
+      .where(
+        and(
+          eq(folders.workspaceId, workspaceId),
+          ilike(folders.name, pattern),
+        ),
+      )
       .orderBy(folders.name)
       .limit(6),
   ]);

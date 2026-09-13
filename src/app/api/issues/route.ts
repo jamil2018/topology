@@ -9,6 +9,7 @@ import {
   markIssueClosedLocally,
   refreshLinkedIssue,
 } from "@/lib/issues";
+import { requireProjectAccess } from "@/lib/project";
 import { listIssueProviders } from "@topology/issue-providers";
 
 const createSchema = z.object({
@@ -44,13 +45,18 @@ const markClosedSchema = z.object({
   issueId: z.string().uuid(),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const retestQueue = await listRetestQueue();
+  const access = await requireProjectAccess(session.user.id, { request });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
+  const retestQueue = await listRetestQueue(access.ctx.project.id);
   return NextResponse.json({
     providers: listIssueProviders(),
     defaultProvider: process.env.TOPOLOGY_ISSUE_PROVIDER ?? "mock",
@@ -60,8 +66,16 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    write: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   const body = await request.json();
