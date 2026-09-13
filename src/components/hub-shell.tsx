@@ -25,14 +25,14 @@ import { openCommandPalette } from "./command-palette";
 import { ThemeToggle } from "./theme-toggle";
 
 const nav = [
-  { href: "/", label: "Hub", hint: "Pulse", Icon: CirclesFourIcon },
-  { href: "/cases", label: "Test Cases", hint: "Suites", Icon: ListChecksIcon },
-  { href: "/runs", label: "Test Runs", hint: "Manual", Icon: PlayCircleIcon },
-  { href: "/automation", label: "Automation", hint: "CI", Icon: ChartLineIcon },
-  { href: "/milestones", label: "Milestones", hint: "Gate", Icon: FlagIcon },
-  { href: "/reports", label: "Reports", hint: "Charts", Icon: ChartBarIcon },
-  { href: "/triage", label: "Triage", hint: "Failures", Icon: BugIcon },
-  { href: "/settings", label: "Settings", hint: "Account", Icon: GearIcon },
+  { href: "/", label: "Hub", Icon: CirclesFourIcon },
+  { href: "/cases", label: "Test Cases", Icon: ListChecksIcon },
+  { href: "/runs", label: "Test Runs", Icon: PlayCircleIcon },
+  { href: "/automation", label: "Automation", Icon: ChartLineIcon },
+  { href: "/milestones", label: "Milestones", Icon: FlagIcon },
+  { href: "/reports", label: "Reports", Icon: ChartBarIcon },
+  { href: "/triage", label: "Triage", Icon: BugIcon },
+  { href: "/settings", label: "Settings", Icon: GearIcon },
 ] as const;
 
 function NavLinks({
@@ -77,10 +77,7 @@ function NavLinks({
                   : "text-[color:var(--topo-muted)] group-hover:text-[color:var(--topo-ink)]"
               }
             />
-            <span className="flex-1 font-medium">{item.label}</span>
-            <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] opacity-70">
-              {item.hint}
-            </span>
+            <span className="font-medium">{item.label}</span>
           </Link>
         );
       })}
