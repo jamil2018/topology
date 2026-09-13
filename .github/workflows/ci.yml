@@ -58,6 +58,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx drizzle-kit push
+      # db:seed uses tsx --env-file=.env.local; CI env already supplies vars
+      - run: touch .env.local
       - run: npm run db:seed
       - run: npm run test:integration
 
@@ -98,6 +100,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npx drizzle-kit push
+      - run: touch .env.local
       - run: npm run db:seed
       - run: npm run test:e2e
         env:
