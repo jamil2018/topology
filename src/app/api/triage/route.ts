@@ -35,7 +35,7 @@ export async function PATCH(request: Request) {
 
   const access = await requireProjectAccess(session.user.id, {
     request,
-    write: true,
+    action: "triage.manage",
   });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });

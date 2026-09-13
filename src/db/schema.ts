@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
   integer,
   pgEnum,
   pgTable,
@@ -134,6 +135,34 @@ export const workspaces = pgTable("workspaces", {
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
 
+/**
+ * Named permission sets scoped to a project (workspace).
+ * System roles (admin/member/viewer) are seeded per project and cannot be deleted.
+ */
+export const workspaceRoles = pgTable(
+  "workspace_roles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").default("").notNull(),
+    /** Allow-listed action keys from src/lib/permissions.ts */
+    actions: text("actions").array().default([]).notNull(),
+    isSystem: boolean("is_system").default(false).notNull(),
+    /** Present for seeded system roles; null for custom roles. */
+    systemKey: workspaceRoleEnum("system_key"),
+    archivedAt: timestamp("archived_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique().on(table.workspaceId, table.name),
+    unique().on(table.workspaceId, table.systemKey),
+  ],
+);
+
 export const workspaceMembers = pgTable(
   "workspace_members",
   {
@@ -144,7 +173,11 @@ export const workspaceMembers = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    /** Coarse legacy role — kept in sync with customRole when possible. */
     role: workspaceRoleEnum("role").default("member").notNull(),
+    customRoleId: uuid("custom_role_id").references(() => workspaceRoles.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (table) => [unique().on(table.workspaceId, table.userId)],
@@ -157,6 +190,9 @@ export const workspaceInvites = pgTable("workspace_invites", {
     .references(() => workspaces.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
   role: workspaceRoleEnum("role").default("member").notNull(),
+  customRoleId: uuid("custom_role_id").references(() => workspaceRoles.id, {
+    onDelete: "set null",
+  }),
   token: text("token").notNull().unique(),
   status: inviteStatusEnum("status").default("pending").notNull(),
   invitedById: uuid("invited_by_id").references(() => users.id, {
@@ -480,6 +516,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 export const workspacesRelations = relations(workspaces, ({ many }) => ({
   members: many(workspaceMembers),
   invites: many(workspaceInvites),
+  roles: many(workspaceRoles),
   folders: many(folders),
   cases: many(cases),
   runs: many(runs),
@@ -491,6 +528,18 @@ export const workspacesRelations = relations(workspaces, ({ many }) => ({
   savedViews: many(savedViews),
 }));
 
+export const workspaceRolesRelations = relations(
+  workspaceRoles,
+  ({ one, many }) => ({
+    workspace: one(workspaces, {
+      fields: [workspaceRoles.workspaceId],
+      references: [workspaces.id],
+    }),
+    members: many(workspaceMembers),
+    invites: many(workspaceInvites),
+  }),
+);
+
 export const workspaceMembersRelations = relations(
   workspaceMembers,
   ({ one }) => ({
@@ -501,6 +550,10 @@ export const workspaceMembersRelations = relations(
     user: one(users, {
       fields: [workspaceMembers.userId],
       references: [users.id],
+    }),
+    customRole: one(workspaceRoles, {
+      fields: [workspaceMembers.customRoleId],
+      references: [workspaceRoles.id],
     }),
   }),
 );
@@ -515,6 +568,10 @@ export const workspaceInvitesRelations = relations(
     invitedBy: one(users, {
       fields: [workspaceInvites.invitedById],
       references: [users.id],
+    }),
+    customRole: one(workspaceRoles, {
+      fields: [workspaceInvites.customRoleId],
+      references: [workspaceRoles.id],
     }),
   }),
 );
@@ -732,6 +789,7 @@ export type LinkedIssue = typeof linkedIssues.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
 export type WorkspaceInvite = typeof workspaceInvites.$inferSelect;
+export type WorkspaceCustomRole = typeof workspaceRoles.$inferSelect;
 export type ResultComment = typeof resultComments.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type WorkspaceRole = (typeof workspaceRoleEnum.enumValues)[number];

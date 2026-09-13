@@ -27,7 +27,7 @@ export const SETTINGS_NAV: {
 }[] = [
   { id: "account", label: "Account", hint: "You" },
   { id: "projects", label: "Projects", hint: "Workspace" },
-  { id: "access", label: "Access", hint: "Members" },
+  { id: "access", label: "Access", hint: "Members + Roles" },
   { id: "integrations", label: "Integrations", hint: "Connect" },
 ];
 

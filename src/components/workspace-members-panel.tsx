@@ -4,9 +4,19 @@ import { useEffect, useState } from "react";
 import { Button } from "@heroui/react";
 import { Bone } from "./skeletons";
 
+type RoleOption = {
+  id: string;
+  name: string;
+  isSystem: boolean;
+  systemKey: string | null;
+  archivedAt: string | null;
+};
+
 type Member = {
   id: string;
   role: "admin" | "member" | "viewer";
+  roleId: string | null;
+  customRole: { id: string; name: string } | null;
   user: { id: string; name: string | null; email: string };
 };
 
@@ -14,6 +24,8 @@ type Invite = {
   id: string;
   email: string;
   role: "admin" | "member" | "viewer";
+  roleId: string | null;
+  customRole: { id: string; name: string } | null;
   token: string;
   expiresAt: string;
 };
@@ -21,27 +33,46 @@ type Invite = {
 export function WorkspaceMembersPanel() {
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
+  const [roles, setRoles] = useState<RoleOption[]>([]);
   const [canAdmin, setCanAdmin] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("Topology");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "member" | "viewer">("member");
+  const [roleId, setRoleId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [lastAcceptUrl, setLastAcceptUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
 
+  const activeRoles = roles.filter((r) => !r.archivedAt);
+
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/workspace");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load workspace");
+      const [wsRes, rolesRes] = await Promise.all([
+        fetch("/api/workspace"),
+        fetch("/api/roles"),
+      ]);
+      const data = await wsRes.json();
+      const rolesData = await rolesRes.json();
+      if (!wsRes.ok) throw new Error(data.error ?? "Failed to load workspace");
+      if (!rolesRes.ok) {
+        throw new Error(rolesData.error ?? "Failed to load roles");
+      }
       setWorkspaceName(data.workspace.name);
       setMembers(data.members);
       setInvites(data.invites);
       setCanAdmin(Boolean(data.me?.canAdmin));
+      const nextRoles = (rolesData.roles as RoleOption[]).filter(
+        (r) => !r.archivedAt,
+      );
+      setRoles(nextRoles);
+      setRoleId((prev) => {
+        if (prev && nextRoles.some((r) => r.id === prev)) return prev;
+        const member = nextRoles.find((r) => r.systemKey === "member");
+        return member?.id ?? nextRoles[0]?.id ?? "";
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Load failed");
     } finally {
@@ -62,7 +93,7 @@ export function WorkspaceMembersPanel() {
       const res = await fetch("/api/workspace", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), role }),
+        body: JSON.stringify({ email: email.trim(), roleId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -81,12 +112,12 @@ export function WorkspaceMembersPanel() {
     }
   }
 
-  async function changeRole(userId: string, next: Member["role"]) {
+  async function changeRole(userId: string, nextRoleId: string) {
     setError(null);
     const res = await fetch("/api/workspace", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, role: next }),
+      body: JSON.stringify({ userId, roleId: nextRoleId }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -128,8 +159,8 @@ export function WorkspaceMembersPanel() {
           {workspaceName} members
         </h2>
         <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
-          Roles: admin (invite + manage), member (write), viewer (read). Invites
-          are accepted via OAuth or email after signing in as the invited address.
+          Assign a system or custom role per member. Invites are accepted via
+          OAuth or email after signing in as the invited address.
         </p>
       </div>
 
@@ -144,38 +175,44 @@ export function WorkspaceMembersPanel() {
       ) : null}
 
       <ul className="divide-y divide-[color:var(--topo-line)] rounded-md border border-[color:var(--topo-line)]">
-        {members.map((m) => (
-          <li
-            key={m.id}
-            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
-          >
-            <div>
-              <div className="font-medium text-[color:var(--topo-ink)]">
-                {m.user.name ?? m.user.email}
+        {members.map((m) => {
+          const selected =
+            m.roleId ??
+            activeRoles.find((r) => r.systemKey === m.role)?.id ??
+            "";
+          return (
+            <li
+              key={m.id}
+              className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+            >
+              <div>
+                <div className="font-medium text-[color:var(--topo-ink)]">
+                  {m.user.name ?? m.user.email}
+                </div>
+                <div className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+                  {m.user.email}
+                </div>
               </div>
-              <div className="font-mono text-[11px] text-[color:var(--topo-muted)]">
-                {m.user.email}
-              </div>
-            </div>
-            {canAdmin ? (
-              <select
-                value={m.role}
-                onChange={(e) =>
-                  void changeRole(m.user.id, e.target.value as Member["role"])
-                }
-                className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs"
-              >
-                <option value="admin">admin</option>
-                <option value="member">member</option>
-                <option value="viewer">viewer</option>
-              </select>
-            ) : (
-              <span className="font-mono text-xs text-[color:var(--topo-muted)]">
-                {m.role}
-              </span>
-            )}
-          </li>
-        ))}
+              {canAdmin ? (
+                <select
+                  value={selected}
+                  onChange={(e) => void changeRole(m.user.id, e.target.value)}
+                  className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs"
+                >
+                  {activeRoles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="font-mono text-xs text-[color:var(--topo-muted)]">
+                  {m.customRole?.name ?? m.role}
+                </span>
+              )}
+            </li>
+          );
+        })}
       </ul>
 
       {canAdmin ? (
@@ -192,20 +229,20 @@ export function WorkspaceMembersPanel() {
               className="min-w-[14rem] flex-1 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
             />
             <select
-              value={role}
-              onChange={(e) =>
-                setRole(e.target.value as "admin" | "member" | "viewer")
-              }
+              value={roleId}
+              onChange={(e) => setRoleId(e.target.value)}
               className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
             >
-              <option value="member">member</option>
-              <option value="viewer">viewer</option>
-              <option value="admin">admin</option>
+              {activeRoles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
             </select>
             <Button
               size="sm"
               variant="primary"
-              isDisabled={sending || !email.trim()}
+              isDisabled={sending || !email.trim() || !roleId}
               onPress={() => void invite()}
             >
               {sending ? "Creating…" : "Create invite"}
@@ -222,7 +259,7 @@ export function WorkspaceMembersPanel() {
           <ul className="space-y-1 text-xs text-[color:var(--topo-muted)]">
             {invites.map((i) => (
               <li key={i.id} className="font-mono">
-                {i.email} · {i.role} · expires{" "}
+                {i.email} · {i.customRole?.name ?? i.role} · expires{" "}
                 {new Date(i.expiresAt).toLocaleDateString()}
               </li>
             ))}

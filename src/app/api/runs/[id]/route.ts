@@ -58,24 +58,28 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const { id } = await params;
+  const body = await request.json();
+  const neededAction =
+    body?.action === "complete"
+      ? ("runs.complete" as const)
+      : ("runs.edit" as const);
+
   const access = await requireProjectAccess(session.user.id, {
     request,
-    write: true,
+    action: neededAction,
   });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
   const workspaceId = access.ctx.project.id;
 
-  const { id } = await params;
   const existing = await db.query.runs.findFirst({
     where: and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)),
   });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-
-  const body = await request.json();
 
   if (body?.action === "start") {
     if (isRunFrozen(existing.status)) {

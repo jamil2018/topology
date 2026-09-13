@@ -63,7 +63,7 @@ export async function POST(request: Request) {
 
   const access = await requireProjectAccess(session.user.id, {
     request,
-    write: true,
+    action: "cases.create",
   });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
@@ -130,7 +130,7 @@ export async function PATCH(request: Request) {
 
   const access = await requireProjectAccess(session.user.id, {
     request,
-    write: true,
+    action: "cases.edit",
   });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
