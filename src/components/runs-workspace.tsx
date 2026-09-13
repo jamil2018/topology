@@ -191,7 +191,7 @@ export function RunsWorkspace({
     <div className="space-y-4">
       <PageHeader
         eyebrow="Manual"
-        title="Runs"
+        title="Test Runs"
         description="Plan a pass, attach ready cases, and record results as you execute."
         meta={<StatusChip mono>{initialRuns.length} runs</StatusChip>}
       />
