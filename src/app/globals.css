@@ -61,10 +61,14 @@ body {
  * HeroUI Select value sits high in fixed-height triggers (e.g. Sort with py-0)
  * because .select__trigger is inline-flex without cross-axis centering and
  * .select__value stretches, leaving text at the top of the span.
- * Center trigger children without changing sizes or variants.
+ * Center trigger children and tighten value line-box without changing sizes.
  */
 .select__trigger {
   @apply items-center;
+}
+
+.select__value {
+  @apply leading-none;
 }
 
 .topology-shell {
