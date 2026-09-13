@@ -193,6 +193,119 @@ describe.skipIf(!hasDb)("CI ingest API (integration)", () => {
     };
     expect(doneBody.run.status).toBe("completed");
     expect(doneBody.summary.failed).toBe(1);
+
+    const lockedShard = await submitShard(
+      new Request(`http://127.0.0.1/api/ci/runs/${run.id}/shards`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          shardIndex: 3,
+          results: [
+            {
+              externalKey: "c::locked",
+              classname: "c",
+              name: "locked",
+              status: "passed",
+              notes: "",
+              durationMs: 5,
+            },
+          ],
+        }),
+      }),
+      { params: Promise.resolve({ id: run.id }) },
+    );
+    expect(lockedShard.status).toBe(409);
+
+    const lockedComplete = await complete(
+      new Request(`http://127.0.0.1/api/ci/runs/${run.id}/complete`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: "{}",
+      }),
+      { params: Promise.resolve({ id: run.id }) },
+    );
+    expect(lockedComplete.status).toBe(409);
+  });
+
+  it("rejects junit rewrite of a completed run and reports only completed", async () => {
+    const { POST } = await import("@/app/api/ci/junit/route");
+    const create = await POST(
+      new Request("http://127.0.0.1/api/ci/junit", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          name: `Immutable junit ${Date.now()}`,
+          source: "cli",
+          results: [
+            {
+              externalKey: "imm::one",
+              classname: "imm",
+              name: "one",
+              status: "passed",
+              notes: "",
+              durationMs: 10,
+            },
+          ],
+        }),
+      }),
+    );
+    expect(create.status).toBe(200);
+    const created = (await create.json()) as { run: { id: string } };
+
+    const rewrite = await POST(
+      new Request("http://127.0.0.1/api/ci/junit", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          runId: created.run.id,
+          results: [
+            {
+              externalKey: "imm::two",
+              classname: "imm",
+              name: "two",
+              status: "failed",
+              notes: "should not land",
+              durationMs: 10,
+            },
+          ],
+        }),
+      }),
+    );
+    expect(rewrite.status).toBe(409);
+
+    const { db } = await import("@/db");
+    const { runs } = await import("@/db/schema");
+    const { listRunReports, getRunReport } = await import("@/lib/queries");
+    const { authenticateCiRequest } = await import("@/lib/ci-auth");
+
+    const authResult = await authenticateCiRequest(
+      new Request("http://x", {
+        headers: { Authorization: `Bearer ${process.env.TOPOLOGY_API_TOKEN}` },
+      }),
+    );
+    expect(authResult.ok).toBe(true);
+    if (!authResult.ok) throw new Error("auth failed");
+    const workspaceId = authResult.workspaceId;
+
+    const [planned] = await db
+      .insert(runs)
+      .values({
+        workspaceId,
+        name: `Planned no report ${Date.now()}`,
+        status: "planned",
+        kind: "manual",
+        source: "manual",
+        environment: "local",
+      })
+      .returning();
+
+    const reports = await listRunReports(workspaceId);
+    expect(reports.every((r) => r.status === "completed")).toBe(true);
+    expect(reports.some((r) => r.runId === created.run.id)).toBe(true);
+    expect(reports.some((r) => r.runId === planned.id)).toBe(false);
+
+    expect(await getRunReport(workspaceId, created.run.id)).not.toBeNull();
+    expect(await getRunReport(workspaceId, planned.id)).toBeNull();
   });
 });
 

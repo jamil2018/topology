@@ -9,6 +9,10 @@ import {
 } from "@/lib/ci-ingest";
 import { db } from "@/db";
 import { runs } from "@/db/schema";
+import {
+  isRunFrozen,
+  runImmutableResponse,
+} from "@/lib/run-immutability-http";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -27,6 +31,9 @@ export async function POST(request: Request, { params }: Params) {
   });
   if (!run) {
     return NextResponse.json({ error: "Run not found" }, { status: 404 });
+  }
+  if (isRunFrozen(run.status)) {
+    return runImmutableResponse();
   }
 
   const shards = await loadShardResults(id);

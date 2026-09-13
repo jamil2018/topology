@@ -10,6 +10,10 @@ import {
 } from "@/lib/ci-ingest";
 import { db } from "@/db";
 import { runs } from "@/db/schema";
+import {
+  isRunFrozen,
+  runImmutableResponse,
+} from "@/lib/run-immutability-http";
 
 const bodySchema = z.object({
   shardIndex: z.number().int().min(1),
@@ -44,6 +48,9 @@ export async function POST(request: Request, { params }: Params) {
   });
   if (!run) {
     return NextResponse.json({ error: "Run not found" }, { status: 404 });
+  }
+  if (isRunFrozen(run.status)) {
+    return runImmutableResponse();
   }
 
   const parsed = bodySchema.safeParse(await request.json());

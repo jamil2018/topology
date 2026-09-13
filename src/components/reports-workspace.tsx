@@ -76,11 +76,11 @@ export function ReportsWorkspace({
       <PageHeader
         eyebrow="Analytics"
         title="Test Reports"
-        description="Rich visual reports linked 1:1 to test runs — KPIs, status charts, suite breakdowns, and failure triage for manual and CI runs."
+        description="Rich visual reports for completed runs — KPIs, status charts, suite breakdowns, and failure triage for manual and CI."
         meta={
           <>
             <StatusChip tone="accent" mono>
-              {reports.length} runs
+              {reports.length} reports
             </StatusChip>
             <StatusChip tone="neutral" mono>
               {filtered.length} shown
@@ -157,8 +157,9 @@ export function ReportsWorkspace({
             No run reports yet
           </p>
           <p className="mx-auto mt-1 max-w-md text-xs text-[color:var(--topo-muted)]">
-            Start a manual run or ingest CI results — each completed or in-progress
-            run gets a linked report here.
+            Reports appear after a run is completed. Finish a manual run or let
+            CI mark one complete — unfinished runs stay on the Runs page until
+            then.
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <Link
