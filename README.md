@@ -111,10 +111,14 @@ Contributor test instructions: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 ## v1 slice
 
 - OAuth-first auth + workspace invites/roles + result comments/attachments
-- Operating hub with quality pulse + milestone readiness
+- Operating hub with quality pulse, milestone Go/At-risk/No-Go, flake + retest queues
 - Cases + folders CRUD, CSV import/export
 - Manual runs with assign, notes, comments, attachments, pass/fail
-- CI JUnit ingest + shard merge
+- CI JUnit ingest + shard merge (CLI + `/api/ci/*`)
+- Automation browser with lightweight flake signals
+- Failure triage queue (file/link issue for failures without a linked issue)
+- Milestones with configurable readiness thresholds
 - Issue create/link/status + retest queue
-- MCP agent plugin + Settings connections/CI
+- Outbound webhooks on `run.completed` / `issue.created` (Settings → Webhooks)
+- MCP agent plugin + Settings connections/CI/webhooks
 - `/api/health` + Compose Postgres (+ attachments volume)

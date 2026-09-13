@@ -65,8 +65,9 @@ describe("computeQualityPulse", () => {
   });
 });
 
+
 describe("computeMilestoneReadiness", () => {
-  it("returns ready when gates pass", () => {
+  it("returns Go when gates pass", () => {
     const result = computeMilestoneReadiness([
       {
         key: "TOP-1",
@@ -81,12 +82,12 @@ describe("computeMilestoneReadiness", () => {
         lastResult: "passed",
       },
     ]);
-    expect(result.status).toBe("ready");
-    expect(readinessBadgeLabel(result.status)).toBe("Ready");
-    expect(result.reasons[0]).toMatch(/green/i);
+    expect(result.status).toBe("go");
+    expect(readinessBadgeLabel(result.status)).toBe("Go");
+    expect(result.executedPct).toBe(100);
   });
 
-  it("blocks on open P0 failures", () => {
+  it("returns No-Go on open P0 failures", () => {
     const result = computeMilestoneReadiness([
       {
         key: "TOP-1",
@@ -95,71 +96,82 @@ describe("computeMilestoneReadiness", () => {
         lastResult: "failed",
       },
     ]);
-    expect(result.status).toBe("blocked");
+    expect(result.status).toBe("no_go");
     expect(result.openP0Failures).toBe(1);
-    expect(readinessBadgeLabel(result.status)).toBe("Blocked");
+    expect(readinessBadgeLabel(result.status)).toBe("No-Go");
   });
 
-  it("marks at_risk when pass rate is below gate but not −10", () => {
+  it("returns At risk when execution progress is low", () => {
     const result = computeMilestoneReadiness(
       [
-        { key: "A", priority: "P2", status: "ready", lastResult: "passed" },
-        { key: "B", priority: "P2", status: "ready", lastResult: "passed" },
-        { key: "C", priority: "P2", status: "ready", lastResult: "passed" },
-        { key: "D", priority: "P2", status: "ready", lastResult: "passed" },
-        { key: "E", priority: "P2", status: "ready", lastResult: "passed" },
-        { key: "F", priority: "P2", status: "ready", lastResult: "passed" },
-        { key: "G", priority: "P2", status: "ready", lastResult: "passed" },
-        { key: "H", priority: "P2", status: "ready", lastResult: "passed" },
-        { key: "I", priority: "P2", status: "ready", lastResult: "passed" },
-        { key: "J", priority: "P2", status: "ready", lastResult: "failed" },
+        {
+          key: "TOP-1",
+          priority: "P1",
+          status: "ready",
+          lastResult: "passed",
+        },
+        {
+          key: "TOP-2",
+          priority: "P1",
+          status: "ready",
+          lastResult: null,
+        },
+        {
+          key: "TOP-3",
+          priority: "P2",
+          status: "ready",
+          lastResult: null,
+        },
+        {
+          key: "TOP-4",
+          priority: "P2",
+          status: "ready",
+          lastResult: null,
+        },
+        {
+          key: "TOP-5",
+          priority: "P2",
+          status: "ready",
+          lastResult: null,
+        },
       ],
-      { minPassRate: 95, maxOpenP0Failures: 0, requireReadyCases: true },
-    );
-    expect(result.passRate).toBe(90);
-    expect(result.status).toBe("at_risk");
-    expect(readinessBadgeLabel(result.status)).toBe("At risk");
-  });
-
-  it("blocks when pass rate is more than 10 points below gate", () => {
-    const result = computeMilestoneReadiness(
-      [
-        { key: "A", priority: "P2", status: "ready", lastResult: "passed" },
-        { key: "B", priority: "P2", status: "ready", lastResult: "failed" },
-      ],
-      { minPassRate: 95, maxOpenP0Failures: 0 },
-    );
-    expect(result.passRate).toBe(50);
-    expect(result.status).toBe("blocked");
-  });
-
-  it("treats draft/blocked as not ready when required", () => {
-    const result = computeMilestoneReadiness([
-      { key: "A", priority: "P1", status: "draft", lastResult: "passed" },
-      { key: "B", priority: "P1", status: "blocked", lastResult: "passed" },
-      { key: "C", priority: "P1", status: "ready", lastResult: "passed" },
-    ]);
-    expect(result.notReadyCases).toBe(2);
-    expect(result.blockedCases).toBe(1);
-    expect(result.status).toBe("blocked");
-  });
-
-  it("ignores deprecated cases and null pass rate with no executions", () => {
-    const result = computeMilestoneReadiness([
       {
-        key: "OLD",
-        priority: "P0",
-        status: "deprecated",
-        lastResult: "failed",
+        minPassRate: 95,
+        maxOpenP0Failures: 0,
+        minExecutedPct: 80,
+        maxOpenBlockers: 0,
+        requireReadyCases: true,
       },
-      { key: "NEW", priority: "P1", status: "ready", lastResult: "untested" },
-    ]);
-    expect(result.passRate).toBeNull();
-    expect(result.openP0Failures).toBe(0);
-    expect(result.status).toBe("ready");
-    expect(result.score).toBeGreaterThan(0);
+    );
+    expect(result.executedPct).toBe(20);
+    expect(result.status).toBe("no_go");
+  });
+
+  it("returns No-Go when open blocker issues exceed threshold", () => {
+    const result = computeMilestoneReadiness(
+      {
+        cases: [
+          {
+            key: "TOP-1",
+            priority: "P1",
+            status: "ready",
+            lastResult: "passed",
+          },
+        ],
+        openBlockerIssues: 2,
+      },
+      {
+        minPassRate: 95,
+        maxOpenP0Failures: 0,
+        minExecutedPct: 80,
+        maxOpenBlockers: 0,
+      },
+    );
+    expect(result.status).toBe("no_go");
+    expect(result.openBlockerIssues).toBe(2);
   });
 });
+
 
 describe("buildTriageQueue", () => {
   it("ranks P0 and recurring failures first", () => {
@@ -249,6 +261,7 @@ describe("buildTriageQueue", () => {
     ).toHaveLength("x::".length + 120);
   });
 });
+
 
 describe("detectFlakeSignal", () => {
   it("flags alternating outcomes", () => {

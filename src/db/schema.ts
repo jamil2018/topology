@@ -305,6 +305,8 @@ export const milestones = pgTable("milestones", {
   targetDate: timestamp("target_date", { mode: "date" }),
   passRateThreshold: integer("pass_rate_threshold").default(95).notNull(),
   maxOpenP0Failures: integer("max_open_p0_failures").default(0).notNull(),
+  minExecutedPct: integer("min_executed_pct").default(80).notNull(),
+  maxOpenBlockers: integer("max_open_blockers").default(0).notNull(),
   folderId: uuid("folder_id").references(() => folders.id, {
     onDelete: "set null",
   }),
@@ -373,6 +375,22 @@ export const linkedIssues = pgTable("linked_issues", {
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
+
+export const webhookEndpoints = pgTable("webhook_endpoints", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  url: text("url").notNull(),
+  secret: text("secret").default("").notNull(),
+  /** Comma-separated event names: run.completed,issue.created */
+  events: text("events").default("run.completed,issue.created").notNull(),
+  enabled: integer("enabled").default(1).notNull(),
+  description: text("description").default("").notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  lastDeliveredAt: timestamp("last_delivered_at", { mode: "date" }),
+  lastStatus: integer("last_status"),
+});
+
+export type WebhookEndpoint = typeof webhookEndpoints.$inferSelect;
 
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),

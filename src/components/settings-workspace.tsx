@@ -6,12 +6,19 @@ import { Button } from "@heroui/react";
 import { PageHeader } from "./page-header";
 import { ConnectAgentPanel } from "./connect-agent-panel";
 import { CiSetupPanel } from "./ci-setup-panel";
+import { WebhooksPanel } from "./webhooks-panel";
 import { useTheme, type ThemePreference } from "./theme-provider";
 import { StatusChip } from "./status-chip";
 
 import { WorkspaceMembersPanel } from "./workspace-members-panel";
 
-type SectionId = "profile" | "preferences" | "members" | "connections" | "ci";
+type SectionId =
+  | "profile"
+  | "preferences"
+  | "members"
+  | "connections"
+  | "ci"
+  | "webhooks";
 
 const SECTIONS: { id: SectionId; label: string; hint: string }[] = [
   { id: "profile", label: "Profile", hint: "Account" },
@@ -19,6 +26,7 @@ const SECTIONS: { id: SectionId; label: string; hint: string }[] = [
   { id: "members", label: "Members", hint: "Roles" },
   { id: "connections", label: "Connections", hint: "MCP" },
   { id: "ci", label: "CI", hint: "Ingest" },
+  { id: "webhooks", label: "Webhooks", hint: "Events" },
 ];
 
 function isSection(value: string | null): value is SectionId {
@@ -27,7 +35,8 @@ function isSection(value: string | null): value is SectionId {
     value === "preferences" ||
     value === "members" ||
     value === "connections" ||
-    value === "ci"
+    value === "ci" ||
+    value === "webhooks"
   );
 }
 
@@ -391,6 +400,12 @@ export function SettingsWorkspace({
                 </p>
               </div>
               <CiSetupPanel />
+            </section>
+          ) : null}
+
+          {section === "webhooks" ? (
+            <section className="space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+              <WebhooksPanel />
             </section>
           ) : null}
         </div>

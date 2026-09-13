@@ -47,6 +47,14 @@ export async function POST(request: Request, { params }: Params) {
 
   const merged = shards.length > 0 ? mergeShardResults(shards) : [];
 
+  const { buildRunCompletedPayload, dispatchWebhook } = await import(
+    "@/lib/webhooks"
+  );
+  const data = await buildRunCompletedPayload(id);
+  if (data) {
+    void dispatchWebhook("run.completed", data);
+  }
+
   return NextResponse.json({
     run: updated,
     summary: summarizeResults(merged),

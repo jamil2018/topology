@@ -104,45 +104,68 @@ export async function openTriageForFailures(runId: string) {
   });
 
   for (const failure of failures) {
-    const caseKey = failure.case?.key ?? failure.externalKey ?? failure.id;
-    const fingerprint = failureFingerprint({
-      caseKey,
-      notes: failure.notes,
-    });
+    await upsertTriageItem(failure, runId);
+  }
+}
 
-    const existing = await db.query.triageItems.findFirst({
-      where: and(
-        eq(triageItems.fingerprint, fingerprint),
-        inArray(triageItems.status, ["open", "snoozed"]),
-      ),
-    });
+export async function openTriageForResult(resultId: string) {
+  const failure = await db.query.runResults.findFirst({
+    where: eq(runResults.id, resultId),
+    with: { case: true },
+  });
+  if (!failure || failure.status !== "failed") return;
+  await upsertTriageItem(failure, failure.runId);
+}
 
-    if (existing) {
-      await db
-        .update(triageItems)
-        .set({
-          occurrenceCount: existing.occurrenceCount + 1,
-          lastSeenAt: new Date(),
-          updatedAt: new Date(),
-          runId,
-          resultId: failure.id,
-          caseId: failure.caseId,
-          notes: failure.notes,
-        })
-        .where(eq(triageItems.id, existing.id));
-    } else {
-      await db.insert(triageItems).values({
-        fingerprint,
-        title: failure.case?.title ?? failure.title ?? caseKey,
-        priority: failure.case?.priority ?? "P2",
-        caseId: failure.caseId,
+async function upsertTriageItem(
+  failure: {
+    id: string;
+    notes: string;
+    caseId: string | null;
+    title: string | null;
+    externalKey: string | null;
+    case?: { key: string; title: string; priority: "P0" | "P1" | "P2" | "P3" } | null;
+  },
+  runId: string,
+) {
+  const caseKey = failure.case?.key ?? failure.externalKey ?? failure.id;
+  const fingerprint = failureFingerprint({
+    caseKey,
+    notes: failure.notes,
+  });
+
+  const existing = await db.query.triageItems.findFirst({
+    where: and(
+      eq(triageItems.fingerprint, fingerprint),
+      inArray(triageItems.status, ["open", "snoozed"]),
+    ),
+  });
+
+  if (existing) {
+    await db
+      .update(triageItems)
+      .set({
+        occurrenceCount: existing.occurrenceCount + 1,
+        lastSeenAt: new Date(),
+        updatedAt: new Date(),
         runId,
         resultId: failure.id,
+        caseId: failure.caseId,
         notes: failure.notes,
-        occurrenceCount: 1,
-        status: "open",
-      });
-    }
+      })
+      .where(eq(triageItems.id, existing.id));
+  } else {
+    await db.insert(triageItems).values({
+      fingerprint,
+      title: failure.case?.title ?? failure.title ?? caseKey,
+      priority: failure.case?.priority ?? "P2",
+      caseId: failure.caseId,
+      runId,
+      resultId: failure.id,
+      notes: failure.notes,
+      occurrenceCount: 1,
+      status: "open",
+    });
   }
 }
 

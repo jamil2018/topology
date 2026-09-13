@@ -6,6 +6,7 @@ import {
   createIssueFromResult,
   linkExistingIssue,
   listRetestQueue,
+  markIssueClosedLocally,
   refreshLinkedIssue,
 } from "@/lib/issues";
 import { listIssueProviders } from "@topology/issue-providers";
@@ -35,6 +36,11 @@ const refreshSchema = z.object({
 
 const retestAckSchema = z.object({
   action: z.literal("ack_retest"),
+  issueId: z.string().uuid(),
+});
+
+const markClosedSchema = z.object({
+  action: z.literal("mark_closed"),
   issueId: z.string().uuid(),
 });
 
@@ -113,6 +119,18 @@ export async function POST(request: Request) {
         );
       }
       const issue = await clearRetestFlag(parsed.data.issueId);
+      return NextResponse.json({ issue });
+    }
+
+    if (action === "mark_closed") {
+      const parsed = markClosedSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.flatten() },
+          { status: 400 },
+        );
+      }
+      const issue = await markIssueClosedLocally(parsed.data.issueId);
       return NextResponse.json({ issue });
     }
 

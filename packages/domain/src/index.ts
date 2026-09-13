@@ -19,8 +19,10 @@ export {
 export {
   computeMilestoneReadiness,
   readinessBadgeLabel,
+  DEFAULT_MILESTONE_THRESHOLDS,
   type MilestoneCase,
   type MilestoneThresholds,
+  type ReadinessInputs,
   type ReadinessResult,
 } from "./readiness";
 

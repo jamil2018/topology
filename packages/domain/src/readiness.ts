@@ -8,29 +8,53 @@ export type MilestoneCase = {
 };
 
 export type MilestoneThresholds = {
+  /** Minimum pass rate among executed (passed+failed) cases. */
   minPassRate: number;
+  /** Maximum open P0 failures allowed. */
   maxOpenP0Failures: number;
+  /** Minimum percent of active cases that have been executed (not untested/skipped). */
+  minExecutedPct: number;
+  /** Maximum open blocker/critical linked issues allowed. */
+  maxOpenBlockers: number;
+  /** When true, draft/blocked cases count against readiness. */
   requireReadyCases?: boolean;
 };
 
+export type ReadinessInputs = {
+  cases: MilestoneCase[];
+  /** Open linked issues treated as release blockers (critical/P0 defects). */
+  openBlockerIssues?: number;
+};
+
 export type ReadinessResult = {
-  status: "ready" | "at_risk" | "blocked";
+  status: "go" | "at_risk" | "no_go";
   score: number;
   passRate: number | null;
+  executedPct: number;
   openP0Failures: number;
+  openBlockerIssues: number;
   blockedCases: number;
   notReadyCases: number;
   reasons: string[];
 };
 
+export const DEFAULT_MILESTONE_THRESHOLDS: MilestoneThresholds = {
+  minPassRate: 95,
+  maxOpenP0Failures: 0,
+  minExecutedPct: 80,
+  maxOpenBlockers: 0,
+  requireReadyCases: true,
+};
+
 export function computeMilestoneReadiness(
-  cases: MilestoneCase[],
-  thresholds: MilestoneThresholds = {
-    minPassRate: 95,
-    maxOpenP0Failures: 0,
-    requireReadyCases: true,
-  },
+  input: MilestoneCase[] | ReadinessInputs,
+  thresholds: MilestoneThresholds = DEFAULT_MILESTONE_THRESHOLDS,
 ): ReadinessResult {
+  const cases = Array.isArray(input) ? input : input.cases;
+  const openBlockerIssues = Array.isArray(input)
+    ? 0
+    : (input.openBlockerIssues ?? 0);
+
   const active = cases.filter((c) => c.status !== "deprecated");
   const withResult = active.filter(
     (c) => c.lastResult && c.lastResult !== "untested" && c.lastResult !== "skipped",
@@ -40,6 +64,10 @@ export function computeMilestoneReadiness(
   const executed = passed + failed;
   const passRate =
     executed === 0 ? null : Math.round((passed / executed) * 100);
+  const executedPct =
+    active.length === 0
+      ? 100
+      : Math.round((executed / active.length) * 100);
 
   const openP0Failures = active.filter(
     (c) => c.priority === "P0" && c.lastResult === "failed",
@@ -56,9 +84,19 @@ export function computeMilestoneReadiness(
       `Pass rate ${passRate}% is below the ${thresholds.minPassRate}% gate`,
     );
   }
+  if (executedPct < thresholds.minExecutedPct) {
+    reasons.push(
+      `Execution progress ${executedPct}% is below the ${thresholds.minExecutedPct}% gate`,
+    );
+  }
   if (openP0Failures > thresholds.maxOpenP0Failures) {
     reasons.push(
       `${openP0Failures} open P0 failure(s) (max ${thresholds.maxOpenP0Failures})`,
+    );
+  }
+  if (openBlockerIssues > thresholds.maxOpenBlockers) {
+    reasons.push(
+      `${openBlockerIssues} open blocker issue(s) (max ${thresholds.maxOpenBlockers})`,
     );
   }
   if (thresholds.requireReadyCases && notReadyCases > 0) {
@@ -68,36 +106,40 @@ export function computeMilestoneReadiness(
     reasons.push(`${blockedCases} case(s) blocked`);
   }
 
-  let status: ReadinessResult["status"] = "ready";
-  if (
+  let status: ReadinessResult["status"] = "go";
+  const hardFail =
     openP0Failures > thresholds.maxOpenP0Failures ||
+    openBlockerIssues > thresholds.maxOpenBlockers ||
     blockedCases > 0 ||
-    (passRate != null && passRate < thresholds.minPassRate - 10)
-  ) {
-    status = "blocked";
+    (passRate != null && passRate < thresholds.minPassRate - 10) ||
+    executedPct < Math.max(0, thresholds.minExecutedPct - 25);
+
+  if (hardFail) {
+    status = "no_go";
   } else if (reasons.length > 0) {
     status = "at_risk";
   }
 
-  // Score: blend pass rate with readiness completeness.
   const readinessPct =
     active.length === 0
       ? 100
-      : Math.round(
-          ((active.length - notReadyCases) / active.length) * 100,
-        );
+      : Math.round(((active.length - notReadyCases) / active.length) * 100);
   const passComponent = passRate ?? (executed === 0 ? 100 : 0);
-  const score = Math.round(passComponent * 0.7 + readinessPct * 0.3);
+  const score = Math.round(
+    passComponent * 0.5 + executedPct * 0.3 + readinessPct * 0.2,
+  );
 
   if (reasons.length === 0) {
-    reasons.push("Milestone gates are green");
+    reasons.push("Milestone gates are green — Go");
   }
 
   return {
     status,
     score,
     passRate,
+    executedPct,
     openP0Failures,
+    openBlockerIssues,
     blockedCases,
     notReadyCases,
     reasons,
@@ -108,11 +150,11 @@ export function readinessBadgeLabel(
   status: ReadinessResult["status"],
 ): string {
   switch (status) {
-    case "ready":
-      return "Ready";
+    case "go":
+      return "Go";
     case "at_risk":
       return "At risk";
-    case "blocked":
-      return "Blocked";
+    case "no_go":
+      return "No-Go";
   }
 }

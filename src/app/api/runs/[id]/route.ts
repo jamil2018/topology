@@ -4,6 +4,11 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { runResults, runs } from "@/db/schema";
+import { openTriageForResult } from "@/lib/ci-ingest";
+import {
+  buildRunCompletedPayload,
+  dispatchWebhook,
+} from "@/lib/webhooks";
 
 const updateResultSchema = z.object({
   caseId: z.string().uuid(),
@@ -68,6 +73,12 @@ export async function PATCH(request: Request, { params }: Params) {
       })
       .where(eq(runs.id, id))
       .returning();
+
+    const data = await buildRunCompletedPayload(id);
+    if (data) {
+      void dispatchWebhook("run.completed", data);
+    }
+
     return NextResponse.json({ run: updated });
   }
 
@@ -140,6 +151,10 @@ export async function PATCH(request: Request, { params }: Params) {
       updatedAt: new Date(),
     })
     .where(eq(runs.id, id));
+
+  if (parsed.data.status === "failed") {
+    await openTriageForResult(updated.id);
+  }
 
   return NextResponse.json({ result: updated });
 }

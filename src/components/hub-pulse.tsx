@@ -41,14 +41,27 @@ type Pulse = {
   };
   triageOpen?: number;
   flakeSuspects?: number;
+  retestQueue?: Array<{
+    id: string;
+    key: string;
+    title: string;
+    caseKey: string | null;
+    runId: string | null;
+    resultId: string | null;
+  }>;
 };
 
 type MilestoneView = {
-  milestone: { name: string; passRateThreshold: number };
+  milestone: {
+    name: string;
+    passRateThreshold: number;
+    minExecutedPct?: number;
+  };
   readiness: {
-    status: "ready" | "at_risk" | "blocked";
+    status: "go" | "at_risk" | "no_go";
     score: number;
     passRate: number | null;
+    executedPct?: number;
     reasons: string[];
   };
   badge: string;
@@ -238,6 +251,18 @@ export function HubPulse({
               Test Runs
             </Link>
             <Link
+              href="/milestones"
+              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+            >
+              Milestones
+            </Link>
+            <Link
+              href="/automation"
+              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+            >
+              Automation
+            </Link>
+            <Link
               href="/reports"
               className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
             >
@@ -305,12 +330,20 @@ export function HubPulse({
               <div className="min-w-0 flex-1">
                 <WidgetLabel>Milestone gate</WidgetLabel>
                 <div className="mt-1.5 truncate text-lg font-semibold text-[color:var(--topo-ink)]">
-                  {milestone.milestone.name}
+                  <Link
+                    href="/milestones"
+                    className="hover:text-[color:var(--topo-accent)]"
+                  >
+                    {milestone.milestone.name}
+                  </Link>
                 </div>
                 <p className="mt-1 text-xs text-[color:var(--topo-muted)]">
                   {milestone.readiness.reasons[0]}
                   {milestone.readiness.passRate != null
                     ? ` · pass ${milestone.readiness.passRate}% (gate ${milestone.milestone.passRateThreshold}%)`
+                    : ""}
+                  {milestone.readiness.executedPct != null
+                    ? ` · executed ${milestone.readiness.executedPct}%`
                     : ""}
                 </p>
               </div>
@@ -330,7 +363,14 @@ export function HubPulse({
             <>
               <WidgetLabel>Milestone gate</WidgetLabel>
               <p className="mt-3 text-sm text-[color:var(--topo-muted)]">
-                No active milestone. Set one to gate release readiness.
+                No active milestone.{" "}
+                <Link
+                  href="/milestones"
+                  className="text-[color:var(--topo-accent)] underline-offset-2 hover:underline"
+                >
+                  Create one
+                </Link>{" "}
+                to gate release readiness.
               </p>
             </>
           )}
@@ -383,7 +423,7 @@ export function HubPulse({
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.12}
-          className="overflow-hidden sm:col-span-2 lg:col-span-6 lg:col-start-1 lg:row-start-3"
+          className="overflow-hidden sm:col-span-2 lg:col-span-4 lg:col-start-1 lg:row-start-3"
         >
           <div className="flex items-baseline justify-between gap-2 border-b border-[color:var(--topo-line)] px-4 py-3">
             <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
@@ -439,6 +479,71 @@ export function HubPulse({
                   </li>
                 );
               })}
+            </ul>
+          )}
+        </WidgetCard>
+
+        {/* 6. Retest queue */}
+        <WidgetCard
+          reduceMotion={reduceMotion}
+          delay={0.14}
+          className="overflow-hidden sm:col-span-2 lg:col-span-2 lg:col-start-5 lg:row-start-3"
+        >
+          <div className="flex items-baseline justify-between gap-2 border-b border-[color:var(--topo-line)] px-4 py-3">
+            <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+              Retest queue
+            </h2>
+            <StatusChip
+              tone={(pulse.retestQueue?.length ?? 0) > 0 ? "warning" : "success"}
+              mono
+            >
+              {pulse.retestQueue?.length ?? 0}
+            </StatusChip>
+          </div>
+          {(pulse.retestQueue?.length ?? 0) === 0 ? (
+            <p className="px-4 py-6 text-sm text-[color:var(--topo-muted)]">
+              No cases waiting. When a linked issue closes, it appears here for
+              retest.
+            </p>
+          ) : (
+            <ul className="divide-y divide-[color:var(--topo-line)]">
+              {(pulse.retestQueue ?? []).map((item) => (
+                <li key={item.id} className="px-4 py-2.5 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-[color:var(--topo-ink)]">
+                        <span className="font-mono text-xs text-[color:var(--topo-accent)]">
+                          {item.key}
+                        </span>
+                        {item.caseKey ? (
+                          <span className="text-[color:var(--topo-muted)]">
+                            {" "}
+                            · {item.caseKey}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-0.5 line-clamp-2 text-xs text-[color:var(--topo-muted)]">
+                        {item.title}
+                      </p>
+                    </div>
+                    {item.runId ? (
+                      <Link
+                        href={`/runs/${item.runId}`}
+                        className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-accent)] hover:underline"
+                      >
+                        Retest
+                      </Link>
+                    ) : (
+                      <Link
+                        href="/runs"
+                        className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-accent)] hover:underline"
+                      >
+                        Start run
+                      </Link>
+                    )}
+                  </div>
+                </li>
+              ))}
             </ul>
           )}
         </WidgetCard>

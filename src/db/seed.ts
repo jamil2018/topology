@@ -69,6 +69,8 @@ async function seed() {
         folderId: smoke?.id,
         passRateThreshold: 95,
         maxOpenP0Failures: 0,
+        minExecutedPct: 80,
+        maxOpenBlockers: 0,
         status: "active",
       });
     }
@@ -152,6 +154,8 @@ async function seed() {
     folderId: smoke.id,
     passRateThreshold: 95,
     maxOpenP0Failures: 0,
+    minExecutedPct: 80,
+    maxOpenBlockers: 0,
     status: "active",
   });
 

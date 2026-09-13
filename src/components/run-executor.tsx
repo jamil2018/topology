@@ -71,15 +71,17 @@ function IssueChip({
   issue,
   onRefresh,
   onAckRetest,
+  onMarkClosed,
   pending,
 }: {
   issue: LinkedIssue;
   onRefresh: () => void;
   onAckRetest: () => void;
+  onMarkClosed: () => void;
   pending: boolean;
 }) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)]/80 px-2 py-1 text-xs">
+    <div className="inline-flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)]/80 px-2 py-1 text-xs">
       <a
         href={issue.url}
         target="_blank"
@@ -99,6 +101,17 @@ function IssueChip({
       >
         Sync
       </button>
+      {issue.remoteStatus !== "done" ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={onMarkClosed}
+          title="Mark closed locally when provider sync is unavailable"
+          className="text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+        >
+          Mark closed
+        </button>
+      ) : null}
       {issue.needsRetest === 1 && issue.remoteStatus === "done" ? (
         <button
           type="button"
@@ -382,6 +395,12 @@ export function RunExecutor({
                   pending={pending}
                   onRefresh={() =>
                     void issueAction({ action: "refresh", issueId: issue.id })
+                  }
+                  onMarkClosed={() =>
+                    void issueAction({
+                      action: "mark_closed",
+                      issueId: issue.id,
+                    })
                   }
                   onAckRetest={() =>
                     void issueAction({

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Button } from "@heroui/react";
+import { Button, Input } from "@heroui/react";
 import { motion } from "motion/react";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
@@ -21,6 +21,8 @@ type QueueItem = {
   reason: string;
   isFlaky?: boolean;
   flakeHint?: string | null;
+  resultId?: string | null;
+  caseId?: string | null;
 };
 
 type FlakeHint = {
@@ -42,6 +44,7 @@ export function TriageWorkspace({
   const [pending, startTransition] = useTransition();
   const [queue, setQueue] = useState(initialQueue);
   const [error, setError] = useState<string | null>(null);
+  const [linkKey, setLinkKey] = useState<Record<string, string>>({});
 
   async function setStatus(id: string, status: "resolved" | "snoozed") {
     setError(null);
@@ -58,12 +61,67 @@ export function TriageWorkspace({
     startTransition(() => router.refresh());
   }
 
+  async function fileIssue(item: QueueItem) {
+    if (!item.resultId) {
+      setError("This failure has no result to attach an issue to");
+      return;
+    }
+    setError(null);
+    const res = await fetch("/api/issues", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "create",
+        resultId: item.resultId,
+        provider: "mock",
+      }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      setError(data?.error ?? "Could not create issue");
+      return;
+    }
+    setQueue((prev) => prev.filter((q) => q.id !== item.id));
+    startTransition(() => router.refresh());
+  }
+
+  async function linkIssue(item: QueueItem) {
+    if (!item.resultId) {
+      setError("This failure has no result to attach an issue to");
+      return;
+    }
+    const remoteKey = (linkKey[item.id] ?? "").trim();
+    if (!remoteKey) return;
+    setError(null);
+    const res = await fetch("/api/issues", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "link",
+        resultId: item.resultId,
+        remoteKey,
+        provider: "mock",
+      }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      setError(data?.error ?? "Could not link issue");
+      return;
+    }
+    setQueue((prev) => prev.filter((q) => q.id !== item.id));
+    startTransition(() => router.refresh());
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
         eyebrow="Failures"
         title="Triage"
-        description="Ranked queue of open CI and manual failures. Flake suspects are demoted so real regressions surface first."
+        description="Failed results without a linked issue. File or link a tracker issue, then resolve. Flake suspects are demoted so real regressions surface first."
         meta={
           <>
             <StatusChip tone={queue.length ? "danger" : "success"} mono>
@@ -82,7 +140,7 @@ export function TriageWorkspace({
 
       {queue.length === 0 ? (
         <p className="border border-dashed border-[color:var(--topo-line)] px-3 py-8 text-center text-sm text-[color:var(--topo-muted)]">
-          Triage queue is clear.
+          Triage queue is clear — every failure has an issue or was resolved.
         </p>
       ) : (
         <ul className="divide-y divide-[color:var(--topo-line)] overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
@@ -102,6 +160,7 @@ export function TriageWorkspace({
                     {item.isFlaky ? (
                       <StatusChip tone="warning">Flake</StatusChip>
                     ) : null}
+                    <StatusChip tone="danger">No issue</StatusChip>
                   </div>
                   <h2 className="mt-1.5 text-sm font-semibold text-[color:var(--topo-ink)]">
                     <span className="font-mono text-[color:var(--topo-accent)]">
@@ -135,23 +194,60 @@ export function TriageWorkspace({
                     </p>
                   ) : null}
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    isDisabled={pending}
-                    onPress={() => setStatus(item.id, "snoozed")}
-                  >
-                    Snooze
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    isDisabled={pending}
-                    onPress={() => setStatus(item.id, "resolved")}
-                  >
-                    Resolve
-                  </Button>
+                <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {item.resultId ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        isDisabled={pending}
+                        onPress={() => void fileIssue(item)}
+                      >
+                        File issue
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      isDisabled={pending}
+                      onPress={() => setStatus(item.id, "snoozed")}
+                    >
+                      Snooze
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      isDisabled={pending}
+                      onPress={() => setStatus(item.id, "resolved")}
+                    >
+                      Resolve
+                    </Button>
+                  </div>
+                  {item.resultId ? (
+                    <div className="flex flex-wrap items-center justify-end gap-1">
+                      <Input
+                        value={linkKey[item.id] ?? ""}
+                        onChange={(e) =>
+                          setLinkKey((prev) => ({
+                            ...prev,
+                            [item.id]: e.target.value,
+                          }))
+                        }
+                        placeholder="Link key (MOCK-1)"
+                        className="w-40"
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        isDisabled={
+                          pending || !(linkKey[item.id] ?? "").trim()
+                        }
+                        onPress={() => void linkIssue(item)}
+                      >
+                        Link
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </motion.li>
