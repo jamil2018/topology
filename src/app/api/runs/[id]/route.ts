@@ -9,7 +9,7 @@ import { requireProjectAccess } from "@/lib/project";
 import {
   isRunFrozen,
   runImmutableResponse,
-} from "@/lib/run-immutability";
+} from "@/lib/run-immutability-http";
 import {
   buildRunCompletedPayload,
   dispatchWebhook,

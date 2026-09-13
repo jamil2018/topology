@@ -3,8 +3,8 @@ import {
   FROZEN_RUN_STATUSES,
   RUN_IMMUTABLE_MESSAGE,
   isRunFrozen,
-  runImmutableResponse,
 } from "./run-immutability";
+import { runImmutableResponse } from "./run-immutability-http";
 
 describe("isRunFrozen", () => {
   it("freezes only completed runs", () => {

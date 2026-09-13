@@ -1,11 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RunExecutor } from "./run-executor";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const baseRun = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -41,7 +46,7 @@ describe("RunExecutor complete confirmation", () => {
 
     render(<RunExecutor run={baseRun} />);
 
-    await user.click(screen.getByRole("button", { name: "Complete" }));
+    await user.click(screen.getByRole("button", { name: /^Complete$/ }));
     expect(
       screen.getByRole("heading", { name: "Complete this run?" }),
     ).toBeInTheDocument();
@@ -69,7 +74,7 @@ describe("RunExecutor complete confirmation", () => {
       `/reports/${baseRun.id}`,
     );
     expect(
-      screen.queryByRole("button", { name: "Complete" }),
+      screen.queryByRole("button", { name: /^Complete$/ }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "passed" })).toBeDisabled();
   });

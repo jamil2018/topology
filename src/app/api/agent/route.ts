@@ -13,7 +13,7 @@ import {
 import {
   isRunFrozen,
   runImmutableResponse,
-} from "@/lib/run-immutability";
+} from "@/lib/run-immutability-http";
 
 async function requireToken(request: Request) {
   return authenticateApiToken(request);

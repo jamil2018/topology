@@ -13,7 +13,7 @@ import { runs } from "@/db/schema";
 import {
   isRunFrozen,
   runImmutableResponse,
-} from "@/lib/run-immutability";
+} from "@/lib/run-immutability-http";
 
 const bodySchema = z.object({
   shardIndex: z.number().int().min(1),

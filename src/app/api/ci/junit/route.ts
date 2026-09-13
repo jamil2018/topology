@@ -12,7 +12,7 @@ import { runs } from "@/db/schema";
 import {
   isRunFrozen,
   runImmutableResponse,
-} from "@/lib/run-immutability";
+} from "@/lib/run-immutability-http";
 
 const resultSchema = z.object({
   externalKey: z.string().min(1),
