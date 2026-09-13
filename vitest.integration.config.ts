@@ -1,21 +1,19 @@
 import { defineConfig } from "vitest/config";
 import path from "node:path";
-import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  plugins: [react()],
   test: {
     environment: "node",
     setupFiles: ["./vitest.setup.ts"],
     include: [
-      "src/**/*.test.ts",
-      "packages/*/src/**/*.test.ts",
+      "tests/integration/**/*.integration.test.ts",
+      "src/**/*.integration.test.ts",
+      "packages/*/src/**/*.integration.test.ts",
     ],
-    exclude: [
-      "**/*.integration.test.ts",
-      "**/node_modules/**",
-      "**/.worktrees/**",
-    ],
+    exclude: ["**/node_modules/**", "**/.worktrees/**"],
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
+    fileParallelism: false,
   },
   resolve: {
     alias: {

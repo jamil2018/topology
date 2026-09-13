@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  externalKeyForCase,
   mergeShardResults,
   normalizeJUnitCases,
   parseJUnitXml,
@@ -44,6 +45,40 @@ describe("parseJUnitXml", () => {
       passRate: 50,
     });
   });
+
+  it("handles empty and BOM-prefixed XML", () => {
+    expect(parseJUnitXml("").cases).toEqual([]);
+    const bom = `\uFEFF${sample}`;
+    expect(parseJUnitXml(bom).cases).toHaveLength(3);
+  });
+
+  it("parses cases-only XML without a suite wrapper", () => {
+    const report = parseJUnitXml(
+      `<testcase classname="solo" name="works" time="0.1"/><testcase name="bare" time="0.2"><error message="boom"/></testcase>`,
+    );
+    expect(report.suites[0]?.name).toBe("imported");
+    expect(report.cases).toHaveLength(2);
+    expect(report.cases[1]?.status).toBe("error");
+  });
+
+  it("maps error status to failed on normalize", () => {
+    const normalized = normalizeJUnitCases(
+      parseJUnitXml(
+        `<testsuite><testcase classname="x" name="y" time="0.1"><error message="kaboom"/></testcase></testsuite>`,
+      ).cases,
+    );
+    expect(normalized[0]).toMatchObject({
+      status: "failed",
+      notes: "kaboom",
+    });
+  });
+
+  it("builds external keys from classname/name edges", () => {
+    expect(externalKeyForCase({ classname: "a", name: "b" })).toBe("a::b");
+    expect(externalKeyForCase({ classname: "", name: "only" })).toBe("only");
+    expect(externalKeyForCase({ classname: "cls", name: "" })).toBe("cls");
+    expect(externalKeyForCase({ classname: "  ", name: "  " })).toBe("unknown");
+  });
 });
 
 describe("mergeShardResults", () => {
@@ -71,5 +106,12 @@ describe("mergeShardResults", () => {
       "a::two",
       "b::three",
     ]);
+  });
+
+  it("summarizes empty merge as null pass rate", () => {
+    expect(summarizeResults([])).toMatchObject({
+      total: 0,
+      passRate: null,
+    });
   });
 });

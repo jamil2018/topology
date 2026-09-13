@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit + UI tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+      - run: npm run test:ui
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: topology
+          POSTGRES_PASSWORD: topology
+          POSTGRES_DB: topology
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U topology -d topology"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://topology:topology@127.0.0.1:54329/topology
+      AUTH_SECRET: topology-ci-secret-not-for-production
+      AUTH_URL: http://127.0.0.1:4317
+      DEMO_USER_EMAIL: demo@topology.local
+      DEMO_USER_PASSWORD: topology-demo
+      TOPOLOGY_API_TOKEN: topo_demo_token_local_dev_only
+      TOPOLOGY_URL: http://127.0.0.1:4317
+      TOPOLOGY_ISSUE_PROVIDER: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx drizzle-kit push
+      # db:seed uses tsx --env-file=.env.local; CI env already supplies vars
+      - run: touch .env.local
+      - run: npm run db:seed
+      - run: npm run test:integration
+
+  e2e:
+    name: Playwright UI
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: topology
+          POSTGRES_PASSWORD: topology
+          POSTGRES_DB: topology
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U topology -d topology"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://topology:topology@127.0.0.1:54329/topology
+      AUTH_SECRET: topology-ci-secret-not-for-production
+      AUTH_URL: http://127.0.0.1:4317
+      DEMO_USER_EMAIL: demo@topology.local
+      DEMO_USER_PASSWORD: topology-demo
+      TOPOLOGY_API_TOKEN: topo_demo_token_local_dev_only
+      TOPOLOGY_URL: http://127.0.0.1:4317
+      TOPOLOGY_ISSUE_PROVIDER: mock
+      CI: true
+      PORT: "4317"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx drizzle-kit push
+      - run: touch .env.local
+      - run: npm run db:seed
+      - run: npm run test:e2e
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:4317
