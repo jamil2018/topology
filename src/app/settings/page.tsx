@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
 import { SettingsWorkspace } from "@/components/settings-workspace";
+import { SettingsPageSkeleton } from "@/components/skeletons";
 
 export default async function SettingsPage({
   searchParams,
@@ -29,11 +30,7 @@ export default async function SettingsPage({
 
   return (
     <HubShell userEmail={session.user.email}>
-      <Suspense
-        fallback={
-          <p className="text-sm text-[color:var(--topo-muted)]">Loading settings…</p>
-        }
-      >
+      <Suspense fallback={<SettingsPageSkeleton />}>
         <SettingsWorkspace
           defaultUrl={defaultUrl}
           initialSection={initialSection}
