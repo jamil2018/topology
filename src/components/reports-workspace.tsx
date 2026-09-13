@@ -162,7 +162,7 @@ export function ReportsWorkspace({
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <Link
-              href="/runs"
+              href="/runs/new"
               className="rounded-md bg-[color:var(--topo-ink)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-panel)]"
             >
               Start a run

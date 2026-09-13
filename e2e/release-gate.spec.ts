@@ -40,14 +40,10 @@ test("release gate: login → hub → case → run → fail → mock issue → t
   });
 
   const runName = `Release gate ${Date.now()}`;
-  const startTrigger = page.getByRole("button", { name: /Start a run/i });
-  if (await startTrigger.isVisible()) {
-    // Disclosure may already be expanded; click only if needed
-    const runNameField = page.getByLabel("Run name");
-    if (!(await runNameField.isVisible().catch(() => false))) {
-      await startTrigger.click();
-    }
-  }
+  await page.getByRole("link", { name: /Start a run/i }).first().click();
+  await expect(page.getByRole("heading", { name: "Start a run" })).toBeVisible({
+    timeout: 15_000,
+  });
   await page.getByLabel("Run name").fill(runName);
   await page.getByRole("button", { name: /Create run/ }).click();
   await expect(page.getByRole("heading", { name: runName })).toBeVisible({

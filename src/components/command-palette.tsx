@@ -164,7 +164,7 @@ export function CommandPalette() {
         group: "Actions",
         Icon: PlayCircleIcon,
         run: () => {
-          router.push("/runs?new=1");
+          router.push("/runs/new");
           close();
         },
       },

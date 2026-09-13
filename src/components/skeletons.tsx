@@ -292,14 +292,7 @@ export function CasesPageSkeleton() {
 export function RunsPageSkeleton() {
   return (
     <div className="space-y-4">
-      <PageHeaderSkeleton descriptionLines={1} badgeCount={1} actionCount={0} />
-      <div className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3">
-        <div className="flex items-center justify-between gap-2">
-          <Bone className="h-4 w-28" />
-          <Bone className="h-3 w-32 hidden sm:block" />
-          <Bone className="h-4 w-4 shrink-0" />
-        </div>
-      </div>
+      <PageHeaderSkeleton descriptionLines={1} badgeCount={1} actionCount={1} />
       <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
         <div className="space-y-2 border-b border-[color:var(--topo-line)] p-2.5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -314,6 +307,38 @@ export function RunsPageSkeleton() {
             </li>
           ))}
         </ul>
+      </div>
+    </div>
+  );
+}
+
+export function StartRunPageSkeleton() {
+  return (
+    <div className="space-y-4">
+      <PageHeaderSkeleton descriptionLines={1} badgeCount={2} actionCount={1} />
+      <Bone className="h-3 w-40" />
+      <div className="space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3">
+        <Bone className="h-3 w-full max-w-md" />
+        <Bone className="h-9 w-full" />
+        <Bone className="h-20 w-full" />
+        <div className="flex flex-wrap gap-2">
+          <Bone className="h-9 min-w-[10rem] flex-1" />
+          <Bone className="h-9 w-24" />
+          <Bone className="h-9 w-24" />
+        </div>
+        <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)]">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-3 border-b border-[color:var(--topo-line)] px-3 py-2.5 last:border-b-0"
+            >
+              <Bone className="h-4 w-4 shrink-0" />
+              <Bone className="h-4 min-w-0 flex-1" />
+              <Bone className="h-5 w-12 shrink-0" />
+            </div>
+          ))}
+        </div>
+        <Bone className="h-9 w-36" />
       </div>
     </div>
   );
