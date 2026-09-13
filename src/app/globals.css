@@ -74,3 +74,100 @@ body {
     linear-gradient(rgba(244, 244, 245, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(244, 244, 245, 0.04) 1px, transparent 1px);
 }
+
+/* Login atmosphere: layered plane over Topology neutrals + teal accent */
+.login-atmosphere {
+  isolation: isolate;
+  background-color: var(--topo-paper);
+  background-image:
+    radial-gradient(
+      1100px 560px at 12% -10%,
+      color-mix(in srgb, var(--topo-accent) 22%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      900px 520px at 92% 8%,
+      color-mix(in srgb, var(--topo-signal) 10%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      700px 480px at 50% 110%,
+      color-mix(in srgb, var(--topo-accent) 12%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(
+      rgba(24, 24, 27, 0.045) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(24, 24, 27, 0.045) 1px,
+      transparent 1px
+    );
+  background-size:
+    auto,
+    auto,
+    auto,
+    28px 28px,
+    28px 28px;
+  background-position:
+    0 0,
+    0 0,
+    0 0,
+    center,
+    center;
+}
+
+.dark .login-atmosphere {
+  background-image:
+    radial-gradient(
+      1100px 560px at 12% -10%,
+      color-mix(in srgb, var(--topo-accent) 18%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      900px 520px at 92% 8%,
+      color-mix(in srgb, var(--topo-signal) 9%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      700px 480px at 50% 110%,
+      color-mix(in srgb, var(--topo-accent) 10%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(
+      rgba(244, 244, 245, 0.035) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(244, 244, 245, 0.035) 1px,
+      transparent 1px
+    );
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .login-atmosphere::before {
+    content: "";
+    position: absolute;
+    inset: -20%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        420px 420px at 30% 40%,
+        color-mix(in srgb, var(--topo-accent) 14%, transparent),
+        transparent 70%
+      );
+    animation: login-drift 18s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes login-drift {
+  from {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(3%, 2%, 0) scale(1.06);
+  }
+}
