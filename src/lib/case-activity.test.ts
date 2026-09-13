@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { describeCaseChange } from "./case-activity-format";
 import {
+  caseViewConfigSchema,
   parseCaseViewConfig,
   parseRunViewConfig,
+  runViewConfigSchema,
   serializeCaseViewConfig,
 } from "./saved-views";
 
@@ -45,5 +47,23 @@ describe("saved view config", () => {
       search: "",
       sort: "updated",
     });
+  });
+
+  it("accepts cases and runs create payloads via entity-discriminated schemas", () => {
+    const casesOk = caseViewConfigSchema.safeParse({
+      folderFilter: "all",
+      search: "",
+      statusFilter: "all",
+      priorityFilter: "all",
+      sort: "key",
+      sortDir: "asc",
+    });
+    expect(casesOk.success).toBe(true);
+
+    const runsOk = runViewConfigSchema.safeParse({
+      search: "nightly",
+      sort: "created",
+    });
+    expect(runsOk.success).toBe(true);
   });
 });

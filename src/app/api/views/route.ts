@@ -10,11 +10,25 @@ import {
   runViewConfigSchema,
 } from "@/lib/saved-views";
 
-const createSchema = z.object({
-  name: z.string().trim().min(1).max(80),
-  entity: z.enum(["cases", "runs"]),
-  config: z.union([caseViewConfigSchema, runViewConfigSchema]),
-});
+const createSchema = z.discriminatedUnion("entity", [
+  z.object({
+    name: z.string().trim().min(1).max(80),
+    entity: z.literal("cases"),
+    config: caseViewConfigSchema,
+  }),
+  z.object({
+    name: z.string().trim().min(1).max(80),
+    entity: z.literal("runs"),
+    config: runViewConfigSchema,
+  }),
+]);
+
+function formatZodError(error: z.ZodError): string {
+  const first = error.issues[0];
+  if (!first) return "Invalid request";
+  const path = first.path.length ? `${first.path.join(".")}: ` : "";
+  return `${path}${first.message}`;
+}
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -83,44 +97,41 @@ export async function POST(request: Request) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.flatten() },
+      { error: formatZodError(parsed.error) },
       { status: 400 },
     );
   }
 
-  const configCheck =
-    parsed.data.entity === "cases"
-      ? caseViewConfigSchema.safeParse(parsed.data.config)
-      : runViewConfigSchema.safeParse(parsed.data.config);
-  if (!configCheck.success) {
+  try {
+    const [created] = await db
+      .insert(savedViews)
+      .values({
+        workspaceId,
+        name: parsed.data.name,
+        entity: parsed.data.entity,
+        configJson: JSON.stringify(parsed.data.config),
+        createdById: session.user.id,
+      })
+      .returning();
+
     return NextResponse.json(
-      { error: configCheck.error.flatten() },
-      { status: 400 },
+      {
+        view: {
+          id: created.id,
+          name: created.name,
+          entity: created.entity,
+          config: parsed.data.config,
+          createdAt: created.createdAt,
+          updatedAt: created.updatedAt,
+        },
+      },
+      { status: 201 },
+    );
+  } catch (err) {
+    console.error("Failed to create saved view", err);
+    return NextResponse.json(
+      { error: "Failed to save view" },
+      { status: 500 },
     );
   }
-
-  const [created] = await db
-    .insert(savedViews)
-    .values({
-      workspaceId,
-      name: parsed.data.name,
-      entity: parsed.data.entity,
-      configJson: JSON.stringify(configCheck.data),
-      createdById: session.user.id,
-    })
-    .returning();
-
-  return NextResponse.json(
-    {
-      view: {
-        id: created.id,
-        name: created.name,
-        entity: created.entity,
-        config: configCheck.data,
-        createdAt: created.createdAt,
-        updatedAt: created.updatedAt,
-      },
-    },
-    { status: 201 },
-  );
 }
