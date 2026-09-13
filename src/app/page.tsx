@@ -6,10 +6,13 @@ import {
   getHubPulse,
 } from "@/lib/queries";
 import { HubPulse } from "@/components/hub-pulse";
+import { ensureMembership } from "@/lib/workspace";
 
 export default async function HomePage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
+
+  await ensureMembership(session.user.id);
 
   const [pulse, milestone] = await Promise.all([
     getHubPulse(),

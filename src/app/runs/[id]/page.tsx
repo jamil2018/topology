@@ -3,12 +3,23 @@ import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
 import { RunExecutor } from "@/components/run-executor";
 import { getRunWithResults } from "@/lib/queries";
+import { ensureMembership, getMembership } from "@/lib/workspace";
+import { db } from "@/db";
+import { eq } from "drizzle-orm";
+import { workspaceMembers } from "@/db/schema";
 
 type Props = { params: Promise<{ id: string }> };
 
 export default async function RunDetailPage({ params }: Props) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
+
+  await ensureMembership(session.user.id);
+  const { workspace } = await getMembership(session.user.id);
+  const members = await db.query.workspaceMembers.findMany({
+    where: eq(workspaceMembers.workspaceId, workspace.id),
+    with: { user: true },
+  });
 
   const { id } = await params;
   const run = await getRunWithResults(id);
@@ -17,15 +28,37 @@ export default async function RunDetailPage({ params }: Props) {
   return (
     <HubShell userEmail={session.user.email}>
       <RunExecutor
+        members={members.map((m) => ({
+          id: m.user.id,
+          name: m.user.name,
+          email: m.user.email,
+        }))}
         run={{
           id: run.id,
           name: run.name,
           status: run.status,
           description: run.description,
+          assigneeId: run.assigneeId,
           results: run.results.map((r) => ({
             id: r.id,
             status: r.status,
             notes: r.notes,
+            assigneeId: r.assigneeId,
+            comments: (r.comments ?? []).map((c) => ({
+              id: c.id,
+              body: c.body,
+              createdAt: c.createdAt,
+              user: c.user
+                ? { id: c.user.id, name: c.user.name, email: c.user.email }
+                : null,
+            })),
+            attachments: (r.attachments ?? []).map((a) => ({
+              id: a.id,
+              filename: a.filename,
+              contentType: a.contentType,
+              sizeBytes: a.sizeBytes,
+              url: `/api/attachments/${a.id}`,
+            })),
             linkedIssues: (r.linkedIssues ?? []).map((i) => ({
               id: i.id,
               provider: i.provider,

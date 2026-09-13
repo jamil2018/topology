@@ -9,11 +9,14 @@ import { CiSetupPanel } from "./ci-setup-panel";
 import { useTheme, type ThemePreference } from "./theme-provider";
 import { StatusChip } from "./status-chip";
 
-type SectionId = "profile" | "preferences" | "connections" | "ci";
+import { WorkspaceMembersPanel } from "./workspace-members-panel";
+
+type SectionId = "profile" | "preferences" | "members" | "connections" | "ci";
 
 const SECTIONS: { id: SectionId; label: string; hint: string }[] = [
   { id: "profile", label: "Profile", hint: "Account" },
   { id: "preferences", label: "Preferences", hint: "Theme" },
+  { id: "members", label: "Members", hint: "Roles" },
   { id: "connections", label: "Connections", hint: "MCP" },
   { id: "ci", label: "CI", hint: "Ingest" },
 ];
@@ -22,6 +25,7 @@ function isSection(value: string | null): value is SectionId {
   return (
     value === "profile" ||
     value === "preferences" ||
+    value === "members" ||
     value === "connections" ||
     value === "ci"
   );
@@ -155,7 +159,7 @@ export function SettingsWorkspace({
       <PageHeader
         eyebrow="Account"
         title="Settings"
-        description="Profile, theme, MCP agent connection, and CI ingest setup."
+        description="Profile, members, theme, MCP agent connection, and CI ingest setup."
         meta={<StatusChip mono>topology</StatusChip>}
       />
 
@@ -361,6 +365,12 @@ export function SettingsWorkspace({
               {prefsMsg ? (
                 <p className="text-xs text-[color:var(--topo-muted)]">{prefsMsg}</p>
               ) : null}
+            </section>
+          ) : null}
+
+          {section === "members" ? (
+            <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+              <WorkspaceMembersPanel />
             </section>
           ) : null}
 

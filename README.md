@@ -1,6 +1,6 @@
 # Topology
 
-Self-hosted test case management with a Linear-like operating hub.
+Self-hosted test case management with a Linear-like operating hub, CI ingest, issue filing, and an MCP agent plugin.
 
 ## Stack
 
@@ -8,76 +8,71 @@ Self-hosted test case management with a Linear-like operating hub.
 - Tailwind CSS v4 + HeroUI v3
 - motion.dev
 - Postgres + Drizzle ORM
-- Auth.js (GitHub/Google OAuth when configured, email/password fallback)
-- `@topology/domain` + `@topology/cli` workspaces
-- `@topology/issue-providers` + `@topology/mcp`
+- Auth.js (OAuth-first GitHub/Google; email/password air-gap fallback)
+- `@topology/domain` + `@topology/cli` + `@topology/issue-providers` + `@topology/mcp`
 - Vitest + Playwright
 
-## Quick start
+## 15-minute success path
+
+1. **Compose up** — start Postgres (and keep attachment files on a local volume):
 
 ```bash
-# 1. Start Postgres (Docker / Colima)
 docker compose up -d
-# If the compose plugin is missing:
-# docker run -d --name topology-postgres -e POSTGRES_USER=topology -e POSTGRES_PASSWORD=topology -e POSTGRES_DB=topology -p 54329:5432 -v topology_pgdata:/var/lib/postgresql/data postgres:16-alpine
-
-# 2. Install + migrate + seed
-cp .env.example .env.local   # if needed
+cp .env.example .env.local
 npm install
-npm run db:push
-# or apply checked-in SQL (includes theme_preference):
-npm run db:migrate
+npm run db:migrate   # or: npm run db:push
 npm run db:seed
-
-# 3. Dev server (uncommon port)
 npm run dev
 ```
 
-Open [http://127.0.0.1:4317](http://127.0.0.1:4317).
+Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Health: [http://127.0.0.1:4317/api/health](http://127.0.0.1:4317/api/health).
 
-Demo login: `demo@topology.local` / `topology-demo`
+2. **OAuth or demo login**
+   - **Preferred:** set `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` and/or Google pair in `.env.local`, restart, then **Continue with GitHub/Google**.
+   - **Air-gap / unset OAuth:** use **Use email instead** (or the email form when OAuth is off). Demo: `demo@topology.local` / `topology-demo`.
+   - Force air-gap copy with `TOPOLOGY_AIR_GAP=1`.
 
-CLI token (local): `topo_demo_token_local_dev_only`
+3. **Hub** — land on the operating hub (quality pulse, pending work, milestone readiness).
 
-### OAuth (optional)
+4. **Invite a teammate** — Settings → Members → invite by email (admin). Share the accept URL; invitee signs in with OAuth (preferred) or email matching the invite.
 
-Set `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` and/or `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` in `.env.local`. Buttons appear on `/login` when both values for a provider are present.
+5. **MCP snippet** — Settings → Connections: copy Cursor/Claude/Codex config with `TOPOLOGY_URL` + `TOPOLOGY_API_TOKEN` (`topo_demo_token_local_dev_only` after seed). Details: [`packages/mcp/README.md`](packages/mcp/README.md).
 
-## CLI (JUnit / shards)
+6. **CI** — Settings → CI, or:
 
 ```bash
 export TOPOLOGY_URL=http://127.0.0.1:4317
 export TOPOLOGY_API_TOKEN=topo_demo_token_local_dev_only
-
 npm run topology -- junit submit ./fixtures/junit/smoke.xml --source cli
-npm run topology -- runs create --name "CI build" --source github --shards 2
-npm run topology -- runs submit-thread --run-id <id> --shard 1 --file ./fixtures/junit/smoke.xml
-npm run topology -- runs complete --run-id <id>
 ```
 
 Examples: `packages/cli/examples/github-actions.yml`, `packages/cli/examples/Jenkinsfile`.
 
-### Issue providers
+7. **File an issue** — open the seeded run (or any failed result) → **Create issue** (default `TOPOLOGY_ISSUE_PROVIDER=mock`). Live Jira/Linear/GitHub: set provider + secrets in `.env.local` (see below).
 
-Default `TOPOLOGY_ISSUE_PROVIDER=mock` files issues in-process. From a failed/blocked result use **Create issue** or **Link**; sync status from the chip; closed remotes surface on the hub **Retest** queue.
+## Auth
 
-### Connect an agent
+| Mode | Behavior |
+| --- | --- |
+| OAuth configured | Login leads with GitHub/Google; email is behind **Use email instead** |
+| OAuth unset or `TOPOLOGY_AIR_GAP=1` | Email/password is the primary path (air-gapped / local) |
 
-Open [Settings → Connections](http://127.0.0.1:4317/settings?section=connections) for Cursor / Claude Desktop / Codex snippets (`/connect` redirects there), or see [`packages/mcp/README.md`](packages/mcp/README.md).
+Workspace roles: `admin` / `member` / `viewer`. Assign runs and individual results from the run executor.
 
-```bash
-export TOPOLOGY_URL=http://127.0.0.1:4317
-export TOPOLOGY_API_TOKEN=topo_demo_token_local_dev_only
-npx tsx packages/mcp/src/server.ts
-```
+## Attachments
 
-### CI ingest setup
+Result attachments store under `ATTACHMENTS_DIR` (default `./data/attachments`). Compose mounts `topology_attachments` for durable local files.
 
-Open [Settings → CI](http://127.0.0.1:4317/settings?section=ci) for token/docs (`/automation` redirects there). Browse CI run history from Hub / Test Runs.
+## Env (OAuth + tracker secrets)
 
-### Theme preference
+See [`.env.example`](.env.example):
 
-Sidebar theme toggle and Settings → Preferences share `topology-theme` in `localStorage`. For signed-in users the preference is also stored on `users.theme_preference`; server value wins on load, localStorage remains the immediate fallback (and for signed-out).
+- `AUTH_SECRET`, `AUTH_URL`
+- `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`
+- `TOPOLOGY_AIR_GAP`, `ATTACHMENTS_DIR`
+- `TOPOLOGY_ISSUE_PROVIDER` + Jira / Linear / GitHub credentials (commented)
+
+Tracker tokens stay server-side; never expose them to the browser or MCP process beyond Topology’s own API token.
 
 ## Scripts
 
@@ -85,22 +80,22 @@ Sidebar theme toggle and Settings → Preferences share `topology-theme` in `loc
 | --- | --- |
 | `npm run dev` | Next.js on port 4317 |
 | `npm run db:push` | Push Drizzle schema |
-| `npm run db:migrate` | Apply `drizzle/*.sql` migrations (idempotent) |
-| `npm run db:seed` | Seed demo user, folders, cases, run, milestone, API token |
+| `npm run db:migrate` | Apply `drizzle/*.sql` migrations |
+| `npm run db:seed` | Seed demo user, workspace admin, cases, run, milestone, token |
 | `npm run topology` | Topology CLI |
 | `npm run mcp` | Start `@topology/mcp` stdio server |
-| `npm run test` | Vitest unit tests (app + packages) |
+| `npm run test` | Vitest unit tests |
 | `npm run test:e2e` | Playwright smoke |
+
+Contributor test instructions: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## v1 slice
 
-- Operating hub with quality pulse + milestone readiness badge
-- Cases + folders CRUD (create)
-- CSV import/export
-- Manual runs with pass/fail recording
-- CI JUnit ingest + shard merge (CLI + `/api/ci/*`)
-- Automation runs browser + failure triage queue + flake hints
-- Issue create/link/status (mock + Jira/Linear/GitHub) + retest queue
-- MCP agent plugin (`@topology/mcp`) + Settings → Connections
-- Settings (profile, theme prefs, MCP, CI setup); `/connect` and `/automation` redirect
-- Auth scaffolding (OAuth-ready + credentials)
+- OAuth-first auth + workspace invites/roles + result comments/attachments
+- Operating hub with quality pulse + milestone readiness
+- Cases + folders CRUD, CSV import/export
+- Manual runs with assign, notes, comments, attachments, pass/fail
+- CI JUnit ingest + shard merge
+- Issue create/link/status + retest queue
+- MCP agent plugin + Settings connections/CI
+- `/api/health` + Compose Postgres (+ attachments volume)

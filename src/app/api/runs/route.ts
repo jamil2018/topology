@@ -16,6 +16,7 @@ const createRunSchema = z.object({
   description: z.string().optional().default(""),
   environment: z.string().optional().default("local"),
   caseIds: z.array(z.string().uuid()).optional().default([]),
+  assigneeId: z.string().uuid().nullable().optional(),
 });
 
 export async function GET() {
@@ -69,6 +70,7 @@ export async function POST(request: Request) {
       description: parsed.data.description,
       environment: parsed.data.environment,
       createdById: session.user.id,
+      assigneeId: parsed.data.assigneeId ?? null,
       status: "planned",
       kind: "manual",
       source: "manual",

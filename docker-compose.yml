@@ -19,3 +19,6 @@ services:
 
 volumes:
   topology_pgdata:
+  # Named volume for durable result attachments when mounting into an app container.
+  # Local Next.js default path is ./data/attachments (see ATTACHMENTS_DIR).
+  topology_attachments:

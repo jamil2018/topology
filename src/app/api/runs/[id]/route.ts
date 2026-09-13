@@ -71,6 +71,39 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ run: updated });
   }
 
+  if (body?.action === "assign") {
+    const assigneeId =
+      body.assigneeId === null || body.assigneeId === ""
+        ? null
+        : z.string().uuid().parse(body.assigneeId);
+    const [updated] = await db
+      .update(runs)
+      .set({
+        assigneeId,
+        updatedAt: new Date(),
+      })
+      .where(eq(runs.id, id))
+      .returning();
+    return NextResponse.json({ run: updated });
+  }
+
+  if (body?.action === "assign_result") {
+    const resultId = z.string().uuid().parse(body.resultId);
+    const assigneeId =
+      body.assigneeId === null || body.assigneeId === ""
+        ? null
+        : z.string().uuid().parse(body.assigneeId);
+    const [updated] = await db
+      .update(runResults)
+      .set({ assigneeId })
+      .where(and(eq(runResults.runId, id), eq(runResults.id, resultId)))
+      .returning();
+    if (!updated) {
+      return NextResponse.json({ error: "Result not found" }, { status: 404 });
+    }
+    return NextResponse.json({ result: updated });
+  }
+
   const parsed = updateResultSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
