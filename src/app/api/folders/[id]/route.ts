@@ -4,10 +4,16 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { folders } from "@/db/schema";
+import { wouldCreateFolderCycle } from "@/lib/folder-tree";
 
-const updateFolderSchema = z.object({
-  name: z.string().trim().min(1, "Folder name is required").max(120),
-});
+const updateFolderSchema = z
+  .object({
+    name: z.string().trim().min(1, "Folder name is required").max(120).optional(),
+    parentId: z.string().uuid().nullable().optional(),
+  })
+  .refine((v) => v.name !== undefined || v.parentId !== undefined, {
+    message: "Provide name and/or parentId",
+  });
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -42,8 +48,39 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Folder not found" }, { status: 404 });
   }
 
-  const name = parsed.data.name;
-  const parentId = existing.parentId ?? null;
+  const name = parsed.data.name ?? existing.name;
+  const parentId =
+    parsed.data.parentId !== undefined
+      ? parsed.data.parentId
+      : (existing.parentId ?? null);
+
+  if (parentId) {
+    const parent = await db.query.folders.findFirst({
+      where: eq(folders.id, parentId),
+    });
+    if (!parent) {
+      return NextResponse.json({ error: "Parent folder not found" }, { status: 404 });
+    }
+    const allFolders = await db.query.folders.findMany({
+      columns: { id: true, name: true, parentId: true },
+    });
+    if (
+      wouldCreateFolderCycle(
+        allFolders.map((f) => ({
+          id: f.id,
+          name: f.name,
+          parentId: f.parentId ?? null,
+        })),
+        id,
+        parentId,
+      )
+    ) {
+      return NextResponse.json(
+        { error: "Cannot move a folder into itself or a descendant" },
+        { status: 400 },
+      );
+    }
+  }
 
   const clash = await db
     .select({ id: folders.id })
@@ -67,14 +104,14 @@ export async function PATCH(request: Request, { params }: Params) {
   try {
     const [updated] = await db
       .update(folders)
-      .set({ name, updatedAt: new Date() })
+      .set({ name, parentId, updatedAt: new Date() })
       .where(eq(folders.id, id))
       .returning();
 
     return NextResponse.json({ folder: updated });
   } catch {
     return NextResponse.json(
-      { error: "Failed to rename folder" },
+      { error: "Failed to update folder" },
       { status: 500 },
     );
   }

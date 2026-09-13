@@ -74,6 +74,26 @@ describe("filterAndSortCases", () => {
       ),
     ).toEqual(["TOP-1"]);
   });
+
+  it("filters unfiled cases", () => {
+    const withUnfiled: CaseListItem[] = [
+      ...cases,
+      {
+        id: "4",
+        key: "TOP-4",
+        title: "Loose case",
+        priority: "P3",
+        status: "draft",
+        tags: [],
+        folder: null,
+      },
+    ];
+    expect(
+      filterAndSortCases(withUnfiled, "unfiled", "", "key", "asc").map(
+        (c) => c.key,
+      ),
+    ).toEqual(["TOP-4"]);
+  });
 });
 
 describe("paginateCases", () => {

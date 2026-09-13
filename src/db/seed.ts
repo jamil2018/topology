@@ -84,6 +84,10 @@ async function seed() {
     .insert(folders)
     .values({ name: "Smoke" })
     .returning();
+  const [smokeAuth] = await db
+    .insert(folders)
+    .values({ name: "Auth", parentId: smoke.id })
+    .returning();
   const [regression] = await db
     .insert(folders)
     .values({ name: "Regression" })
@@ -115,7 +119,7 @@ async function seed() {
         expectedResult: "Case appears in the folder filter.",
         priority: "P1",
         status: "ready",
-        folderId: smoke.id,
+        folderId: smokeAuth.id,
         tags: ["cases"],
         createdById: user.id,
       },
@@ -195,7 +199,7 @@ async function seed() {
   }
 
   console.log(
-    `Seeded ${seededCases.length} cases, 2 folders, 1 run, 1 milestone, workspace admin`,
+    `Seeded ${seededCases.length} cases, 3 folders (incl. nested Auth), 1 run, 1 milestone, workspace admin`,
   );
   console.log(`Demo login: ${email} / ${password}`);
   console.log(`CLI token: ${demoToken}`);
