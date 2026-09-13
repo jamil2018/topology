@@ -354,8 +354,8 @@ export function HubShell({
         ) : null}
       </AnimatePresence>
 
-      {/* Inset core-control panel */}
-      <div className="flex min-w-0 flex-1 p-2 sm:p-2.5 lg:p-3 lg:pl-1">
+      {/* Inset core-control panel — sits flush beside sidebar (gutter ≤ px-10) */}
+      <div className="flex min-w-0 flex-1 p-2 pl-1 sm:p-2.5 sm:pl-1.5 lg:p-3 lg:pl-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-[color:var(--topo-line)] px-2.5 sm:gap-3 sm:px-3">
             <Button
@@ -409,7 +409,7 @@ export function HubShell({
             </span>
           </header>
 
-          <main className="mx-auto w-full max-w-[1200px] flex-1 overflow-y-auto px-3 py-4 sm:px-5 sm:py-5 lg:px-6">
+          <main className="w-full max-w-none flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-5">
             {children}
           </main>
         </div>
