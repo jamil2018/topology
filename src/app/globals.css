@@ -71,6 +71,19 @@ body {
   @apply leading-none;
 }
 
+/*
+ * HeroUI .button--sm only shortens height (h-8 on md+) while keeping base
+ * text-sm and svg my-* margins, so labels look oversized in compact 32px
+ * controls (e.g. Cases folder tree "New").
+ */
+.button--sm {
+  @apply text-xs;
+}
+
+.button--sm svg:not([data-slot="spinner"] svg, [data-slot="link-icon"] svg) {
+  @apply my-0 size-3.5;
+}
+
 .topology-shell {
   background: var(--topo-paper);
 }

@@ -339,8 +339,8 @@ export function FolderTreePane({
           aria-label="New folder"
           onPress={onCreateRoot}
         >
-          <FolderPlusIcon size={14} weight="bold" />
-          <span className="hidden sm:inline">New</span>
+          <FolderPlusIcon size={12} weight="bold" />
+          <span className="hidden leading-none sm:inline">New</span>
         </Button>
       </div>
 
