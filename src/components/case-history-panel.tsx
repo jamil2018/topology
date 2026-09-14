@@ -33,11 +33,14 @@ export function CaseHistoryPanel({
   caseTitle,
   caseId,
   onClose,
+  embedded = false,
 }: {
   caseKey: string;
   caseTitle: string;
   caseId: string;
   onClose: () => void;
+  /** When true, omit outer aside chrome (used inside CaseEditPanel). */
+  embedded?: boolean;
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +73,62 @@ export function CaseHistoryPanel({
     };
   }, [caseId]);
 
+  const body = (
+    <>
+      {loading ? (
+        <ol
+          className="space-y-3"
+          aria-busy="true"
+          aria-label="Loading activity"
+        >
+          {Array.from({ length: 4 }).map((_, i) => (
+            <li
+              key={i}
+              className="relative space-y-1.5 border-l-2 border-[color:var(--topo-line)] pl-3"
+            >
+              <Bone className="h-4 w-48 max-w-full" />
+              <Bone className="h-3 w-32" />
+            </li>
+          ))}
+        </ol>
+      ) : error ? (
+        <p className="text-sm text-red-600 dark:text-red-300">{error}</p>
+      ) : activities.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 py-8 text-center">
+          <ClockCounterClockwiseIcon
+            size={22}
+            className="text-[color:var(--topo-muted)]"
+          />
+          <p className="text-sm text-[color:var(--topo-muted)]">
+            No changes recorded yet.
+          </p>
+        </div>
+      ) : (
+        <ol className="space-y-3">
+          {activities.map((a) => {
+            const who =
+              a.actorName?.trim() || a.actorEmail?.trim() || "Someone";
+            return (
+              <li
+                key={a.id}
+                className="relative border-l-2 border-[color:var(--topo-line)] pl-3"
+              >
+                <p className="text-sm text-[color:var(--topo-ink)]">{a.summary}</p>
+                <p className="mt-0.5 font-mono text-[11px] text-[color:var(--topo-muted)]">
+                  {who} · {formatWhen(a.createdAt)}
+                </p>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </>
+  );
+
+  if (embedded) {
+    return <div className="max-h-64 overflow-y-auto px-3 py-3">{body}</div>;
+  }
+
   return (
     <aside className="flex h-full flex-col rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
       <div className="flex items-start justify-between gap-2 border-b border-[color:var(--topo-line)] px-3 py-2.5">
@@ -95,57 +154,7 @@ export function CaseHistoryPanel({
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3">
-        {loading ? (
-          <ol
-            className="space-y-3"
-            aria-busy="true"
-            aria-label="Loading activity"
-          >
-            {Array.from({ length: 4 }).map((_, i) => (
-              <li
-                key={i}
-                className="relative space-y-1.5 border-l-2 border-[color:var(--topo-line)] pl-3"
-              >
-                <Bone className="h-4 w-48 max-w-full" />
-                <Bone className="h-3 w-32" />
-              </li>
-            ))}
-          </ol>
-        ) : error ? (
-          <p className="text-sm text-red-600 dark:text-red-300">{error}</p>
-        ) : activities.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
-            <ClockCounterClockwiseIcon
-              size={22}
-              className="text-[color:var(--topo-muted)]"
-            />
-            <p className="text-sm text-[color:var(--topo-muted)]">
-              No changes recorded yet.
-            </p>
-          </div>
-        ) : (
-          <ol className="space-y-3">
-            {activities.map((a) => {
-              const who =
-                a.actorName?.trim() ||
-                a.actorEmail?.trim() ||
-                "Someone";
-              return (
-                <li
-                  key={a.id}
-                  className="relative border-l-2 border-[color:var(--topo-line)] pl-3"
-                >
-                  <p className="text-sm text-[color:var(--topo-ink)]">{a.summary}</p>
-                  <p className="mt-0.5 font-mono text-[11px] text-[color:var(--topo-muted)]">
-                    {who} · {formatWhen(a.createdAt)}
-                  </p>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </div>
+      <div className="flex-1 overflow-y-auto px-3 py-3">{body}</div>
     </aside>
   );
 }

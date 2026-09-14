@@ -37,7 +37,7 @@ import {
   folderPathLabel,
 } from "@/lib/folder-tree";
 import { parseCaseViewConfig } from "@/lib/saved-views";
-import { CaseHistoryPanel } from "./case-history-panel";
+import { CaseEditPanel } from "./case-edit-panel";
 import {
   FolderTreePane,
   type FolderTreeSelection,
@@ -106,6 +106,19 @@ export function CasesWorkspace({
     if (!caseParam) return null;
     return initialCases.find((c) => c.id === caseParam) ?? null;
   });
+  /** Local overlays for list rows updated via create/edit before refresh. */
+  const [caseOverrides, setCaseOverrides] = useState<Record<string, CaseRow>>(
+    {},
+  );
+  const displayCases = useMemo(() => {
+    const known = new Set(initialCases.map((c) => c.id));
+    const merged = initialCases.map((c) => {
+      const over = caseOverrides[c.id];
+      return over ? { ...c, ...over } : c;
+    });
+    const extras = Object.values(caseOverrides).filter((c) => !known.has(c.id));
+    return extras.length > 0 ? [...extras, ...merged] : merged;
+  }, [initialCases, caseOverrides]);
   const [appliedParams, setAppliedParams] = useState(paramsKey);
   if (appliedParams !== paramsKey) {
     setAppliedParams(paramsKey);
@@ -149,16 +162,16 @@ export function CasesWorkspace({
 
   const folderCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const c of initialCases) {
+    for (const c of displayCases) {
       if (!c.folder?.id) continue;
       counts.set(c.folder.id, (counts.get(c.folder.id) ?? 0) + 1);
     }
     return counts;
-  }, [initialCases]);
+  }, [displayCases]);
 
   const unfiledCount = useMemo(
-    () => initialCases.filter((c) => !c.folder).length,
-    [initialCases],
+    () => displayCases.filter((c) => !c.folder).length,
+    [displayCases],
   );
 
   const flatFolders = useMemo(
@@ -194,7 +207,7 @@ export function CasesWorkspace({
   const filteredSorted = useMemo(
     () =>
       filterAndSortCases(
-        initialCases,
+        displayCases,
         activeFolderFilter,
         search,
         sort,
@@ -203,7 +216,7 @@ export function CasesWorkspace({
         priorityFilter,
       ),
     [
-      initialCases,
+      displayCases,
       activeFolderFilter,
       search,
       sort,
@@ -331,13 +344,40 @@ export function CasesWorkspace({
           .filter(Boolean),
       }),
     });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
       setError(
         typeof data.error === "string" ? data.error : "Failed to create case",
       );
       return;
     }
+    const created = data.case as {
+      id: string;
+      key: string;
+      title: string;
+      priority: string;
+      status: string;
+      tags?: string[];
+      folderId?: string | null;
+    };
+    const folder =
+      created.folderId != null
+        ? (() => {
+            const match = folders.find((f) => f.id === created.folderId);
+            return match ? { id: match.id, name: match.name } : null;
+          })()
+        : null;
+    const row: CaseRow = {
+      id: created.id,
+      key: created.key,
+      title: created.title,
+      priority: created.priority,
+      status: created.status,
+      tags: created.tags ?? [],
+      folder,
+    };
+    setCaseOverrides((prev) => ({ ...prev, [row.id]: row }));
+    setHistoryCase(row);
     setShowCreate(false);
     setForm({
       key: "",
@@ -1089,7 +1129,7 @@ export function CasesWorkspace({
       <div
         className={`grid gap-3 ${
           historyCase
-            ? "lg:grid-cols-[15rem_minmax(0,1fr)_18rem]"
+            ? "lg:grid-cols-[15rem_minmax(0,1fr)_minmax(20rem,26rem)]"
             : "lg:grid-cols-[15rem_minmax(0,1fr)]"
         }`}
       >
@@ -1098,7 +1138,7 @@ export function CasesWorkspace({
           folders={folders}
           folderCounts={folderCounts}
           unfiledCount={unfiledCount}
-          totalCount={initialCases.length}
+          totalCount={displayCases.length}
           selected={activeFolderFilter}
           collapsed={treeCollapsed}
           onToggleCollapsed={() => setTreeCollapsed((v) => !v)}
@@ -1179,7 +1219,7 @@ export function CasesWorkspace({
             </tr>
           </thead>
           <tbody>
-            {initialCases.length === 0 ? (
+            {displayCases.length === 0 ? (
               <tr>
                 <td
                   colSpan={6}
@@ -1295,12 +1335,32 @@ export function CasesWorkspace({
       </div>
 
       {historyCase ? (
-        <CaseHistoryPanel
+        <CaseEditPanel
           key={historyCase.id}
           caseId={historyCase.id}
           caseKey={historyCase.key}
           caseTitle={historyCase.title}
+          folders={folders}
+          flatFolders={flatFolders}
           onClose={() => setHistoryCase(null)}
+          onSaved={(next) => {
+            setCaseOverrides((prev) => ({
+              ...prev,
+              [next.id]: {
+                id: next.id,
+                key: next.key,
+                title: next.title,
+                priority: next.priority,
+                status: next.status,
+                tags: next.tags,
+                folder: next.folder,
+              },
+            }));
+            setHistoryCase((prev) =>
+              prev && prev.id === next.id ? { ...prev, ...next } : prev,
+            );
+            startTransition(() => router.refresh());
+          }}
         />
       ) : null}
       </div>
