@@ -138,7 +138,7 @@ export function ConnectAgentPanel({
             onClick={() => setClient(id)}
             className={`rounded-md px-3 py-1.5 text-sm ${
               client === id
-                ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-paper)]"
+                ? "bg-[color:var(--topo-accent)] text-[color:var(--accent-foreground)]"
                 : "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-muted)]"
             }`}
           >

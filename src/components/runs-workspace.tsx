@@ -10,6 +10,7 @@ import {
   Select,
   TextField,
 } from "@heroui/react";
+import { PlayIcon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { PageHeader } from "./page-header";
 import { SavedViewsBar, type SavedViewRow } from "./saved-views-bar";
@@ -89,8 +90,9 @@ export function RunsWorkspace({
         actions={
           <Link
             href="/runs/new"
-            className="inline-flex h-9 items-center justify-center rounded-md bg-[color:var(--topo-ink)] px-3 text-sm font-medium text-[color:var(--topo-panel)] transition active:scale-[0.98]"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[color:var(--topo-accent)] px-3 text-sm font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
           >
+            <PlayIcon size={14} weight="bold" aria-hidden />
             Start a run
           </Link>
         }
@@ -168,8 +170,9 @@ export function RunsWorkspace({
             <p className="text-sm text-[color:var(--topo-muted)]">No runs yet.</p>
             <Link
               href="/runs/new"
-              className="inline-flex h-9 items-center justify-center rounded-md bg-[color:var(--topo-ink)] px-3 text-sm font-medium text-[color:var(--topo-panel)] transition active:scale-[0.98]"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[color:var(--topo-accent)] px-3 text-sm font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
             >
+              <PlayIcon size={14} weight="bold" aria-hidden />
               Start a run
             </Link>
           </div>

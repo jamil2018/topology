@@ -197,7 +197,7 @@ export function WorkspaceMembersPanel() {
                 <select
                   value={selected}
                   onChange={(e) => void changeRole(m.user.id, e.target.value)}
-                  className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs"
+                  className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs accent-[color:var(--topo-accent)]"
                 >
                   {activeRoles.map((r) => (
                     <option key={r.id} value={r.id}>
@@ -231,7 +231,7 @@ export function WorkspaceMembersPanel() {
             <select
               value={roleId}
               onChange={(e) => setRoleId(e.target.value)}
-              className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
+              className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm accent-[color:var(--topo-accent)]"
             >
               {activeRoles.map((r) => (
                 <option key={r.id} value={r.id}>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button, Input, Label, TextField } from "@heroui/react";
-import { BookmarkSimpleIcon, TrashIcon } from "@phosphor-icons/react";
+import { BookmarkSimpleIcon, FloppyDiskIcon, TrashIcon } from "@phosphor-icons/react";
 
 export type SavedViewRow = {
   id: string;
@@ -111,7 +111,7 @@ export function SavedViewsBar({
                 onClick={() => onApply(view)}
                 className={`rounded-md px-2 py-1 text-xs transition-colors ${
                   active
-                    ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-panel)]"
+                    ? "bg-[color:var(--topo-accent)] text-[color:var(--accent-foreground)]"
                     : "border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
                 }`}
               >
@@ -166,9 +166,11 @@ export function SavedViewsBar({
           type="button"
           size="sm"
           variant="secondary"
+          className="gap-1.5"
           isDisabled={!canSave}
           onPress={() => setShowSave(true)}
         >
+          <FloppyDiskIcon size={14} weight="bold" />
           Save current
         </Button>
       )}

@@ -341,7 +341,7 @@ export function CustomRolesPanel() {
                       >
                         <input
                           type="checkbox"
-                          className="mt-0.5"
+                          className="mt-0.5 accent-[color:var(--topo-accent)]"
                           checked={checked}
                           onChange={() => toggleAction(action)}
                         />
