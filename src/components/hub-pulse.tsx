@@ -234,7 +234,7 @@ export function HubPulse({
           <div className="flex flex-wrap gap-2">
             <Link
               href="/cases"
-              className="rounded-md bg-[color:var(--topo-ink)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-panel)] transition active:scale-[0.98]"
+              className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
             >
               Cases
             </Link>

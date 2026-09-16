@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Input, ListBox, Select } from "@heroui/react";
 import { motion, useReducedMotion } from "motion/react";
-import { ChartLineIcon } from "@phosphor-icons/react";
+import { ChartLineIcon, PlayIcon } from "@phosphor-icons/react";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
 import { formatDuration } from "@/lib/report-stats";
@@ -164,8 +164,9 @@ export function ReportsWorkspace({
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <Link
               href="/runs/new"
-              className="rounded-md bg-[color:var(--topo-ink)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-panel)]"
+              className="inline-flex items-center gap-1.5 rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)]"
             >
+              <PlayIcon size={14} weight="bold" aria-hidden />
               Start a run
             </Link>
             <Link

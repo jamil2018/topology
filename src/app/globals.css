@@ -18,6 +18,37 @@
   --topo-signal: #ea580c;
   --background: var(--topo-paper);
   --foreground: var(--topo-ink);
+
+  /*
+   * HeroUI control tokens (unlayered, so they beat @heroui/styles @layer theme).
+   * Primary/focus follow --topo-accent. Light accent is too dark for white
+   * text (3.7:1); ink on the accent passes. Neutrals follow the chrome tokens
+   * so secondary, tertiary, overlays, and fields match chip/panel/surface
+   * instead of the default blue/zinc theme. Danger, success, and warning stay semantic.
+   * Repeated under .dark because custom properties inherit computed values.
+   */
+  --accent: var(--topo-accent);
+  --accent-foreground: var(--topo-ink);
+  --accent-soft: var(--topo-accent-soft);
+  --focus: var(--topo-accent);
+  --default: var(--topo-chip);
+  --default-foreground: var(--topo-ink);
+  --muted: var(--topo-muted);
+  --surface: var(--topo-panel);
+  --surface-foreground: var(--topo-ink);
+  --surface-secondary: var(--topo-surface);
+  --surface-secondary-foreground: var(--topo-ink);
+  --surface-tertiary: var(--topo-chip);
+  --surface-tertiary-foreground: var(--topo-ink);
+  --overlay: var(--topo-panel);
+  --overlay-foreground: var(--topo-ink);
+  --border: var(--topo-line);
+  --separator: var(--topo-line);
+  --segment: var(--topo-chip);
+  --segment-foreground: var(--topo-ink);
+  --field-background: var(--topo-surface);
+  --field-foreground: var(--topo-ink);
+  --field-placeholder: var(--topo-muted);
 }
 
 .dark {
@@ -34,6 +65,30 @@
   --topo-signal: #fb923c;
   --background: var(--topo-paper);
   --foreground: var(--topo-ink);
+
+  /* Dark accent is bright teal; paper text keeps contrast (~10:1). */
+  --accent: var(--topo-accent);
+  --accent-foreground: var(--topo-paper);
+  --accent-soft: var(--topo-accent-soft);
+  --focus: var(--topo-accent);
+  --default: var(--topo-chip);
+  --default-foreground: var(--topo-ink);
+  --muted: var(--topo-muted);
+  --surface: var(--topo-panel);
+  --surface-foreground: var(--topo-ink);
+  --surface-secondary: var(--topo-surface);
+  --surface-secondary-foreground: var(--topo-ink);
+  --surface-tertiary: var(--topo-chip);
+  --surface-tertiary-foreground: var(--topo-ink);
+  --overlay: var(--topo-panel);
+  --overlay-foreground: var(--topo-ink);
+  --border: var(--topo-line);
+  --separator: var(--topo-line);
+  --segment: var(--topo-chip);
+  --segment-foreground: var(--topo-ink);
+  --field-background: var(--topo-surface);
+  --field-foreground: var(--topo-ink);
+  --field-placeholder: var(--topo-muted);
 }
 
 @theme inline {
@@ -69,6 +124,18 @@ body {
 
 .select__value {
   @apply leading-none;
+}
+
+/*
+ * Native checkboxes, radios, and selects otherwise use the browser accent
+ * (often blue) and bypass the HeroUI token map above.
+ */
+:where(input, select, textarea, progress, meter) {
+  accent-color: var(--topo-accent);
+}
+
+:where(input, select, textarea):focus-visible {
+  outline-color: var(--topo-accent);
 }
 
 .topology-shell {

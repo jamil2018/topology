@@ -24,7 +24,7 @@ export default function ReportsError({
         <button
           type="button"
           onClick={reset}
-          className="rounded-md bg-[color:var(--topo-ink)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-panel)]"
+          className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)]"
         >
           Try again
         </button>

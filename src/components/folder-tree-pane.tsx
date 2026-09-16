@@ -10,6 +10,7 @@ import {
   FolderOpenIcon,
   FolderPlusIcon,
   FoldersIcon,
+  PlusIcon,
   PencilSimpleIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
@@ -335,12 +336,12 @@ export function FolderTreePane({
         <Button
           size="sm"
           variant="tertiary"
-          className="shrink-0 gap-1 px-1.5"
+          isIconOnly
+          className="size-6 min-w-6 shrink-0 text-[color:var(--topo-ink)]"
           aria-label="New folder"
           onPress={onCreateRoot}
         >
-          <FolderPlusIcon size={14} weight="bold" />
-          <span className="hidden sm:inline">New</span>
+          <PlusIcon size={13} weight="bold" />
         </Button>
       </div>
 

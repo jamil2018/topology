@@ -191,7 +191,7 @@ export function SettingsWorkspace({
                     aria-current={active ? "page" : undefined}
                     className={`group flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm transition-colors sm:px-4 ${
                       active
-                        ? "border-[color:var(--topo-ink)] text-[color:var(--topo-ink)]"
+                        ? "border-[color:var(--topo-accent)] text-[color:var(--topo-ink)]"
                         : "border-transparent text-[color:var(--topo-muted)] hover:border-[color:var(--topo-line)] hover:text-[color:var(--topo-ink)]"
                     }`}
                   >

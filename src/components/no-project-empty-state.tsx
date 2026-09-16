@@ -23,7 +23,7 @@ export function NoProjectEmptyState({
       {canManage ? (
         <Link
           href="/settings?section=projects"
-          className="mt-2 rounded-lg bg-[color:var(--topo-accent)] px-3 py-2 text-sm font-medium text-white"
+          className="mt-2 rounded-lg bg-[color:var(--topo-accent)] px-3 py-2 text-sm font-medium text-[color:var(--accent-foreground)]"
         >
           Manage projects
         </Link>

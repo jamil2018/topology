@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { PlayIcon } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "motion/react";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
@@ -138,8 +139,9 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
           <div className="flex flex-wrap gap-2">
             <Link
               href={`/runs/${run.id}`}
-              className="rounded-md bg-[color:var(--topo-ink)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-panel)] transition active:scale-[0.98]"
+              className="inline-flex items-center gap-1.5 rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
             >
+              <PlayIcon size={14} weight="bold" aria-hidden />
               Open run
             </Link>
             <Link
