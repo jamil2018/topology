@@ -79,3 +79,71 @@ describe("RunExecutor complete confirmation", () => {
     expect(screen.getByRole("button", { name: "passed" })).toBeDisabled();
   });
 });
+
+describe("RunExecutor abort confirmation", () => {
+  it("warns before aborting and cancel does not mutate", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunExecutor run={{ ...baseRun, status: "planned" }} />);
+
+    await user.click(screen.getByRole("button", { name: /^Abort$/ }));
+    expect(
+      screen.getByRole("heading", { name: "Abort this run?" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/marks this run aborted/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("heading", { name: "Abort this run?" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("aborts the run after confirmation", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ run: { status: "aborted" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunExecutor run={{ ...baseRun, status: "planned" }} />);
+
+    await user.click(screen.getByRole("button", { name: /^Abort$/ }));
+    await user.click(screen.getByRole("button", { name: "Abort run" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/runs/${baseRun.id}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ action: "abort" }),
+      }),
+    );
+  });
+
+  it("locks an aborted run and hides start, complete, and abort", () => {
+    render(
+      <RunExecutor
+        run={{
+          ...baseRun,
+          status: "aborted",
+        }}
+      />,
+    );
+    expect(screen.getByText(/aborted and is locked/i)).toBeInTheDocument();
+    expect(screen.getByText("aborted")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Abort$/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Complete$/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Start$/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "View report" })).toBeNull();
+    expect(screen.getByRole("button", { name: "passed" })).toBeDisabled();
+  });
+});

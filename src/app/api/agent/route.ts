@@ -11,6 +11,7 @@ import {
   whatsPending,
 } from "@/lib/issues";
 import {
+  immutableMessageFor,
   isRunFrozen,
   runImmutableResponse,
 } from "@/lib/run-immutability-http";
@@ -253,7 +254,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Run not found" }, { status: 404 });
       }
       if (isRunFrozen(run.status)) {
-        return runImmutableResponse();
+        return runImmutableResponse(immutableMessageFor(run.status));
       }
       let caseId = parsed.data.caseId;
       if (!caseId && parsed.data.caseKey) {
