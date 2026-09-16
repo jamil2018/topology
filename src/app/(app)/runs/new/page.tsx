@@ -1,10 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { HubShell } from "@/components/hub-shell";
 import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { StartRunWorkspace } from "@/components/start-run-workspace";
 import { resolveActiveProject } from "@/lib/project";
-import { projectShellProps } from "@/lib/project-shell";
 import { listCases, listFolders } from "@/lib/queries";
 import { ensureMembership } from "@/lib/workspace";
 
@@ -14,24 +12,16 @@ export default async function StartRunPage() {
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) {
-    return (
-      <HubShell userEmail={session.user.email} {...projectShellProps(null)}>
-        <NoProjectEmptyState />
-      </HubShell>
-    );
-  }
+  if (!ctx) return <NoProjectEmptyState />;
 
   const workspaceId = ctx.project.id;
-  const shell = projectShellProps(ctx);
   const [cases, folders] = await Promise.all([
     listCases(workspaceId),
     listFolders(workspaceId),
   ]);
 
   return (
-    <HubShell userEmail={session.user.email} {...shell}>
-      <StartRunWorkspace
+    <StartRunWorkspace
         cases={cases.map((c) => ({
           id: c.id,
           key: c.key,
@@ -46,7 +36,6 @@ export default async function StartRunPage() {
           updatedAt: c.updatedAt,
         }))}
         folders={folders.map((f) => ({ id: f.id, name: f.name }))}
-      />
-    </HubShell>
+    />
   );
 }

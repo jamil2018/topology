@@ -1,11 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { HubShell } from "@/components/hub-shell";
 import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { RunExecutor } from "@/components/run-executor";
 import { getRunWithResults } from "@/lib/queries";
 import { resolveActiveProject } from "@/lib/project";
-import { projectShellProps } from "@/lib/project-shell";
 import { ensureMembership } from "@/lib/workspace";
 import { db } from "@/db";
 import { eq } from "drizzle-orm";
@@ -19,16 +17,9 @@ export default async function RunDetailPage({ params }: Props) {
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) {
-    return (
-      <HubShell userEmail={session.user.email} {...projectShellProps(null)}>
-        <NoProjectEmptyState />
-      </HubShell>
-    );
-  }
+  if (!ctx) return <NoProjectEmptyState />;
 
   const workspaceId = ctx.project.id;
-  const shell = projectShellProps(ctx);
   const members = await db.query.workspaceMembers.findMany({
     where: eq(workspaceMembers.workspaceId, workspaceId),
     with: { user: true },
@@ -39,8 +30,7 @@ export default async function RunDetailPage({ params }: Props) {
   if (!run) notFound();
 
   return (
-    <HubShell userEmail={session.user.email} {...shell}>
-      <RunExecutor
+    <RunExecutor
         members={members.map((m) => ({
           id: m.user.id,
           name: m.user.name,
@@ -90,7 +80,6 @@ export default async function RunDetailPage({ params }: Props) {
             },
           })),
         }}
-      />
-    </HubShell>
+    />
   );
 }
