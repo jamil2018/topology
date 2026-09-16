@@ -11,6 +11,7 @@ import {
 import { db } from "@/db";
 import { runs } from "@/db/schema";
 import {
+  immutableMessageFor,
   isRunFrozen,
   runImmutableResponse,
 } from "@/lib/run-immutability-http";
@@ -50,7 +51,7 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Run not found" }, { status: 404 });
   }
   if (isRunFrozen(run.status)) {
-    return runImmutableResponse();
+    return runImmutableResponse(immutableMessageFor(run.status));
   }
 
   const parsed = bodySchema.safeParse(await request.json());

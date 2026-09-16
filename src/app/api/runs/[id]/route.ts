@@ -7,6 +7,7 @@ import { runResults, runs } from "@/db/schema";
 import { openTriageForResult } from "@/lib/ci-ingest";
 import { requireProjectAccess } from "@/lib/project";
 import {
+  immutableMessageFor,
   isRunFrozen,
   runImmutableResponse,
 } from "@/lib/run-immutability-http";
@@ -63,7 +64,9 @@ export async function PATCH(request: Request, { params }: Params) {
   const neededAction =
     body?.action === "complete"
       ? ("runs.complete" as const)
-      : ("runs.edit" as const);
+      : body?.action === "abort"
+        ? ("runs.delete" as const)
+        : ("runs.edit" as const);
 
   const access = await requireProjectAccess(session.user.id, {
     request,
@@ -81,9 +84,27 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  if (body?.action === "abort") {
+    if (existing.status === "aborted") {
+      return NextResponse.json({ run: existing });
+    }
+    if (isRunFrozen(existing.status)) {
+      return runImmutableResponse(immutableMessageFor(existing.status));
+    }
+    const [updated] = await db
+      .update(runs)
+      .set({
+        status: "aborted",
+        updatedAt: new Date(),
+      })
+      .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
+      .returning();
+    return NextResponse.json({ run: updated });
+  }
+
   if (body?.action === "start") {
     if (isRunFrozen(existing.status)) {
-      return runImmutableResponse();
+      return runImmutableResponse(immutableMessageFor(existing.status));
     }
     const [updated] = await db
       .update(runs)
@@ -98,9 +119,12 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   if (body?.action === "complete") {
-    if (isRunFrozen(existing.status)) {
+    if (existing.status === "completed") {
       // Idempotent: already completed — do not re-dispatch or rewrite.
       return NextResponse.json({ run: existing });
+    }
+    if (isRunFrozen(existing.status)) {
+      return runImmutableResponse(immutableMessageFor(existing.status));
     }
     const [updated] = await db
       .update(runs)
@@ -162,7 +186,7 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   if (isRunFrozen(existing.status)) {
-    return runImmutableResponse();
+    return runImmutableResponse(immutableMessageFor(existing.status));
   }
 
   const [updated] = await db

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button, Modal, useOverlayState } from "@heroui/react";
+import { CheckIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
@@ -144,7 +145,9 @@ export function RunExecutor({
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const completeModal = useOverlayState();
+  const abortModal = useOverlayState();
   const frozen = isRunFrozen(run.status);
+  const aborted = run.status === "aborted";
   const done = run.results.filter((r) => r.status !== "untested").length;
   const pct =
     run.results.length === 0
@@ -178,6 +181,11 @@ export function RunExecutor({
   async function confirmComplete() {
     const ok = await patch({ action: "complete" });
     if (ok) completeModal.close();
+  }
+
+  async function confirmAbort() {
+    const ok = await patch({ action: "abort" });
+    if (ok) abortModal.close();
   }
 
   async function issueAction(body: Record<string, unknown>) {
@@ -257,9 +265,11 @@ export function RunExecutor({
               <Button
                 size="sm"
                 variant="primary"
+                className="gap-1.5"
                 isDisabled={pending}
                 onPress={() => void patch({ action: "start" })}
               >
+                <PlayIcon size={14} weight="bold" aria-hidden />
                 Start
               </Button>
             ) : null}
@@ -267,13 +277,27 @@ export function RunExecutor({
               <Button
                 size="sm"
                 variant="secondary"
+                className="gap-1.5"
                 isDisabled={pending}
                 onPress={() => completeModal.open()}
               >
+                <CheckIcon size={14} weight="bold" aria-hidden />
                 Complete
               </Button>
             ) : null}
-            {frozen ? (
+            {!frozen ? (
+              <Button
+                size="sm"
+                variant="danger"
+                className="gap-1.5"
+                isDisabled={pending}
+                onPress={() => abortModal.open()}
+              >
+                <StopIcon size={14} weight="bold" aria-hidden />
+                Abort
+              </Button>
+            ) : null}
+            {run.status === "completed" ? (
               <Link
                 href={`/reports/${run.id}`}
                 className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
@@ -285,7 +309,15 @@ export function RunExecutor({
         }
       />
 
-      {frozen ? (
+      {aborted ? (
+        <p
+          role="status"
+          className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/40 px-3 py-2 text-xs text-[color:var(--topo-muted)]"
+        >
+          This run was aborted and is locked. Results are kept, but they can no
+          longer be edited.
+        </p>
+      ) : frozen ? (
         <p
           role="status"
           className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/40 px-3 py-2 text-xs text-[color:var(--topo-muted)]"
@@ -298,7 +330,7 @@ export function RunExecutor({
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 text-xs">
         <span className="text-[color:var(--topo-muted)]">Run assignee</span>
         <select
-          className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-[color:var(--topo-ink)]"
+          className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-[color:var(--topo-ink)] accent-[color:var(--topo-accent)]"
           value={run.assigneeId ?? ""}
           disabled={pending}
           onChange={(e) =>
@@ -371,7 +403,7 @@ export function RunExecutor({
                     }
                     className={`rounded-md px-2 py-1 text-xs capitalize transition active:scale-[0.98] ${
                       result.status === status
-                        ? "bg-[color:var(--topo-ink)] text-[color:var(--topo-panel)]"
+                        ? "bg-[color:var(--topo-accent)] text-[color:var(--accent-foreground)]"
                         : "bg-[color:var(--topo-chip)] text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
                     } ${frozen ? "cursor-not-allowed opacity-60" : ""}`}
                   >
@@ -395,7 +427,7 @@ export function RunExecutor({
               <label className="text-xs text-[color:var(--topo-muted)]">
                 Assign
                 <select
-                  className="ml-2 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs text-[color:var(--topo-ink)]"
+                  className="ml-2 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs text-[color:var(--topo-ink)] accent-[color:var(--topo-accent)]"
                   value={result.assigneeId ?? ""}
                   disabled={pending}
                   onChange={(e) =>
@@ -612,6 +644,41 @@ export function RunExecutor({
           </motion.article>
         ))}
       </div>
+
+      <Modal.Root state={abortModal}>
+        <Modal.Backdrop isDismissable={!pending}>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog className="outline-none">
+              <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+                <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                  Abort this run?
+                </Modal.Heading>
+                <p className="text-sm text-[color:var(--topo-muted)]">
+                  Aborting marks this run aborted and locks results. The run
+                  stays in the list with an aborted status. Results are kept
+                  and are no longer editable.
+                </p>
+              </Modal.Header>
+              <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
+                <Button
+                  variant="tertiary"
+                  isDisabled={pending}
+                  onPress={() => abortModal.close()}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  isDisabled={pending}
+                  onPress={() => void confirmAbort()}
+                >
+                  {pending ? "Aborting…" : "Abort run"}
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal.Root>
 
       <Modal.Root state={completeModal}>
         <Modal.Backdrop isDismissable={!pending}>
