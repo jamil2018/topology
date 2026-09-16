@@ -9,12 +9,11 @@
 ## Local setup
 
 ```bash
-docker compose up -d
-npm install
-npm run db:migrate   # or db:push
-npm run db:seed
+./scripts/setup.sh   # install, Compose Postgres, migrate, seed
 npm run dev
 ```
+
+Or the same steps by hand: `docker compose up -d`, `npm install`, `npm run db:migrate` (or `db:push`), `npm run db:seed`.
 
 App: http://127.0.0.1:4317 · Health: http://127.0.0.1:4317/api/health
 

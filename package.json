@@ -9,6 +9,7 @@
     "dev": "next dev --port 4317 --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --port 4317 --hostname 127.0.0.1",
+    "setup": "bash scripts/setup.sh",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
