@@ -1,10 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { HubShell } from "@/components/hub-shell";
 import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { ReportsWorkspace } from "@/components/reports-workspace";
 import { resolveActiveProject } from "@/lib/project";
-import { projectShellProps } from "@/lib/project-shell";
 import { listRunReports } from "@/lib/queries";
 import { ensureMembership } from "@/lib/workspace";
 
@@ -14,14 +12,7 @@ export default async function ReportsPage() {
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  const shell = projectShellProps(ctx);
-  if (!ctx) {
-    return (
-      <HubShell userEmail={session.user.email} {...projectShellProps(null)}>
-        <NoProjectEmptyState />
-      </HubShell>
-    );
-  }
+  if (!ctx) return <NoProjectEmptyState />;
 
   let reports: Awaited<ReturnType<typeof listRunReports>> = [];
   let loadError: string | null = null;
@@ -32,8 +23,7 @@ export default async function ReportsPage() {
   }
 
   return (
-    <HubShell userEmail={session.user.email} {...shell}>
-      <ReportsWorkspace
+    <ReportsWorkspace
         loadError={loadError}
         reports={reports.map((r) => ({
           ...r,
@@ -42,7 +32,6 @@ export default async function ReportsPage() {
           updatedAt: r.updatedAt,
           createdAt: r.createdAt,
         }))}
-      />
-    </HubShell>
+    />
   );
 }
