@@ -14,7 +14,14 @@ Self-hosted test case management with a Linear-like operating hub, CI ingest, is
 
 ## 15-minute success path
 
-1. **Compose up** — start Postgres (and keep attachment files on a local volume):
+1. **Set up and run** — `./scripts/setup.sh` (or `npm run setup`) installs packages, starts Postgres via Compose, writes `.env.local`, syncs the schema, applies migrations, and seeds. Then start the app:
+
+```bash
+./scripts/setup.sh
+npm run dev
+```
+
+The same steps by hand:
 
 ```bash
 docker compose up -d
@@ -85,6 +92,7 @@ Tracker tokens stay server-side; never expose them to the browser or MCP process
 
 | Script | Purpose |
 | --- | --- |
+| `./scripts/setup.sh` | Install, start Postgres, migrate, and seed |
 | `npm run dev` | Next.js on port 4317 |
 | `npm run db:push` | Push Drizzle schema |
 | `npm run db:migrate` | Apply `drizzle/*.sql` migrations |

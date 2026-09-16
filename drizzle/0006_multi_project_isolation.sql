@@ -97,5 +97,5 @@ ALTER TABLE cases DROP CONSTRAINT IF EXISTS cases_key_unique;
 ALTER TABLE cases DROP CONSTRAINT IF EXISTS cases_key_key;
 DO $$ BEGIN
   ALTER TABLE cases ADD CONSTRAINT cases_workspace_id_key_unique UNIQUE (workspace_id, key);
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
