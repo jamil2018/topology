@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  users,
   workspaceMembers,
   workspaces,
   type WorkspaceRole,
@@ -38,6 +39,16 @@ export async function ensureMembership(
   userId: string,
   role: WorkspaceRole = "admin",
 ) {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { id: true },
+  });
+  if (!user) {
+    throw new Error(
+      `Cannot join a workspace: user ${userId} does not exist. Sign in again.`,
+    );
+  }
+
   const workspace = await ensureDefaultWorkspace();
   const existing = await db.query.workspaceMembers.findFirst({
     where: and(

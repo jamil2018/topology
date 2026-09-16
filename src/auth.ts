@@ -69,4 +69,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     verificationTokensTable: verificationTokens,
   }),
   providers,
+  callbacks: {
+    ...authConfig.callbacks,
+    async session({ session, token }) {
+      if (!session.user || !token.sub) return session;
+
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, token.sub),
+        columns: { id: true, email: true, name: true, image: true },
+      });
+      // JWT can outlive the user row (database reset, or a different local volume).
+      if (!user) {
+        return { expires: session.expires };
+      }
+
+      session.user.id = user.id;
+      session.user.email = user.email;
+      session.user.name = user.name;
+      session.user.image = user.image;
+      return session;
+    },
+  },
 });
