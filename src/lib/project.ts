@@ -64,6 +64,23 @@ function toSummary(
   };
 }
 
+/**
+ * Prefer a project the user can already access. An unknown or foreign id
+ * falls back to the first accessible project — never a project they do not
+ * belong to.
+ */
+export function pickAccessibleProject<T extends { id: string }>(
+  projects: T[],
+  preferredId?: string | null,
+): T | undefined {
+  if (projects.length === 0) return undefined;
+  if (preferredId) {
+    const match = projects.find((project) => project.id === preferredId);
+    if (match) return match;
+  }
+  return projects[0];
+}
+
 /** Resolve effective actions for a membership (custom role or legacy enum). */
 export function membershipActions(membership: MembershipWithRole): Action[] {
   if (membership.customRole?.actions?.length) {
@@ -151,6 +168,11 @@ export async function resolveActiveProject(
   userId: string,
   preferredId?: string | null,
 ): Promise<ActiveProjectContext | null> {
+  // Omitted preference reads the active-project cookie. An explicit null
+  // means "no preference" (the caller already checked the cookie/header).
+  const preferred =
+    preferredId !== undefined ? preferredId : await readPreferredProjectId();
+
   let projects = await listUserProjects(userId);
   if (projects.length === 0) {
     await ensureMembership(userId, "admin");
@@ -158,9 +180,8 @@ export async function resolveActiveProject(
   }
   if (projects.length === 0) return null;
 
-  const pick =
-    (preferredId && projects.find((p) => p.id === preferredId)) ||
-    projects[0];
+  const pick = pickAccessibleProject(projects, preferred);
+  if (!pick) return null;
 
   const membership = await getMembershipForProject(userId, pick.id);
   if (!membership?.workspace) return null;

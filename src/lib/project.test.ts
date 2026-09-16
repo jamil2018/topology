@@ -1,10 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
   membershipActions,
+  pickAccessibleProject,
   slugifyProjectName,
   type MembershipWithRole,
 } from "./project";
 import { canAdmin, canWrite } from "./workspace-roles";
+
+describe("pickAccessibleProject", () => {
+  const projects = [
+    { id: "default", name: "Topology" },
+    { id: "test", name: "Test" },
+  ];
+
+  it("selects the preferred project when the user belongs to it", () => {
+    expect(pickAccessibleProject(projects, "test")).toEqual(projects[1]);
+  });
+
+  it("ignores a preferred id the user cannot access", () => {
+    expect(pickAccessibleProject(projects, "foreign")).toEqual(projects[0]);
+    expect(pickAccessibleProject(projects, null)).toEqual(projects[0]);
+  });
+
+  it("returns undefined when the user has no projects", () => {
+    expect(pickAccessibleProject([], "test")).toBeUndefined();
+  });
+});
 
 describe("slugifyProjectName", () => {
   it("normalizes names into URL-safe slugs", () => {

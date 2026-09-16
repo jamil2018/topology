@@ -1,8 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { CaretDownIcon, FolderSimpleIcon } from "@phosphor-icons/react";
+import { selectActiveProject } from "@/lib/project-actions";
 
 export type ProjectOption = {
   id: string;
@@ -20,7 +20,6 @@ export function ProjectSwitcher({
   activeProjectId: string | null;
   collapsed?: boolean;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -28,31 +27,20 @@ export function ProjectSwitcher({
   const active =
     projects.find((p) => p.id === activeProjectId) ?? projects[0] ?? null;
 
-  async function select(id: string) {
+  function select(id: string) {
     if (id === active?.id) {
       setOpen(false);
       return;
     }
     setError(null);
-    try {
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "select", id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          typeof data.error === "string" ? data.error : "Switch failed",
-        );
+    startTransition(async () => {
+      const result = await selectActiveProject(id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
       setOpen(false);
-      startTransition(() => {
-        router.refresh();
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Switch failed");
-    }
+    });
   }
 
   if (projects.length === 0) {
@@ -122,7 +110,7 @@ export function ProjectSwitcher({
                     ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
                     : "text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
                 }`}
-                onClick={() => void select(project.id)}
+                onClick={() => select(project.id)}
               >
                 <span className="truncate font-medium">{project.name}</span>
                 <span className="truncate font-mono text-[10px] uppercase tracking-wide opacity-70">
