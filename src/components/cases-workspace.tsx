@@ -23,6 +23,7 @@ import {
   FileCsvIcon,
   FolderPlusIcon,
   PlusIcon,
+  TrashIcon,
 } from "@phosphor-icons/react";
 import {
   CASE_LIST_PAGE_SIZE,
@@ -110,6 +111,9 @@ export function CasesWorkspace({
   const [caseOverrides, setCaseOverrides] = useState<Record<string, CaseRow>>(
     {},
   );
+  const [removedCaseIds, setRemovedCaseIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const displayCases = useMemo(() => {
     const known = new Set(initialCases.map((c) => c.id));
     const merged = initialCases.map((c) => {
@@ -117,8 +121,9 @@ export function CasesWorkspace({
       return over ? { ...c, ...over } : c;
     });
     const extras = Object.values(caseOverrides).filter((c) => !known.has(c.id));
-    return extras.length > 0 ? [...extras, ...merged] : merged;
-  }, [initialCases, caseOverrides]);
+    const combined = extras.length > 0 ? [...extras, ...merged] : merged;
+    return combined.filter((c) => !removedCaseIds.has(c.id));
+  }, [initialCases, caseOverrides, removedCaseIds]);
   const [appliedParams, setAppliedParams] = useState(paramsKey);
   if (appliedParams !== paramsKey) {
     setAppliedParams(paramsKey);
@@ -146,6 +151,9 @@ export function CasesWorkspace({
     },
   });
   const deleteModal = useOverlayState();
+  const caseDeleteModal = useOverlayState();
+  const [caseToDelete, setCaseToDelete] = useState<CaseRow | null>(null);
+  const [caseDeletePending, setCaseDeletePending] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
   const [folderPending, setFolderPending] = useState(false);
@@ -523,6 +531,54 @@ export function CasesWorkspace({
     deleteModal.open();
   }
 
+  function openDeleteCase(row: CaseRow) {
+    setError(null);
+    setCaseToDelete(row);
+    caseDeleteModal.open();
+  }
+
+  async function deleteCase() {
+    if (!caseToDelete) return;
+    const target = caseToDelete;
+    setError(null);
+    setCaseDeletePending(true);
+    try {
+      const res = await fetch(`/api/cases/${target.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "Failed to delete case",
+        );
+        return;
+      }
+      setRemovedCaseIds((prev) => new Set(prev).add(target.id));
+      setSelectedIds((prev) => {
+        if (!prev.has(target.id)) return prev;
+        const next = new Set(prev);
+        next.delete(target.id);
+        return next;
+      });
+      setCaseOverrides((prev) => {
+        if (!(target.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[target.id];
+        return next;
+      });
+      setHistoryCase((prev) => (prev?.id === target.id ? null : prev));
+      setCaseToDelete(null);
+      caseDeleteModal.close();
+      startTransition(() => router.refresh());
+    } catch {
+      setError("Failed to delete case");
+    } finally {
+      setCaseDeletePending(false);
+    }
+  }
+
   async function importCsv(file: File) {
     setError(null);
     const body = new FormData();
@@ -766,6 +822,44 @@ export function CasesWorkspace({
                   onPress={() => void deleteFolder()}
                 >
                   {folderPending ? "Deleting…" : "Delete folder"}
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal.Root>
+
+      <Modal.Root state={caseDeleteModal}>
+        <Modal.Backdrop isDismissable={!caseDeletePending}>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog className="outline-none">
+              <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+                <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                  Delete case
+                </Modal.Heading>
+                <p className="text-sm text-[color:var(--topo-muted)]">
+                  {caseToDelete
+                    ? `Delete “${caseToDelete.key}”? This cannot be undone. Activity and run results for this case are also removed.`
+                    : "Select a case to delete."}
+                </p>
+              </Modal.Header>
+              <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
+                <Button
+                  variant="tertiary"
+                  isDisabled={caseDeletePending}
+                  onPress={() => {
+                    setCaseToDelete(null);
+                    caseDeleteModal.close();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  isDisabled={caseDeletePending || !caseToDelete}
+                  onPress={() => void deleteCase()}
+                >
+                  {caseDeletePending ? "Deleting…" : "Delete case"}
                 </Button>
               </Modal.Footer>
             </Modal.Dialog>
@@ -1216,13 +1310,16 @@ export function CasesWorkspace({
                   </th>
                 );
               })}
+              <th className="w-10 px-2 py-2">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {displayCases.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-3 py-10 text-center text-[color:var(--topo-muted)]"
                 >
                   No cases yet. Create one or import a CSV.
@@ -1231,7 +1328,7 @@ export function CasesWorkspace({
             ) : pageData.items.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-3 py-10 text-center text-[color:var(--topo-muted)]"
                 >
                   No cases match this search or folder.
@@ -1244,7 +1341,7 @@ export function CasesWorkspace({
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: Math.min(i, 12) * 0.02 }}
-                  className={`border-b border-[color:var(--topo-line)] last:border-0 ${
+                  className={`group border-b border-[color:var(--topo-line)] last:border-0 ${
                     historyCase?.id === c.id
                       ? "bg-[color:var(--topo-accent-soft)]"
                       : ""
@@ -1298,6 +1395,16 @@ export function CasesWorkspace({
                     <StatusChip tone={statusToneForRun(c.status)}>
                       {c.status}
                     </StatusChip>
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    <button
+                      type="button"
+                      aria-label={`Delete ${c.key}`}
+                      className="rounded p-1 text-[color:var(--topo-muted)] opacity-100 hover:bg-[color:var(--topo-chip)] hover:text-red-600 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100 dark:hover:text-red-400"
+                      onClick={() => openDeleteCase(c)}
+                    >
+                      <TrashIcon size={12} weight="bold" />
+                    </button>
                   </td>
                 </motion.tr>
               ))

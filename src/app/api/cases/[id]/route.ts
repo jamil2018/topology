@@ -184,3 +184,45 @@ export async function PATCH(request: Request, { params }: Params) {
 
   return NextResponse.json({ case: next, updated: true });
 }
+
+export async function DELETE(request: Request, { params }: Params) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    action: "cases.delete",
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
+
+  const { id } = await params;
+  if (invalidId(id)) {
+    return NextResponse.json({ error: "Invalid case id" }, { status: 400 });
+  }
+
+  const existing = await db.query.cases.findFirst({
+    where: and(eq(cases.id, id), eq(cases.workspaceId, workspaceId)),
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "Case not found" }, { status: 404 });
+  }
+
+  try {
+    const [deleted] = await db
+      .delete(cases)
+      .where(and(eq(cases.id, id), eq(cases.workspaceId, workspaceId)))
+      .returning();
+
+    return NextResponse.json({ case: deleted });
+  } catch {
+    return NextResponse.json(
+      { error: "Failed to delete case" },
+      { status: 500 },
+    );
+  }
+}
