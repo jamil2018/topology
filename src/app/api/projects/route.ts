@@ -6,6 +6,7 @@ import {
   createProject,
   deleteProject,
   listUserProjects,
+  readPreferredProjectId,
   requireProjectAccess,
   resolveActiveProject,
   updateProject,
@@ -41,7 +42,8 @@ export async function GET(request: Request) {
   const includeArchived =
     new URL(request.url).searchParams.get("includeArchived") === "1";
   const projects = await listUserProjects(session.user.id, { includeArchived });
-  const active = await resolveActiveProject(session.user.id);
+  const preferred = await readPreferredProjectId(request);
+  const active = await resolveActiveProject(session.user.id, preferred);
   const canManage = await userIsProjectAdminAnywhere(session.user.id);
 
   return NextResponse.json({
@@ -71,10 +73,10 @@ export async function POST(request: Request) {
     const access = await requireProjectAccess(session.user.id, {
       preferredId: parsed.data.id,
     });
-    if (!access.ok) {
+    if (!access.ok || access.ctx.project.id !== parsed.data.id) {
       return NextResponse.json(
-        { error: access.error },
-        { status: access.status },
+        { error: access.ok ? "No accessible project" : access.error },
+        { status: access.ok ? 403 : access.status },
       );
     }
     const res = NextResponse.json({

@@ -409,7 +409,10 @@ export function HubShell({
             </span>
           </header>
 
-          <main className="w-full max-w-none flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-5">
+          <main
+            key={activeProjectId ?? "none"}
+            className="w-full max-w-none flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-5"
+          >
             {children}
           </main>
         </div>
