@@ -176,14 +176,68 @@ export async function linkExistingIssue(input: {
   return row;
 }
 
+/**
+ * Duplicate mock keys share one in-memory remote object. A refresh must not
+ * copy that object's title onto a sibling, or reopen a local close.
+ */
+export function refreshKeepsLocalFields(input: {
+  localRemoteId: string;
+  localTitle: string;
+  localStatus: string;
+  remoteId: string;
+  remoteTitle: string;
+  remoteStatus: string;
+  siblingTitles: string[];
+}) {
+  const fabricated =
+    input.remoteId !== input.localRemoteId ||
+    input.remoteId.startsWith("mock-linked-");
+  const contested = input.siblingTitles.some(
+    (title) => title !== input.localTitle,
+  );
+  const keepTitle = fabricated || contested;
+  const keepStatus =
+    keepTitle ||
+    (input.localStatus === "done" && input.remoteStatus !== "done");
+  return { keepTitle, keepStatus };
+}
+
 export async function refreshLinkedIssue(id: string) {
   const existing = await db.query.linkedIssues.findFirst({
     where: eq(linkedIssues.id, id),
   });
   if (!existing) throw new Error("Linked issue not found");
 
+  const siblings = await db.query.linkedIssues.findMany({
+    where: and(
+      eq(linkedIssues.provider, existing.provider),
+      eq(linkedIssues.remoteId, existing.remoteId),
+    ),
+    columns: { id: true, title: true },
+  });
+  const siblingTitles = siblings
+    .filter((row) => row.id !== existing.id)
+    .map((row) => row.title);
+  if (siblingTitles.some((title) => title !== existing.title)) {
+    const [row] = await db
+      .update(linkedIssues)
+      .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+      .where(eq(linkedIssues.id, id))
+      .returning();
+    return row ?? existing;
+  }
+
   const provider = resolveIssueProvider({ provider: existing.provider });
   const remote = await provider.getIssue(existing.remoteId);
+  const keep = refreshKeepsLocalFields({
+    localRemoteId: existing.remoteId,
+    localTitle: existing.title,
+    localStatus: existing.remoteStatus,
+    remoteId: remote.id,
+    remoteTitle: remote.title,
+    remoteStatus: remote.status,
+    siblingTitles,
+  });
 
   const values = toRowValues(remote, {
     workspaceId: existing.workspaceId,
@@ -194,7 +248,16 @@ export async function refreshLinkedIssue(id: string) {
     previousStatus: existing.remoteStatus,
   });
 
-  if (existing.needsRetest === 1) {
+  if (keep.keepTitle) {
+    values.title = existing.title;
+    values.remoteKey = existing.remoteKey;
+    values.url = existing.url;
+    values.remoteId = existing.remoteId;
+  }
+  if (keep.keepStatus) {
+    values.remoteStatus = existing.remoteStatus;
+    values.needsRetest = existing.needsRetest;
+  } else if (existing.needsRetest === 1) {
     values.needsRetest = 1;
   }
 
