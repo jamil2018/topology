@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { LoginForm } from "./login-form";
+import { safeCallbackPath } from "@/lib/safe-callback-path";
 
 vi.mock("next-auth/react", () => ({
   signIn: vi.fn(),
 }));
+
+describe("safeCallbackPath", () => {
+  it("keeps a same-origin invite path and drops off-site targets", () => {
+    expect(safeCallbackPath("/invite/abc")).toBe("/invite/abc");
+    expect(safeCallbackPath("https://evil.example/phish")).toBe("/");
+    expect(safeCallbackPath("//evil.example/phish")).toBe("/");
+    expect(safeCallbackPath("/\\evil")).toBe("/");
+  });
+});
 
 describe("LoginForm", () => {
   it("renders credentials fields without OAuth when providers are off", () => {
