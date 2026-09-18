@@ -4,13 +4,11 @@ import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { AutomationWorkspace } from "@/components/automation-workspace";
 import { resolveActiveProject } from "@/lib/project";
 import { getFlakeHints, listRuns } from "@/lib/queries";
-import { ensureMembership } from "@/lib/workspace";
 
 export default async function AutomationPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
   if (!ctx) return <NoProjectEmptyState />;
 

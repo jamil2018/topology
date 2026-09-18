@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  ctxCanAdmin,
+  ctxCanWrite,
   membershipActions,
   pickAccessibleProject,
   slugifyProjectName,
+  type ActiveProjectContext,
   type MembershipWithRole,
 } from "./project";
 import { canAdmin, canWrite } from "./workspace-roles";
@@ -17,9 +20,20 @@ describe("pickAccessibleProject", () => {
     expect(pickAccessibleProject(projects, "test")).toEqual(projects[1]);
   });
 
-  it("ignores a preferred id the user cannot access", () => {
-    expect(pickAccessibleProject(projects, "foreign")).toEqual(projects[0]);
+  it("uses the first project only when no preference was sent", () => {
     expect(pickAccessibleProject(projects, null)).toEqual(projects[0]);
+    expect(pickAccessibleProject(projects, undefined)).toEqual(projects[0]);
+    expect(pickAccessibleProject(projects, "")).toEqual(projects[0]);
+    expect(pickAccessibleProject(projects, "   ")).toEqual(projects[0]);
+  });
+
+  it("rejects an id that is unknown, malformed, or not in the list", () => {
+    expect(pickAccessibleProject(projects, "foreign")).toBeUndefined();
+    expect(pickAccessibleProject(projects, "not-a-uuid")).toBeUndefined();
+    expect(
+      pickAccessibleProject(projects, "11111111-1111-4111-8111-111111111111"),
+    ).toBeUndefined();
+    expect(pickAccessibleProject(projects, " test ")).toEqual(projects[1]);
   });
 
   it("returns undefined when the user has no projects", () => {
@@ -91,5 +105,38 @@ describe("membershipActions", () => {
     expect(actions).toContain("cases.view");
     expect(actions).not.toContain("cases.create");
     expect(actions).not.toContain("runs.complete");
+  });
+
+  it("ignores edited actions on the Viewer system role", () => {
+    const viewer = member("viewer", [
+      "roles.manage",
+      "project.manage",
+      "members.invite",
+    ]);
+    viewer.customRole!.isSystem = true;
+    viewer.customRole!.systemKey = "viewer";
+    viewer.customRole!.name = "Viewer";
+    const ctx: ActiveProjectContext = {
+      project: { id: "w1" } as ActiveProjectContext["project"],
+      membership: viewer,
+      projects: [],
+      actions: membershipActions(viewer),
+    };
+    expect(ctx.actions).not.toContain("roles.manage");
+    expect(ctx.actions).toContain("cases.view");
+    expect(ctxCanAdmin(ctx)).toBe(false);
+    expect(ctxCanWrite(ctx)).toBe(false);
+  });
+
+  it("does not grant write to a custom invite-only role stored as admin", () => {
+    const inviter = member("admin", ["members.invite"]);
+    const ctx: ActiveProjectContext = {
+      project: { id: "w1" } as ActiveProjectContext["project"],
+      membership: inviter,
+      projects: [],
+      actions: membershipActions(inviter),
+    };
+    expect(ctxCanWrite(ctx)).toBe(false);
+    expect(ctxCanAdmin(ctx)).toBe(true);
   });
 });
