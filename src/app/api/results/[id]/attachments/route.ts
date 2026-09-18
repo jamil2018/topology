@@ -1,12 +1,24 @@
 import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
+import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { attachments, runResults } from "@/db/schema";
-import { storeAttachmentFile } from "@/lib/attachments";
+import { ATTACHMENT_MAX_BYTES, storeAttachmentFile } from "@/lib/attachments";
 import { requireProjectAccess } from "@/lib/project";
 
 type Params = { params: Promise<{ id: string }> };
+
+function invalidId(id: string) {
+  return !z.string().uuid().safeParse(id).success;
+}
+
+function sizeLimit() {
+  return NextResponse.json(
+    { error: "File exceeds 10 MB limit" },
+    { status: 413 },
+  );
+}
 
 async function loadScopedResult(resultId: string, workspaceId: string) {
   const result = await db.query.runResults.findFirst({
@@ -29,6 +41,9 @@ export async function GET(request: Request, { params }: Params) {
   }
 
   const { id: resultId } = await params;
+  if (invalidId(resultId)) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
   const result = await loadScopedResult(resultId, access.ctx.project.id);
   if (!result) {
     return NextResponse.json({ error: "Result not found" }, { status: 404 });
@@ -66,15 +81,39 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const { id: resultId } = await params;
+  if (invalidId(resultId)) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
   const result = await loadScopedResult(resultId, access.ctx.project.id);
   if (!result) {
     return NextResponse.json({ error: "Result not found" }, { status: 404 });
   }
 
-  const form = await request.formData();
+  const declared = Number(request.headers.get("content-length") ?? "");
+  // Multipart framing sits on top of the file. Only reject here when the
+  // request is clearly over the file cap; proxy truncation is caught below.
+  if (
+    Number.isFinite(declared) &&
+    declared > ATTACHMENT_MAX_BYTES + 64 * 1024
+  ) {
+    return sizeLimit();
+  }
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return sizeLimit();
+  }
   const file = form.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "file is required" }, { status: 400 });
+  }
+  if (file.size === 0) {
+    return NextResponse.json({ error: "file is empty" }, { status: 400 });
+  }
+  if (file.size > ATTACHMENT_MAX_BYTES) {
+    return sizeLimit();
   }
 
   try {
@@ -104,9 +143,11 @@ export async function POST(request: Request, { params }: Params) {
       { status: 201 },
     );
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Upload failed" },
-      { status: 400 },
-    );
+    const message = err instanceof Error ? err.message : "Upload failed";
+    if (/exceeds/i.test(message)) return sizeLimit();
+    if (/Failed query|PostgresError|password_hash/i.test(message)) {
+      return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    }
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

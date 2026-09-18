@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { workspaceInvites, workspaceMembers } from "@/db/schema";
-import { ensureDefaultWorkspace } from "@/lib/workspace";
+import { isUniqueViolation } from "@/lib/http-errors";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -62,8 +62,6 @@ export async function POST(_request: Request, { params }: Params) {
     );
   }
 
-  await ensureDefaultWorkspace();
-
   const existing = await db.query.workspaceMembers.findFirst({
     where: and(
       eq(workspaceMembers.workspaceId, invite.workspaceId),
@@ -71,19 +69,39 @@ export async function POST(_request: Request, { params }: Params) {
     ),
   });
 
-  if (!existing) {
+  if (existing) {
+    return NextResponse.json(
+      { error: "Already a member of this project" },
+      { status: 409 },
+    );
+  }
+
+  try {
     await db.insert(workspaceMembers).values({
       workspaceId: invite.workspaceId,
       userId: session.user.id,
       role: invite.role,
       customRoleId: invite.customRoleId,
     });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return NextResponse.json(
+        { error: "Already a member of this project" },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ error: "Invite accept failed" }, { status: 400 });
   }
 
   await db
     .update(workspaceInvites)
     .set({ status: "accepted", acceptedAt: new Date() })
-    .where(eq(workspaceInvites.id, invite.id));
+    .where(
+      and(
+        eq(workspaceInvites.id, invite.id),
+        eq(workspaceInvites.status, "pending"),
+      ),
+    );
 
   return NextResponse.json({ ok: true });
 }

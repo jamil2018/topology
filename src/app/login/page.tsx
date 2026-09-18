@@ -1,11 +1,16 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { LoginForm } from "@/components/login-form";
+import { LoginForm, safeCallbackPath } from "@/components/login-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ callbackUrl?: string }>;
+}) {
   const session = await auth();
   if (session?.user) redirect("/");
+  const params = await searchParams;
 
   const github = Boolean(
     process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET,
@@ -20,7 +25,11 @@ export default async function LoginPage() {
       <div className="absolute top-4 right-4 z-10 sm:top-6 sm:right-6">
         <ThemeToggle compact />
       </div>
-      <LoginForm oauth={{ github, google }} airGap={airGap} />
+      <LoginForm
+        oauth={{ github, google }}
+        airGap={airGap}
+        callbackUrl={safeCallbackPath(params.callbackUrl)}
+      />
     </div>
   );
 }

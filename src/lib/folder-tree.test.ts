@@ -64,4 +64,16 @@ describe("wouldCreateFolderCycle", () => {
     expect(wouldCreateFolderCycle(folders, "a", "c")).toBe(false);
     expect(wouldCreateFolderCycle(folders, "a", null)).toBe(false);
   });
+
+  it("rejects the reverse edge after the first parent write", () => {
+    const pair = [
+      { id: "a", name: "A", parentId: null as string | null },
+      { id: "b", name: "B", parentId: null as string | null },
+    ];
+    expect(wouldCreateFolderCycle(pair, "a", "b")).toBe(false);
+    const afterFirst = pair.map((folder) =>
+      folder.id === "a" ? { ...folder, parentId: "b" } : folder,
+    );
+    expect(wouldCreateFolderCycle(afterFirst, "b", "a")).toBe(true);
+  });
 });

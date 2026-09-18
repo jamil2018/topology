@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { mergeShardResults, summarizeResults } from "@topology/domain";
+import { z } from "zod";
 import { authenticateCiRequest } from "@/lib/ci-auth";
 import {
-  loadShardResults,
+  ciFailureResponse,
+  completeCiRun,
   openTriageForFailures,
-  upsertRunResultsFromNormalized,
 } from "@/lib/ci-ingest";
 import { db } from "@/db";
 import { runs } from "@/db/schema";
@@ -27,51 +27,61 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const { id } = await params;
+  if (!z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ error: "Invalid run id" }, { status: 400 });
+  }
+
   const run = await db.query.runs.findFirst({
     where: and(eq(runs.id, id), eq(runs.workspaceId, authResult.workspaceId)),
   });
   if (!run) {
     return NextResponse.json({ error: "Run not found" }, { status: 404 });
   }
+
+  const rawBody = await request.text();
+  if (rawBody.trim()) {
+    try {
+      JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+  }
+
   if (isRunFrozen(run.status)) {
     return runImmutableResponse(immutableMessageFor(run.status));
   }
 
-  const shards = await loadShardResults(id);
-  if (shards.length > 0) {
-    const merged = mergeShardResults(shards);
-    await upsertRunResultsFromNormalized(
-      id,
-      merged,
-      authResult.userId,
-      authResult.workspaceId,
+  try {
+    const completed = await completeCiRun({
+      runId: id,
+      workspaceId: authResult.workspaceId,
+      userId: authResult.userId,
+    });
+
+    try {
+      await openTriageForFailures(id);
+    } catch {
+      // The run is already committed. Do not surface a later triage error as SQL.
+    }
+
+    const { buildRunCompletedPayload, dispatchWebhook } = await import(
+      "@/lib/webhooks"
     );
+    const data = await buildRunCompletedPayload(id);
+    if (data) {
+      void dispatchWebhook(
+        "run.completed",
+        data,
+        authResult.workspaceId,
+      ).catch(() => {});
+    }
+
+    return NextResponse.json({
+      run: completed.run,
+      summary: completed.summary,
+    });
+  } catch (err) {
+    const failure = ciFailureResponse(err);
+    return NextResponse.json(failure.body, { status: failure.status });
   }
-
-  const [updated] = await db
-    .update(runs)
-    .set({
-      status: "completed",
-      completedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(runs.id, id))
-    .returning();
-
-  await openTriageForFailures(id);
-
-  const merged = shards.length > 0 ? mergeShardResults(shards) : [];
-
-  const { buildRunCompletedPayload, dispatchWebhook } = await import(
-    "@/lib/webhooks"
-  );
-  const data = await buildRunCompletedPayload(id);
-  if (data) {
-    void dispatchWebhook("run.completed", data, authResult.workspaceId);
-  }
-
-  return NextResponse.json({
-    run: updated,
-    summary: summarizeResults(merged),
-  });
 }

@@ -3,7 +3,6 @@
 import Link from "next/link";
 
 export default function ReportsError({
-  error,
   reset,
 }: {
   error: Error & { digest?: string };
@@ -18,7 +17,7 @@ export default function ReportsError({
         Reports failed to load
       </h2>
       <p className="text-xs text-[color:var(--topo-muted)]">
-        {error.message || "Unexpected error while loading run reports."}
+        Unexpected error while loading run reports.
       </p>
       <div className="flex flex-wrap gap-2">
         <button

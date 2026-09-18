@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
+import { dbErrorResponse, readJsonBody } from "@/lib/http-errors";
 import {
   PROJECT_COOKIE,
   createProject,
@@ -33,6 +34,19 @@ function projectCookie(id: string) {
   return `${PROJECT_COOKIE}=${id}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 365}; HttpOnly`;
 }
 
+function sameProject(
+  access: { ok: true; ctx: { project: { id: string } } } | { ok: false; status: number; error: string },
+  id: string,
+) {
+  if (!access.ok || access.ctx.project.id !== id) {
+    return NextResponse.json(
+      { error: access.ok ? "No accessible project" : access.error },
+      { status: access.ok ? 403 : access.status },
+    );
+  }
+  return null;
+}
+
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -59,7 +73,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const body = json.body as { action?: unknown } | null;
 
   // Select active project (persist cookie)
   if (body?.action === "select") {
@@ -106,11 +122,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const project = await createProject({
-    name: parsed.data.name,
-    slug: parsed.data.slug,
-    creatorUserId: session.user.id,
-  });
+  let project;
+  try {
+    project = await createProject({
+      name: parsed.data.name,
+      slug: parsed.data.slug,
+      creatorUserId: session.user.id,
+    });
+  } catch (err) {
+    return dbErrorResponse(err, "Create failed", {
+      uniqueMessage: "A project with that name already exists",
+    });
+  }
 
   const res = NextResponse.json(
     {
@@ -133,8 +156,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const parsed = patchSchema.safeParse(body);
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const parsed = patchSchema.safeParse(json.body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },
@@ -147,17 +171,18 @@ export async function PATCH(request: Request) {
     action: "project.manage",
     allowArchived: true,
   });
-  if (!access.ok) {
-    return NextResponse.json(
-      { error: access.error },
-      { status: access.status },
-    );
-  }
+  const denied = sameProject(access, parsed.data.id);
+  if (denied) return denied;
 
-  const updated = await updateProject(parsed.data.id, {
-    name: parsed.data.name,
-    archived: parsed.data.archived,
-  });
+  let updated;
+  try {
+    updated = await updateProject(parsed.data.id, {
+      name: parsed.data.name,
+      archived: parsed.data.archived,
+    });
+  } catch (err) {
+    return dbErrorResponse(err, "Update failed");
+  }
   if (!updated) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
@@ -179,8 +204,8 @@ export async function DELETE(request: Request) {
   }
 
   const id = new URL(request.url).searchParams.get("id");
-  if (!id) {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  if (!id || !z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
 
   const access = await requireProjectAccess(session.user.id, {
@@ -188,23 +213,21 @@ export async function DELETE(request: Request) {
     action: "project.manage",
     allowArchived: true,
   });
-  if (!access.ok) {
-    return NextResponse.json(
-      { error: access.error },
-      { status: access.status },
-    );
-  }
+  const denied = sameProject(access, id);
+  if (denied) return denied;
 
   try {
     const defaultWs = await ensureDefaultWorkspace();
     await deleteProject(id);
     const res = NextResponse.json({ ok: true });
-    if (access.ctx.project.id === id) {
+    if (access.ok && access.ctx.project.id === id) {
       res.headers.append("Set-Cookie", projectCookie(defaultWs.id));
     }
     return res;
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Delete failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    if (err instanceof Error && err.message === "Cannot delete the default project") {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    return dbErrorResponse(err, "Delete failed");
   }
 }

@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { cases, folders } from "@/db/schema";
+import { cases, folders, runResults } from "@/db/schema";
+import { isLockFailure } from "@/lib/pg-error";
 import { recordCaseFieldChanges } from "@/lib/case-activity";
 import { buildCasePatch, updateCaseSchema } from "@/lib/case-update";
 import { requireProjectAccess } from "@/lib/project";
@@ -213,13 +214,46 @@ export async function DELETE(request: Request, { params }: Params) {
   }
 
   try {
-    const [deleted] = await db
-      .delete(cases)
-      .where(and(eq(cases.id, id), eq(cases.workspaceId, workspaceId)))
-      .returning();
+    const deleted = await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ id: cases.id })
+        .from(cases)
+        .where(and(eq(cases.id, id), eq(cases.workspaceId, workspaceId)))
+        .limit(1)
+        .for("update");
+      if (!locked) return { kind: "missing" as const };
 
-    return NextResponse.json({ case: deleted });
-  } catch {
+      const [referenced] = await tx
+        .select({ id: runResults.id })
+        .from(runResults)
+        .where(eq(runResults.caseId, id))
+        .limit(1);
+      if (referenced) return { kind: "referenced" as const };
+
+      const [row] = await tx
+        .delete(cases)
+        .where(and(eq(cases.id, id), eq(cases.workspaceId, workspaceId)))
+        .returning();
+      return { kind: "deleted" as const, case: row };
+    });
+
+    if (deleted.kind === "missing") {
+      return NextResponse.json({ error: "Case not found" }, { status: 404 });
+    }
+    if (deleted.kind === "referenced") {
+      return NextResponse.json(
+        { error: "Cannot delete a case that has run results" },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ case: deleted.case });
+  } catch (err) {
+    if (isLockFailure(err)) {
+      return NextResponse.json(
+        { error: "Could not lock the case to delete it. Retry." },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
       { error: "Failed to delete case" },
       { status: 500 },

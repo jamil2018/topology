@@ -42,7 +42,14 @@ export async function PATCH(request: Request) {
   }
   const workspaceId = access.ctx.project.id;
 
-  const parsed = patchSchema.safeParse(await request.json());
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },

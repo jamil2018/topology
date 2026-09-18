@@ -4,8 +4,15 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { webhookEndpoints } from "@/db/schema";
+import { readJsonBody } from "@/lib/http-errors";
+import { roleHasAction } from "@/lib/permissions";
 import { requireProjectAccess } from "@/lib/project";
-import { dispatchWebhook } from "@/lib/webhooks";
+import { dispatchWebhook, webhookUrlError } from "@/lib/webhooks";
+
+const webhookUrl = z.string().refine((value) => webhookUrlError(value) === null, {
+  message:
+    "Webhook URL must use http or https and must not target a local or private address",
+});
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -24,14 +31,19 @@ export async function GET(request: Request) {
     orderBy: [desc(webhookEndpoints.createdAt)],
   });
 
+  const includeSecret = roleHasAction(access.ctx.actions, "webhooks.manage");
   return NextResponse.json({
-    endpoints,
+    endpoints: endpoints.map((row) => {
+      if (includeSecret) return row;
+      const { secret: _secret, ...rest } = row;
+      return rest;
+    }),
     envFallback: Boolean(process.env.TOPOLOGY_WEBHOOK_URL?.trim()),
   });
 }
 
 const createSchema = z.object({
-  url: z.string().url(),
+  url: webhookUrl,
   secret: z.string().optional().default(""),
   events: z
     .string()
@@ -56,7 +68,9 @@ export async function POST(request: Request) {
   }
   const workspaceId = access.ctx.project.id;
 
-  const body = await request.json();
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const body = json.body as { action?: unknown } | null;
 
   if (body?.action === "test") {
     const payload = await dispatchWebhook(
@@ -112,7 +126,7 @@ export async function POST(request: Request) {
 
 const patchSchema = z.object({
   id: z.string().uuid(),
-  url: z.string().url().optional(),
+  url: webhookUrl.optional(),
   secret: z.string().optional(),
   events: z.string().optional(),
   description: z.string().optional(),
@@ -134,7 +148,9 @@ export async function PATCH(request: Request) {
   }
   const workspaceId = access.ctx.project.id;
 
-  const parsed = patchSchema.safeParse(await request.json());
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const parsed = patchSchema.safeParse(json.body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },
@@ -183,7 +199,9 @@ export async function DELETE(request: Request) {
   }
   const workspaceId = access.ctx.project.id;
 
-  const parsed = deleteSchema.safeParse(await request.json());
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const parsed = deleteSchema.safeParse(json.body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },

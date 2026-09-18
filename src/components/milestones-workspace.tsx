@@ -19,7 +19,7 @@ type MilestoneView = {
     maxOpenBlockers: number;
   };
   readiness: {
-    status: "go" | "at_risk" | "no_go";
+    status: "go" | "at_risk" | "no_go" | "unknown";
     score: number;
     passRate: number | null;
     executedPct: number;
@@ -189,7 +189,12 @@ export function MilestonesWorkspace({
                         ? "n/a"
                         : `${view.readiness.passRate}%`}
                     </div>
-                    <div>executed {view.readiness.executedPct}%</div>
+                    <div>
+                      executed{" "}
+                      {view.readiness.status === "unknown"
+                        ? "n/a"
+                        : `${view.readiness.executedPct}%`}
+                    </div>
                     <div>
                       P0 fails {view.readiness.openP0Failures} · blockers{" "}
                       {view.readiness.openBlockerIssues}

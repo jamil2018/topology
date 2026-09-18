@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
+import { dbErrorResponse, readJsonBody } from "@/lib/http-errors";
 import { workspaceMembers, workspaceRoles } from "@/db/schema";
 import {
   ensureSystemRoles,
@@ -103,8 +104,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const body = await request.json();
-  const parsed = createSchema.safeParse(body);
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const parsed = createSchema.safeParse(json.body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },
@@ -128,14 +130,9 @@ export async function POST(request: Request) {
       .returning();
     return NextResponse.json({ role: serializeRole(created) }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Create failed";
-    if (message.includes("unique") || message.includes("duplicate")) {
-      return NextResponse.json(
-        { error: "A role with that name already exists" },
-        { status: 409 },
-      );
-    }
-    throw err;
+    return dbErrorResponse(err, "Create failed", {
+      uniqueMessage: "A role with that name already exists",
+    });
   }
 }
 
@@ -153,8 +150,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const body = await request.json();
-  const parsed = updateSchema.safeParse(body);
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const parsed = updateSchema.safeParse(json.body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },
@@ -196,6 +194,12 @@ export async function PATCH(request: Request) {
     updates.description = parsed.data.description;
   }
   if (parsed.data.actions !== undefined) {
+    if (existing.isSystem) {
+      return NextResponse.json(
+        { error: "System role permissions cannot be changed" },
+        { status: 400 },
+      );
+    }
     updates.actions = normalizeActions(parsed.data.actions);
   }
   if (parsed.data.archived === true) {
@@ -232,14 +236,9 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ role: serializeRole(updated) });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Update failed";
-    if (message.includes("unique") || message.includes("duplicate")) {
-      return NextResponse.json(
-        { error: "A role with that name already exists" },
-        { status: 409 },
-      );
-    }
-    throw err;
+    return dbErrorResponse(err, "Update failed", {
+      uniqueMessage: "A role with that name already exists",
+    });
   }
 }
 
@@ -258,8 +257,8 @@ export async function DELETE(request: Request) {
   }
 
   const id = new URL(request.url).searchParams.get("id");
-  if (!id) {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  if (!id || !z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
 
   const workspaceId = access.ctx.project.id;
