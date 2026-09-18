@@ -6,13 +6,27 @@ import { useState } from "react";
 import { Button, Input, Label, TextField } from "@heroui/react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 
+/** Same-origin path only. Drops absolute, protocol-relative, and backslash URLs. */
+export function safeCallbackPath(raw: string | null | undefined): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
+    return "/";
+  }
+  if (raw.includes("\\") || raw.includes("://") || /[\u0000\r\n]/.test(raw)) {
+    return "/";
+  }
+  return raw;
+}
+
 export function LoginForm({
   oauth,
   airGap,
+  callbackUrl = "/",
 }: {
   oauth: { github: boolean; google: boolean };
   airGap: boolean;
+  callbackUrl?: string;
 }) {
+  const next = safeCallbackPath(callbackUrl);
   const oauthAvailable = oauth.github || oauth.google;
   const [showEmail, setShowEmail] = useState(!oauthAvailable);
   const [email, setEmail] = useState("demo@topology.local");
@@ -28,14 +42,14 @@ export function LoginForm({
       email,
       password,
       redirect: false,
-      callbackUrl: "/",
+      callbackUrl: next,
     });
     setLoading(false);
     if (res?.error) {
       setError("Invalid email or password");
       return;
     }
-    window.location.href = "/";
+    window.location.href = next;
   }
 
   const supportLine = airGap
@@ -77,7 +91,7 @@ export function LoginForm({
               <Button
                 className="w-full"
                 variant="primary"
-                onPress={() => signIn("github", { callbackUrl: "/" })}
+                onPress={() => signIn("github", { callbackUrl: next })}
               >
                 Continue with GitHub
               </Button>
@@ -86,7 +100,7 @@ export function LoginForm({
               <Button
                 className="w-full"
                 variant="primary"
-                onPress={() => signIn("google", { callbackUrl: "/" })}
+                onPress={() => signIn("google", { callbackUrl: next })}
               >
                 Continue with Google
               </Button>

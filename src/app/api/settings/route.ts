@@ -3,6 +3,7 @@ import { compare, hash } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
+import { isCrossSiteRequest } from "@/auth-session";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 
@@ -57,7 +58,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -84,6 +91,12 @@ export async function PATCH(request: Request) {
   }
 
   if (parsed.data.password) {
+    if (isCrossSiteRequest(request)) {
+      return NextResponse.json(
+        { error: "Cross-site request rejected" },
+        { status: 403 },
+      );
+    }
     if (!user.passwordHash) {
       return NextResponse.json(
         { error: "Password change is only available for credential accounts" },
