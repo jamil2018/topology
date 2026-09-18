@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
+import { dbErrorResponse, readJsonBody } from "@/lib/http-errors";
 import {
   clearRetestFlag,
   createIssueFromResult,
@@ -78,8 +79,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const body = await request.json();
-  const action = body?.action;
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const body = json.body;
+  const action =
+    body && typeof body === "object" && "action" in body
+      ? (body as { action?: unknown }).action
+      : undefined;
+  const workspaceId = access.ctx.project.id;
 
   try {
     if (action === "create") {
@@ -93,6 +100,7 @@ export async function POST(request: Request) {
       const issue = await createIssueFromResult({
         ...parsed.data,
         userId: session.user.id,
+        workspaceId,
       });
       return NextResponse.json({ issue });
     }
@@ -108,6 +116,7 @@ export async function POST(request: Request) {
       const issue = await linkExistingIssue({
         ...parsed.data,
         userId: session.user.id,
+        workspaceId,
       });
       return NextResponse.json({ issue });
     }
@@ -120,7 +129,7 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      const issue = await refreshLinkedIssue(parsed.data.issueId);
+      const issue = await refreshLinkedIssue(parsed.data.issueId, workspaceId);
       return NextResponse.json({ issue });
     }
 
@@ -132,7 +141,13 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      const issue = await clearRetestFlag(parsed.data.issueId);
+      const issue = await clearRetestFlag(parsed.data.issueId, workspaceId);
+      if (!issue) {
+        return NextResponse.json(
+          { error: "Linked issue not found" },
+          { status: 404 },
+        );
+      }
       return NextResponse.json({ issue });
     }
 
@@ -144,13 +159,24 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      const issue = await markIssueClosedLocally(parsed.data.issueId);
+      const issue = await markIssueClosedLocally(
+        parsed.data.issueId,
+        workspaceId,
+      );
       return NextResponse.json({ issue });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Issue action failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    if (err instanceof Error && err.message === "Result not found") {
+      return NextResponse.json({ error: "Result not found" }, { status: 404 });
+    }
+    if (err instanceof Error && err.message === "Linked issue not found") {
+      return NextResponse.json(
+        { error: "Linked issue not found" },
+        { status: 404 },
+      );
+    }
+    return dbErrorResponse(err, "Issue action failed");
   }
 }

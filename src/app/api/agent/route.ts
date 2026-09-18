@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { authenticateApiToken } from "@/lib/api-auth";
+import { dbErrorResponse, isUniqueViolation, readJsonBody } from "@/lib/http-errors";
 import { db } from "@/db";
 import { cases, runResults, runs } from "@/db/schema";
 import {
@@ -10,6 +11,7 @@ import {
   linkExistingIssue,
   whatsPending,
 } from "@/lib/issues";
+import { openTriageForResult } from "@/lib/ci-ingest";
 import {
   immutableMessageFor,
   isRunFrozen,
@@ -64,6 +66,9 @@ export async function GET(request: Request) {
   if (resource === "results") {
     const runId = searchParams.get("runId");
     const status = searchParams.get("status");
+    if (runId && !z.string().uuid().safeParse(runId).success) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
     if (runId) {
       const run = await db.query.runs.findFirst({
         where: and(eq(runs.id, runId), eq(runs.workspaceId, workspaceId)),
@@ -147,8 +152,13 @@ export async function POST(request: Request) {
   }
   const workspaceId = authResult.workspaceId;
 
-  const body = await request.json();
-  const action = body?.action;
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const body = json.body;
+  const action =
+    body && typeof body === "object" && "action" in body
+      ? (body as { action?: unknown }).action
+      : undefined;
 
   try {
     if (action === "create_case") {
@@ -287,6 +297,9 @@ export async function POST(request: Request) {
       if (!updated) {
         return NextResponse.json({ error: "Result not found" }, { status: 404 });
       }
+      if (updated.status === "failed" || updated.status === "blocked") {
+        await openTriageForResult(updated.id);
+      }
       return NextResponse.json({ result: updated });
     }
 
@@ -301,6 +314,7 @@ export async function POST(request: Request) {
       const issue = await createIssueFromResult({
         ...parsed.data,
         userId: authResult.userId,
+        workspaceId,
       });
       return NextResponse.json({ issue });
     }
@@ -316,13 +330,19 @@ export async function POST(request: Request) {
       const issue = await linkExistingIssue({
         ...parsed.data,
         userId: authResult.userId,
+        workspaceId,
       });
       return NextResponse.json({ issue });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Agent API failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    if (err instanceof Error && err.message === "Result not found") {
+      return NextResponse.json({ error: "Result not found" }, { status: 404 });
+    }
+    if (isUniqueViolation(err)) {
+      return NextResponse.json({ error: "Already exists" }, { status: 409 });
+    }
+    return dbErrorResponse(err, "Agent API failed");
   }
 }

@@ -10,13 +10,14 @@ import {
   workspaceMembers,
 } from "@/db/schema";
 import { findActiveRole, getSystemRole } from "@/lib/custom-roles";
-import { inferLegacyRole } from "@/lib/permissions";
+import { dbErrorResponse, readJsonBody } from "@/lib/http-errors";
+import { inferLegacyRole, roleHasAction } from "@/lib/permissions";
 import {
   ctxCanAdmin,
   ctxCanWrite,
   requireProjectAccess,
+  type ActiveProjectContext,
 } from "@/lib/project";
-import { ensureMembership } from "@/lib/workspace";
 
 const inviteSchema = z
   .object({
@@ -27,6 +28,12 @@ const inviteSchema = z
   .refine((v) => Boolean(v.role || v.roleId), {
     message: "role or roleId required",
   });
+
+function canGrantAdmin(ctx: ActiveProjectContext) {
+  const custom = ctx.membership.customRole;
+  if (custom?.isSystem && custom.systemKey === "admin") return true;
+  return ctx.membership.role === "admin" && (!custom || custom.isSystem);
+}
 
 const roleSchema = z
   .object({
@@ -44,7 +51,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await ensureMembership(session.user.id, "admin");
   const access = await requireProjectAccess(session.user.id, { request });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
@@ -97,18 +103,23 @@ export async function GET(request: Request) {
       },
       createdAt: m.createdAt,
     })),
-    invites: invites.map((i) => ({
-      id: i.id,
-      email: i.email,
-      role: i.role,
-      roleId: i.customRoleId,
-      customRole: i.customRole
-        ? { id: i.customRole.id, name: i.customRole.name }
-        : null,
-      token: i.token,
-      expiresAt: i.expiresAt,
-      createdAt: i.createdAt,
-    })),
+    invites: invites.map((i) => {
+      const showToken =
+        roleHasAction(access.ctx.actions, "members.invite") &&
+        (i.role !== "admin" || canGrantAdmin(access.ctx));
+      return {
+        id: i.id,
+        email: i.email,
+        role: i.role,
+        roleId: i.customRoleId,
+        customRole: i.customRole
+          ? { id: i.customRole.id, name: i.customRole.name }
+          : null,
+        ...(showToken ? { token: i.token } : {}),
+        expiresAt: i.expiresAt,
+        createdAt: i.createdAt,
+      };
+    }),
   });
 }
 
@@ -118,7 +129,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await ensureMembership(session.user.id, "admin");
   const access = await requireProjectAccess(session.user.id, {
     request,
     action: "members.invite",
@@ -129,7 +139,9 @@ export async function POST(request: Request) {
 
   const workspace = access.ctx.project;
 
-  const body = await request.json();
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const body = json.body;
   const parsed = inviteSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -154,6 +166,12 @@ export async function POST(request: Request) {
 
   const legacyRole =
     customRole.systemKey ?? inferLegacyRole(customRole.actions);
+  if (legacyRole === "admin" && !canGrantAdmin(access.ctx)) {
+    return NextResponse.json(
+      { error: "Cannot grant the admin role" },
+      { status: 403 },
+    );
+  }
 
   const email = parsed.data.email.toLowerCase();
   const existingUser = await db.query.users.findFirst({
@@ -176,19 +194,26 @@ export async function POST(request: Request) {
 
   const token = randomBytes(24).toString("hex");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  const [invite] = await db
-    .insert(workspaceInvites)
-    .values({
-      workspaceId: workspace.id,
-      email,
-      role: legacyRole,
-      customRoleId: customRole.id,
-      token,
-      invitedById: session.user.id,
-      expiresAt,
-      status: "pending",
-    })
-    .returning();
+  let invite;
+  try {
+    [invite] = await db
+      .insert(workspaceInvites)
+      .values({
+        workspaceId: workspace.id,
+        email,
+        role: legacyRole,
+        customRoleId: customRole.id,
+        token,
+        invitedById: session.user.id,
+        expiresAt,
+        status: "pending",
+      })
+      .returning();
+  } catch (err) {
+    return dbErrorResponse(err, "Invite failed", {
+      uniqueMessage: "An invite for that email already exists",
+    });
+  }
 
   const base =
     process.env.AUTH_URL ?? process.env.TOPOLOGY_URL ?? "http://127.0.0.1:4317";
@@ -214,7 +239,6 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await ensureMembership(session.user.id, "admin");
   const access = await requireProjectAccess(session.user.id, {
     request,
     action: "roles.manage",
@@ -225,7 +249,9 @@ export async function PATCH(request: Request) {
 
   const workspace = access.ctx.project;
 
-  const body = await request.json();
+  const json = await readJsonBody(request);
+  if (!json.ok) return json.response;
+  const body = json.body;
   const parsed = roleSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -247,6 +273,12 @@ export async function PATCH(request: Request) {
 
   const legacyRole =
     customRole.systemKey ?? inferLegacyRole(customRole.actions);
+  if (legacyRole === "admin" && !canGrantAdmin(access.ctx)) {
+    return NextResponse.json(
+      { error: "Cannot grant the admin role" },
+      { status: 403 },
+    );
+  }
 
   if (
     parsed.data.userId === session.user.id &&
