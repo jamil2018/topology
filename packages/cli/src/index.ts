@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  dedupeNormalizedResults,
   mergeShardResults,
   normalizeJUnitCases,
   parseJUnitXml,
@@ -90,7 +91,7 @@ async function api(
 async function loadJUnit(filePath: string): Promise<NormalizedResult[]> {
   const absolute = path.resolve(filePath);
   const raw = await readFile(absolute, "utf8");
-  return normalizeJUnitCases(parseJUnitXml(raw).cases);
+  return dedupeNormalizedResults(normalizeJUnitCases(parseJUnitXml(raw).cases));
 }
 
 async function cmdJunitSubmit(args: string[]) {

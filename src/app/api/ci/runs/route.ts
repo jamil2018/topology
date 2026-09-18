@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { authenticateCiRequest } from "@/lib/ci-auth";
+import { ciFailureResponse } from "@/lib/ci-ingest";
 import { db } from "@/db";
 import { runs } from "@/db/schema";
 import { auth } from "@/auth";
@@ -51,7 +52,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const parsed = createSchema.safeParse(await request.json());
+  let json: unknown;
+  try {
+    json = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const parsed = createSchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },
@@ -59,24 +67,29 @@ export async function POST(request: Request) {
     );
   }
 
-  const [run] = await db
-    .insert(runs)
-    .values({
-      workspaceId: authResult.workspaceId,
-      name: parsed.data.name,
-      kind: "automation",
-      source: parsed.data.source,
-      branch: parsed.data.branch,
-      commitSha: parsed.data.commitSha,
-      environment: parsed.data.environment,
-      status: "in_progress",
-      startedAt: new Date(),
-      shardTotal: parsed.data.shardTotal,
-      shardsReceived: 0,
-      createdById: authResult.userId,
-      externalId: `thread-${Date.now()}`,
-    })
-    .returning();
+  try {
+    const [run] = await db
+      .insert(runs)
+      .values({
+        workspaceId: authResult.workspaceId,
+        name: parsed.data.name,
+        kind: "automation",
+        source: parsed.data.source,
+        branch: parsed.data.branch,
+        commitSha: parsed.data.commitSha,
+        environment: parsed.data.environment,
+        status: "in_progress",
+        startedAt: new Date(),
+        shardTotal: parsed.data.shardTotal,
+        shardsReceived: 0,
+        createdById: authResult.userId,
+        externalId: `thread-${Date.now()}`,
+      })
+      .returning();
 
-  return NextResponse.json({ run }, { status: 201 });
+    return NextResponse.json({ run }, { status: 201 });
+  } catch (err) {
+    const failure = ciFailureResponse(err);
+    return NextResponse.json(failure.body, { status: failure.status });
+  }
 }

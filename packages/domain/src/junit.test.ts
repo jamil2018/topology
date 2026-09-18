@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   externalKeyForCase,
@@ -6,6 +9,11 @@ import {
   parseJUnitXml,
   summarizeResults,
 } from "./junit";
+
+const fixtures = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../fixtures/junit",
+);
 
 const sample = `<?xml version="1.0" encoding="UTF-8"?>
 <testsuites>
@@ -71,6 +79,87 @@ describe("parseJUnitXml", () => {
       status: "failed",
       notes: "kaboom",
     });
+  });
+
+  it("does not treat </testcase> in output or a nested suite as the end of a failure", async () => {
+    const raw = await readFile(path.join(fixtures, "false-green.xml"), "utf8");
+    const normalized = normalizeJUnitCases(parseJUnitXml(raw).cases);
+    const shouldFail = normalized.find((r) => r.externalKey === "auth::should-fail");
+    const kept = normalized.find((r) => r.externalKey === "inner::kept");
+    const sibling = normalized.find((r) => r.externalKey === "outer::sibling");
+
+    expect(shouldFail?.status).toBe("failed");
+    expect(shouldFail?.notes).toContain("assertion failed");
+    expect(kept?.status).toBe("passed");
+    expect(sibling?.status).toBe("failed");
+    expect(sibling?.notes).toContain("must-not-drop");
+    expect(summarizeResults(normalized).passRate).not.toBe(100);
+    expect(summarizeResults(normalized)).toMatchObject({
+      total: 3,
+      passed: 1,
+      failed: 2,
+    });
+  });
+
+  it("ignores comments and CDATA, and does not let skipped hide a failure", () => {
+    const commented = normalizeJUnitCases(
+      parseJUnitXml(`<testsuite>
+        <!-- <testcase classname="ghost" name="commented"><failure message="should-not-ingest"/></testcase> -->
+        <testcase classname="real" name="ok" time="0.1"/>
+      </testsuite>`).cases,
+    );
+    expect(commented.map((r) => r.externalKey)).toEqual(["real::ok"]);
+    expect(commented[0]?.status).toBe("passed");
+
+    const cdata = normalizeJUnitCases(
+      parseJUnitXml(`<testsuite>
+        <testcase classname="real" name="ok" time="0.1">
+          <system-out><![CDATA[</testcase><testcase classname="injected" name="planted"><failure message="planted-failure"/>]]></system-out>
+        </testcase>
+      </testsuite>`).cases,
+    );
+    expect(cdata).toHaveLength(1);
+    expect(cdata[0]?.status).toBe("passed");
+
+    const both = normalizeJUnitCases(
+      parseJUnitXml(`<testsuite>
+        <testcase classname="flaky" name="still" time="0.1">
+          <skipped message="flaky"/>
+          <failure message="still failed"/>
+        </testcase>
+      </testsuite>`).cases,
+    );
+    expect(both[0]).toMatchObject({
+      status: "failed",
+      notes: "still failed",
+    });
+
+    const logFailure = normalizeJUnitCases(
+      parseJUnitXml(`<testsuite>
+        <testcase classname="auth" name="login" time="0.1">
+          <system-out><failure message="false-fail"></system-out>
+        </testcase>
+      </testsuite>`).cases,
+    );
+    expect(logFailure[0]?.status).toBe("passed");
+  });
+
+  it("returns quickly on a pile of unclosed suite tags", () => {
+    const raw = "<testsuite ".repeat(8_000);
+    const started = Date.now();
+    const report = parseJUnitXml(raw);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(report.cases).toEqual([]);
+  });
+
+  it("reads single-quoted attributes", () => {
+    const normalized = normalizeJUnitCases(
+      parseJUnitXml(
+        `<testsuite><testcase classname='AuthSuite' name='login_single' time='0.1'/></testsuite>`,
+      ).cases,
+    );
+    expect(normalized[0]?.externalKey).toBe("AuthSuite::login_single");
+    expect(normalized[0]?.status).toBe("passed");
   });
 
   it("builds external keys from classname/name edges", () => {
