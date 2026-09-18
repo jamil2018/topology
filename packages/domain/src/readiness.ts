@@ -27,7 +27,7 @@ export type ReadinessInputs = {
 };
 
 export type ReadinessResult = {
-  status: "go" | "at_risk" | "no_go";
+  status: "go" | "at_risk" | "no_go" | "unknown";
   score: number;
   passRate: number | null;
   executedPct: number;
@@ -46,6 +46,35 @@ export const DEFAULT_MILESTONE_THRESHOLDS: MilestoneThresholds = {
   requireReadyCases: true,
 };
 
+export type StampedResult = {
+  caseId: string | null;
+  status: string;
+  executedAt: Date | string | null;
+};
+
+/**
+ * Newest timestamped outcome per case. A null `executedAt` is an untested
+ * placeholder and must not outrank a real execution, even if it sorts first.
+ */
+export function latestOutcomeByCase(
+  rows: StampedResult[],
+): Map<string, string> {
+  const best = new Map<string, { status: string; at: number }>();
+  for (const row of rows) {
+    if (!row.caseId || row.executedAt == null) continue;
+    const at =
+      row.executedAt instanceof Date
+        ? row.executedAt.getTime()
+        : new Date(row.executedAt).getTime();
+    if (!Number.isFinite(at)) continue;
+    const prev = best.get(row.caseId);
+    if (!prev || at > prev.at) {
+      best.set(row.caseId, { status: row.status, at });
+    }
+  }
+  return new Map([...best].map(([id, value]) => [id, value.status]));
+}
+
 export function computeMilestoneReadiness(
   input: MilestoneCase[] | ReadinessInputs,
   thresholds: MilestoneThresholds = DEFAULT_MILESTONE_THRESHOLDS,
@@ -56,6 +85,20 @@ export function computeMilestoneReadiness(
     : (input.openBlockerIssues ?? 0);
 
   const active = cases.filter((c) => c.status !== "deprecated");
+  if (active.length === 0) {
+    return {
+      status: "unknown",
+      score: 0,
+      passRate: null,
+      executedPct: 0,
+      openP0Failures: 0,
+      openBlockerIssues,
+      blockedCases: 0,
+      notReadyCases: 0,
+      reasons: ["No cases in scope"],
+    };
+  }
+
   const withResult = active.filter(
     (c) => c.lastResult && c.lastResult !== "untested" && c.lastResult !== "skipped",
   );
@@ -64,10 +107,7 @@ export function computeMilestoneReadiness(
   const executed = passed + failed;
   const passRate =
     executed === 0 ? null : Math.round((passed / executed) * 100);
-  const executedPct =
-    active.length === 0
-      ? 100
-      : Math.round((executed / active.length) * 100);
+  const executedPct = Math.round((executed / active.length) * 100);
 
   const openP0Failures = active.filter(
     (c) => c.priority === "P0" && c.lastResult === "failed",
@@ -120,11 +160,10 @@ export function computeMilestoneReadiness(
     status = "at_risk";
   }
 
-  const readinessPct =
-    active.length === 0
-      ? 100
-      : Math.round(((active.length - notReadyCases) / active.length) * 100);
-  const passComponent = passRate ?? (executed === 0 ? 100 : 0);
+  const readinessPct = Math.round(
+    ((active.length - notReadyCases) / active.length) * 100,
+  );
+  const passComponent = passRate ?? 0;
   const score = Math.round(
     passComponent * 0.5 + executedPct * 0.3 + readinessPct * 0.2,
   );
@@ -156,5 +195,7 @@ export function readinessBadgeLabel(
       return "At risk";
     case "no_go":
       return "No-Go";
+    case "unknown":
+      return "No data";
   }
 }

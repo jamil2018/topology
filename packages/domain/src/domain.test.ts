@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { computeQualityPulse } from "./pulse";
-import { computeMilestoneReadiness, readinessBadgeLabel } from "./readiness";
+import {
+  computeMilestoneReadiness,
+  latestOutcomeByCase,
+  readinessBadgeLabel,
+} from "./readiness";
 import { buildTriageQueue, failureFingerprint } from "./triage";
 import { detectFlakeSignal, flakeBadgeLabel } from "./flake";
 
@@ -65,6 +69,43 @@ describe("computeQualityPulse", () => {
   });
 });
 
+
+describe("latestOutcomeByCase", () => {
+  it("does not let a null executedAt outrank a timestamped pass", () => {
+    const latest = latestOutcomeByCase([
+      { caseId: "top-1", status: "untested", executedAt: null },
+      {
+        caseId: "top-1",
+        status: "passed",
+        executedAt: "2026-09-13T10:04:36.505Z",
+      },
+    ]);
+    expect(latest.get("top-1")).toBe("passed");
+  });
+
+  it("keeps the newest timestamp when several real results exist", () => {
+    const latest = latestOutcomeByCase([
+      {
+        caseId: "top-1",
+        status: "failed",
+        executedAt: "2026-09-12T10:04:36.505Z",
+      },
+      {
+        caseId: "top-1",
+        status: "passed",
+        executedAt: "2026-09-13T10:04:36.505Z",
+      },
+    ]);
+    expect(latest.get("top-1")).toBe("passed");
+  });
+
+  it("ignores cases that only have untested placeholders", () => {
+    const latest = latestOutcomeByCase([
+      { caseId: "top-2", status: "untested", executedAt: null },
+    ]);
+    expect(latest.has("top-2")).toBe(false);
+  });
+});
 
 describe("computeMilestoneReadiness", () => {
   it("returns Go when gates pass", () => {
@@ -169,6 +210,31 @@ describe("computeMilestoneReadiness", () => {
     );
     expect(result.status).toBe("no_go");
     expect(result.openBlockerIssues).toBe(2);
+  });
+
+  it("does not treat an empty suite as Go", () => {
+    const result = computeMilestoneReadiness([]);
+    expect(result.status).toBe("unknown");
+    expect(readinessBadgeLabel(result.status)).toBe("No data");
+    expect(result.score).not.toBe(100);
+    expect(result.executedPct).not.toBe(100);
+    expect(result.passRate).toBeNull();
+    expect(result.reasons[0]).toMatch(/no cases/i);
+  });
+
+  it("does not score a missing pass rate as a perfect 100", () => {
+    const result = computeMilestoneReadiness([
+      {
+        key: "TOP-2",
+        priority: "P1",
+        status: "ready",
+        lastResult: null,
+      },
+    ]);
+    expect(result.passRate).toBeNull();
+    expect(result.executedPct).toBe(0);
+    expect(result.status).not.toBe("go");
+    expect(result.score).toBeLessThan(50);
   });
 });
 

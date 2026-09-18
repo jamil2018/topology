@@ -1,17 +1,44 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { cases, folders } from "@/db/schema";
 import { parseCasesCsv, serializeCasesCsv } from "@/lib/csv";
-import { requireProjectAccess } from "@/lib/project";
+import {
+  getMembershipForProject,
+  readPreferredProjectId,
+  requireProjectAccess,
+} from "@/lib/project";
 import { listCases } from "@/lib/queries";
+
+/**
+ * `requireProjectAccess` uses `pickAccessibleProject` in `src/lib/project.ts`,
+ * which is shared and falls back to the first accessible project when the
+ * preferred id is not a membership. This route rejects that case itself so
+ * import/export cannot silently read or write another project.
+ */
+async function rejectUnknownProject(userId: string, request: Request) {
+  const preferred = await readPreferredProjectId(request);
+  if (!preferred) return null;
+  if (!z.string().uuid().safeParse(preferred).success) {
+    return NextResponse.json({ error: "Invalid project id" }, { status: 400 });
+  }
+  const membership = await getMembershipForProject(userId, preferred);
+  if (!membership?.workspace) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+  return null;
+}
 
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const unknownProject = await rejectUnknownProject(session.user.id, request);
+  if (unknownProject) return unknownProject;
 
   const access = await requireProjectAccess(session.user.id, { request });
   if (!access.ok) {
@@ -48,6 +75,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const unknownProject = await rejectUnknownProject(session.user.id, request);
+  if (unknownProject) return unknownProject;
+
   const access = await requireProjectAccess(session.user.id, {
     request,
     write: true,
@@ -61,14 +91,27 @@ export async function POST(request: Request) {
   let raw = "";
 
   if (contentType.includes("multipart/form-data")) {
-    const form = await request.formData();
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      return NextResponse.json(
+        { error: "Upload exceeds the size limit or could not be parsed" },
+        { status: 413 },
+      );
+    }
     const file = form.get("file");
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "file is required" }, { status: 400 });
     }
     raw = await file.text();
   } else {
-    const body = await request.json();
+    let body: { csv?: unknown };
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
     raw = typeof body?.csv === "string" ? body.csv : "";
   }
 

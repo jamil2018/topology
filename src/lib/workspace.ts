@@ -35,9 +35,16 @@ export async function ensureDefaultWorkspace() {
   return created;
 }
 
+/**
+ * Load the caller's default-workspace membership and backfill a missing
+ * system role id. Does not insert a membership unless `create` is set.
+ * Signed-in users with no row stay non-members (403 at the access gate).
+ * `create` is only for explicit bootstrap (seed, tests) — never a request path.
+ */
 export async function ensureMembership(
   userId: string,
   role: WorkspaceRole = "admin",
+  options?: { create?: boolean },
 ) {
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
@@ -67,6 +74,10 @@ export async function ensureMembership(
       return { workspace, membership: updated ?? existing };
     }
     return { workspace, membership: existing };
+  }
+
+  if (!options?.create) {
+    return { workspace, membership: null };
   }
 
   const systemRole = await getSystemRole(workspace.id, role);

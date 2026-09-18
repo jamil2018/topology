@@ -1,6 +1,7 @@
 export {
   parseJUnitXml,
   normalizeJUnitCases,
+  dedupeNormalizedResults,
   mergeShardResults,
   summarizeResults,
   externalKeyForCase,
@@ -18,7 +19,9 @@ export {
 
 export {
   computeMilestoneReadiness,
+  latestOutcomeByCase,
   readinessBadgeLabel,
+  type StampedResult,
   DEFAULT_MILESTONE_THRESHOLDS,
   type MilestoneCase,
   type MilestoneThresholds,

@@ -4,13 +4,11 @@ import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { MilestonesWorkspace } from "@/components/milestones-workspace";
 import { resolveActiveProject } from "@/lib/project";
 import { listMilestonesWithReadiness } from "@/lib/queries";
-import { ensureMembership } from "@/lib/workspace";
 
 export default async function MilestonesPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
   if (!ctx) return <NoProjectEmptyState />;
 
