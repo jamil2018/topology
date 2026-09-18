@@ -23,7 +23,6 @@ import {
   canAdmin,
   canWrite,
   ensureDefaultWorkspace,
-  ensureMembership,
 } from "@/lib/workspace";
 
 /** Cookie + header key for the active Topology project (workspace). */
@@ -64,27 +63,46 @@ function toSummary(
   };
 }
 
+const PROJECT_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isProjectId(id: string) {
+  return PROJECT_ID_RE.test(id);
+}
+
 /**
- * Prefer a project the user can already access. An unknown or foreign id
- * falls back to the first accessible project — never a project they do not
- * belong to.
+ * Prefer a project the user can already access.
+ * A missing preference uses the first accessible project.
+ * An explicit id that is not in `projects` (unknown, malformed, archived, or
+ * not a membership) does not fall back — callers must treat undefined as a
+ * rejected scope. Never returns a project the user does not belong to.
  */
 export function pickAccessibleProject<T extends { id: string }>(
   projects: T[],
   preferredId?: string | null,
 ): T | undefined {
   if (projects.length === 0) return undefined;
-  if (preferredId) {
-    const match = projects.find((project) => project.id === preferredId);
-    if (match) return match;
+  const preferred = preferredId?.trim();
+  if (preferred) {
+    return projects.find((project) => project.id === preferred);
   }
   return projects[0];
 }
 
 /** Resolve effective actions for a membership (custom role or legacy enum). */
 export function membershipActions(membership: MembershipWithRole): Action[] {
-  if (membership.customRole?.actions?.length) {
-    return normalizeActions(membership.customRole.actions);
+  const custom = membership.customRole;
+  // System roles share one row per project. Edited actions would elevate
+  // every holder, so the catalog for systemKey is the source of truth.
+  if (
+    custom?.isSystem &&
+    custom.systemKey &&
+    custom.systemKey in SYSTEM_ROLE_ACTIONS
+  ) {
+    return [...SYSTEM_ROLE_ACTIONS[custom.systemKey]];
+  }
+  if (custom?.actions?.length) {
+    return normalizeActions(custom.actions);
   }
   return [...SYSTEM_ROLE_ACTIONS[membership.role]];
 }
@@ -94,10 +112,21 @@ export function ctxHasAction(ctx: ActiveProjectContext, action: Action) {
 }
 
 export function ctxCanWrite(ctx: ActiveProjectContext) {
+  const custom = ctx.membership.customRole;
+  if (custom && !custom.isSystem) {
+    return actionsAllowWrite(ctx.actions);
+  }
   return actionsAllowWrite(ctx.actions) || canWrite(ctx.membership.role);
 }
 
 export function ctxCanAdmin(ctx: ActiveProjectContext) {
+  const custom = ctx.membership.customRole;
+  if (custom?.isSystem && custom.systemKey) {
+    return canAdmin(custom.systemKey);
+  }
+  if (custom && !custom.isSystem) {
+    return actionsAllowAdmin(ctx.actions);
+  }
   return actionsAllowAdmin(ctx.actions) || canAdmin(ctx.membership.role);
 }
 
@@ -162,7 +191,8 @@ function withActions(
 
 /**
  * Resolve the active project for a user.
- * Preference order: preferredId → first accessible → ensure default.
+ * Missing preference → first accessible project. An explicit id that is not
+ * an accessible membership returns null. Does not create memberships.
  */
 export async function resolveActiveProject(
   userId: string,
@@ -173,11 +203,7 @@ export async function resolveActiveProject(
   const preferred =
     preferredId !== undefined ? preferredId : await readPreferredProjectId();
 
-  let projects = await listUserProjects(userId);
-  if (projects.length === 0) {
-    await ensureMembership(userId, "admin");
-    projects = await listUserProjects(userId);
-  }
+  const projects = await listUserProjects(userId);
   if (projects.length === 0) return null;
 
   const pick = pickAccessibleProject(projects, preferred);
@@ -225,10 +251,13 @@ export async function requireProjectAccess(
   | { ok: true; ctx: ActiveProjectContext }
   | { ok: false; status: number; error: string }
 > {
-  const preferred =
+  const preferredRaw =
     options?.preferredId ?? (await readPreferredProjectId(options?.request));
+  const preferred = preferredRaw?.trim() ? preferredRaw.trim() : null;
 
-  if (options?.allowArchived && preferred) {
+  // A non-uuid must not be queried (Postgres would 500) and must not fall
+  // back to another project. `resolveActiveProject` rejects it below.
+  if (options?.allowArchived && preferred && isProjectId(preferred)) {
     const membership = await getMembershipForProject(userId, preferred);
     if (membership?.workspace) {
       const projects = await listUserProjects(userId, {
@@ -335,7 +364,10 @@ export async function userIsProjectAdminAnywhere(userId: string) {
   });
   return rows.some((r) => {
     if (!r.workspace || r.workspace.archivedAt != null) return false;
-    const actions = membershipActions(r);
-    return actionsAllowAdmin(actions) || r.role === "admin";
+    if (r.customRole?.isSystem && r.customRole.systemKey === "admin") return true;
+    if (r.role === "admin" && (!r.customRole || r.customRole.isSystem)) {
+      return true;
+    }
+    return roleHasAction(membershipActions(r), "project.manage");
   });
 }
