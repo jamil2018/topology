@@ -37,7 +37,9 @@ async function seed() {
           })
           .returning();
 
-  const { workspace } = await ensureMembership(user.id, "admin");
+  const { workspace } = await ensureMembership(user.id, "admin", {
+    create: true,
+  });
   const workspaceId = workspace.id;
 
   const demoToken =

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="false-green" tests="1" failures="1">
+    <testcase classname="auth" name="should-fail" time="0.2">
+      <system-out>snapshot contains </testcase> before the assertion</system-out>
+      <failure message="assertion failed">expected pass</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="nested" tests="2" failures="1">
+    <testsuite name="inner" tests="1">
+      <testcase classname="inner" name="kept" time="0.1"/>
+    </testsuite>
+    <testcase classname="outer" name="sibling" time="0.1">
+      <failure message="must-not-drop"/>
+    </testcase>
+  </testsuite>
+</testsuites>
