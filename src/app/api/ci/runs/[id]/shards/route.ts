@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { mergeShardResults, summarizeResults } from "@topology/domain";
 import { authenticateCiRequest } from "@/lib/ci-auth";
-import {
-  loadShardResults,
-  storeShardPayload,
-  upsertRunResultsFromNormalized,
-} from "@/lib/ci-ingest";
+import { ciFailureResponse, submitRunShard } from "@/lib/ci-ingest";
 import { db } from "@/db";
 import { runs } from "@/db/schema";
 import {
@@ -16,8 +11,16 @@ import {
   runImmutableResponse,
 } from "@/lib/run-immutability-http";
 
+const durationMs = z
+  .number()
+  .int()
+  .min(-2_147_483_648)
+  .max(2_147_483_647)
+  .optional()
+  .default(0);
+
 const bodySchema = z.object({
-  shardIndex: z.number().int().min(1),
+  shardIndex: z.number().int().min(1).max(256),
   results: z
     .array(
       z.object({
@@ -26,7 +29,7 @@ const bodySchema = z.object({
         name: z.string().optional().default(""),
         status: z.enum(["passed", "failed", "skipped", "blocked", "untested"]),
         notes: z.string().optional().default(""),
-        durationMs: z.number().optional().default(0),
+        durationMs,
       }),
     )
     .min(1),
@@ -44,17 +47,25 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const { id } = await params;
+  if (!z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ error: "Invalid run id" }, { status: 400 });
+  }
+
   const run = await db.query.runs.findFirst({
     where: and(eq(runs.id, id), eq(runs.workspaceId, authResult.workspaceId)),
   });
   if (!run) {
     return NextResponse.json({ error: "Run not found" }, { status: 404 });
   }
-  if (isRunFrozen(run.status)) {
-    return runImmutableResponse(immutableMessageFor(run.status));
+
+  let json: unknown;
+  try {
+    json = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const parsed = bodySchema.safeParse(await request.json());
+  const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },
@@ -62,35 +73,36 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
-  await storeShardPayload(id, parsed.data.shardIndex, parsed.data.results);
+  if (isRunFrozen(run.status)) {
+    return runImmutableResponse(immutableMessageFor(run.status));
+  }
+  if (parsed.data.shardIndex > run.shardTotal) {
+    return NextResponse.json(
+      { error: "shardIndex must be between 1 and shardTotal" },
+      { status: 400 },
+    );
+  }
 
-  const shards = await loadShardResults(id);
-  const merged = mergeShardResults(shards);
+  try {
+    const ingested = await submitRunShard({
+      runId: id,
+      workspaceId: authResult.workspaceId,
+      userId: authResult.userId,
+      shardIndex: parsed.data.shardIndex,
+      results: parsed.data.results,
+    });
 
-  await upsertRunResultsFromNormalized(
-    id,
-    merged,
-    authResult.userId,
-    authResult.workspaceId,
-  );
-
-  const [updated] = await db
-    .update(runs)
-    .set({
-      shardsReceived: shards.length,
-      status: "in_progress",
-      updatedAt: new Date(),
-    })
-    .where(eq(runs.id, id))
-    .returning();
-
-  return NextResponse.json({
-    run: updated,
-    shard: {
-      index: parsed.data.shardIndex,
-      received: shards.length,
-      total: run.shardTotal,
-    },
-    summary: summarizeResults(merged),
-  });
+    return NextResponse.json({
+      run: ingested.run,
+      shard: {
+        index: parsed.data.shardIndex,
+        received: ingested.received,
+        total: ingested.run.shardTotal,
+      },
+      summary: ingested.summary,
+    });
+  } catch (err) {
+    const failure = ciFailureResponse(err);
+    return NextResponse.json(failure.body, { status: failure.status });
+  }
 }

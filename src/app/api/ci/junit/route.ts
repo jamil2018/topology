@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { summarizeResults } from "@topology/domain";
 import { authenticateCiRequest } from "@/lib/ci-auth";
 import {
+  ciFailureResponse,
   openTriageForFailures,
-  upsertRunResultsFromNormalized,
+  submitJunitResults,
 } from "@/lib/ci-ingest";
-import { db } from "@/db";
-import { runs } from "@/db/schema";
-import {
-  immutableMessageFor,
-  isRunFrozen,
-  runImmutableResponse,
-} from "@/lib/run-immutability-http";
+
+const durationMs = z
+  .number()
+  .int()
+  .min(-2_147_483_648)
+  .max(2_147_483_647)
+  .optional()
+  .default(0);
 
 const resultSchema = z.object({
   externalKey: z.string().min(1),
@@ -21,7 +21,7 @@ const resultSchema = z.object({
   name: z.string().optional().default(""),
   status: z.enum(["passed", "failed", "skipped", "blocked", "untested"]),
   notes: z.string().optional().default(""),
-  durationMs: z.number().optional().default(0),
+  durationMs,
 });
 
 const bodySchema = z.object({
@@ -42,7 +42,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const json = await request.json();
+  let json: unknown;
+  try {
+    json = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(
@@ -51,75 +57,43 @@ export async function POST(request: Request) {
     );
   }
 
-  let runId = parsed.data.runId;
-  let run;
-
-  if (runId) {
-    run = await db.query.runs.findFirst({
-      where: and(
-        eq(runs.id, runId),
-        eq(runs.workspaceId, authResult.workspaceId),
-      ),
+  try {
+    const ingested = await submitJunitResults({
+      workspaceId: authResult.workspaceId,
+      userId: authResult.userId,
+      runId: parsed.data.runId,
+      name:
+        parsed.data.name ?? `JUnit submit ${new Date().toISOString()}`,
+      source: parsed.data.source,
+      branch: parsed.data.branch,
+      commitSha: parsed.data.commitSha,
+      results: parsed.data.results,
     });
-    if (!run) {
-      return NextResponse.json({ error: "Run not found" }, { status: 404 });
+
+    try {
+      await openTriageForFailures(ingested.runId);
+    } catch {
+      // The run is already committed. Do not surface a later triage error as SQL.
     }
-    if (isRunFrozen(run.status)) {
-      return runImmutableResponse(immutableMessageFor(run.status));
+
+    const { buildRunCompletedPayload, dispatchWebhook } = await import(
+      "@/lib/webhooks"
+    );
+    const data = await buildRunCompletedPayload(ingested.runId);
+    if (data) {
+      void dispatchWebhook(
+        "run.completed",
+        data,
+        authResult.workspaceId,
+      ).catch(() => {});
     }
-  } else {
-    const [created] = await db
-      .insert(runs)
-      .values({
-        workspaceId: authResult.workspaceId,
-        name:
-          parsed.data.name ??
-          `JUnit submit ${new Date().toISOString()}`,
-        kind: "automation",
-        source: parsed.data.source,
-        branch: parsed.data.branch,
-        commitSha: parsed.data.commitSha,
-        status: "in_progress",
-        environment: "ci",
-        startedAt: new Date(),
-        createdById: authResult.userId,
-        shardTotal: 1,
-        shardsReceived: 1,
-      })
-      .returning();
-    run = created;
-    runId = created.id;
+
+    return NextResponse.json({
+      run: { id: ingested.runId, name: ingested.runName },
+      summary: ingested.summary,
+    });
+  } catch (err) {
+    const failure = ciFailureResponse(err);
+    return NextResponse.json(failure.body, { status: failure.status });
   }
-
-  await upsertRunResultsFromNormalized(
-    runId!,
-    parsed.data.results,
-    authResult.userId,
-    authResult.workspaceId,
-  );
-
-  await db
-    .update(runs)
-    .set({
-      status: "completed",
-      completedAt: new Date(),
-      updatedAt: new Date(),
-      shardsReceived: 1,
-    })
-    .where(eq(runs.id, runId!));
-
-  await openTriageForFailures(runId!);
-
-  const { buildRunCompletedPayload, dispatchWebhook } = await import(
-    "@/lib/webhooks"
-  );
-  const data = await buildRunCompletedPayload(runId!);
-  if (data) {
-    void dispatchWebhook("run.completed", data, authResult.workspaceId);
-  }
-
-  return NextResponse.json({
-    run: { id: runId, name: run.name },
-    summary: summarizeResults(parsed.data.results),
-  });
 }
