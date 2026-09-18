@@ -4,7 +4,6 @@ import { auth } from "@/auth";
 import { SettingsWorkspace } from "@/components/settings-workspace";
 import { SettingsPageSkeleton } from "@/components/skeletons";
 import { resolveSettingsSection } from "@/lib/settings-sections";
-import { ensureMembership } from "@/lib/workspace";
 
 export default async function SettingsPage({
   searchParams,
@@ -13,8 +12,6 @@ export default async function SettingsPage({
 }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
-
-  await ensureMembership(session.user.id);
 
   const params = await searchParams;
   const initialSection = resolveSettingsSection(params.section).page;

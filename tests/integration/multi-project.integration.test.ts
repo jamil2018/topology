@@ -114,7 +114,9 @@ describe.skipIf(!hasDb)("multi-project isolation (integration)", () => {
       })
       .returning();
 
-    const { workspace } = await ensureMembership(adminUser.id, "admin");
+    const { workspace } = await ensureMembership(adminUser.id, "admin", {
+      create: true,
+    });
     await db.insert(workspaceMembers).values({
       workspaceId: workspace.id,
       userId: memberUser.id,
