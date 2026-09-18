@@ -213,13 +213,14 @@ export function actionsAllowAdmin(actions: readonly string[] | null | undefined)
 }
 
 /**
- * Map a custom action set back onto the coarse enum for columns that still
- * store workspace_role (members/invites) during the transition.
+ * Map a custom action set onto the coarse enum stored on members and invites.
+ * Custom roles are never persisted as admin. That enum is ORed into write and
+ * admin gates, so a partial set such as `members.invite` must not become admin.
+ * System roles keep their `systemKey` and do not use this helper.
  */
 export function inferLegacyRole(
   actions: readonly string[] | null | undefined,
 ): WorkspaceRole {
-  if (actionsAllowAdmin(actions)) return "admin";
   if (actionsAllowWrite(actions)) return "member";
   return "viewer";
 }

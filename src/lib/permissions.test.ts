@@ -67,9 +67,11 @@ describe("roleHasAction allow/deny", () => {
     expect(actionsAllowAdmin(SYSTEM_ROLE_ACTIONS.member)).toBe(false);
     expect(actionsAllowWrite(SYSTEM_ROLE_ACTIONS.viewer)).toBe(false);
     expect(actionsAllowAdmin(SYSTEM_ROLE_ACTIONS.admin)).toBe(true);
-    expect(inferLegacyRole(SYSTEM_ROLE_ACTIONS.admin)).toBe("admin");
+    expect(inferLegacyRole(SYSTEM_ROLE_ACTIONS.admin)).toBe("member");
     expect(inferLegacyRole(SYSTEM_ROLE_ACTIONS.member)).toBe("member");
     expect(inferLegacyRole(SYSTEM_ROLE_ACTIONS.viewer)).toBe("viewer");
-    expect(inferLegacyRole(["cases.view", "roles.manage"])).toBe("admin");
+    expect(inferLegacyRole(["cases.view", "roles.manage"])).toBe("viewer");
+    expect(inferLegacyRole(["members.invite"])).toBe("viewer");
+    expect(inferLegacyRole(["cases.create", "project.manage"])).toBe("member");
   });
 });
