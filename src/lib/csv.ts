@@ -18,15 +18,31 @@ export const csvCaseRowSchema = z.object({
 
 export type CsvCaseRow = z.infer<typeof csvCaseRowSchema>;
 
-function splitCsvLine(line: string): string[] {
-  const cells: string[] = [];
+/**
+ * Parse records without splitting on newlines first. A quoted field may
+ * contain CR/LF; those bytes stay in the field so a continuation line is
+ * not a new case.
+ */
+function parseCsvRecords(raw: string): string[][] {
+  const text = raw.replace(/^\uFEFF/, "");
+  const records: string[][] = [];
+  let row: string[] = [];
   let current = "";
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
+  const pushRow = () => {
+    row.push(current);
+    const cells = row.map((cell) => cell.trim());
+    row = [];
+    current = "";
+    if (cells.length === 1 && cells[0] === "") return;
+    records.push(cells);
+  };
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
     if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
+      if (inQuotes && text[i + 1] === '"') {
         current += '"';
         i += 1;
       } else {
@@ -34,15 +50,21 @@ function splitCsvLine(line: string): string[] {
       }
       continue;
     }
-    if (ch === "," && !inQuotes) {
-      cells.push(current);
+    if (!inQuotes && (ch === "\n" || ch === "\r")) {
+      if (ch === "\r" && text[i + 1] === "\n") i += 1;
+      pushRow();
+      continue;
+    }
+    if (!inQuotes && ch === ",") {
+      row.push(current);
       current = "";
       continue;
     }
     current += ch;
   }
-  cells.push(current);
-  return cells.map((c) => c.trim());
+
+  if (current.length > 0 || row.length > 0) pushRow();
+  return records;
 }
 
 function normalizeHeader(header: string): string {
@@ -70,22 +92,18 @@ export function parseCasesCsv(raw: string): {
   rows: CsvCaseRow[];
   errors: string[];
 } {
-  const lines = raw
-    .replace(/^\uFEFF/, "")
-    .split(/\r?\n/)
-    .map((l) => l.trimEnd())
-    .filter((l) => l.length > 0);
+  const records = parseCsvRecords(raw);
 
-  if (lines.length < 2) {
+  if (records.length < 2) {
     return { rows: [], errors: ["CSV must include a header and at least one row"] };
   }
 
-  const headers = splitCsvLine(lines[0]).map(normalizeHeader);
+  const headers = records[0].map(normalizeHeader);
   const rows: CsvCaseRow[] = [];
   const errors: string[] = [];
 
-  for (let i = 1; i < lines.length; i += 1) {
-    const cells = splitCsvLine(lines[i]);
+  for (let i = 1; i < records.length; i += 1) {
+    const cells = records[i];
     const record: Record<string, string> = {};
     headers.forEach((header, idx) => {
       record[header] = cells[idx] ?? "";
@@ -129,9 +147,16 @@ export function serializeCasesCsv(
     "tags",
   ];
 
+  // Spreadsheets execute a cell that starts with these, even when quoted.
+  // A leading apostrophe is a text marker; quoting alone is not.
+  const FORMULA_START = /^[=+\-@]/;
   const escape = (value: string) => {
-    if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-    return value;
+    const formula = FORMULA_START.test(value.trim());
+    const safe = formula ? `'${value}` : value;
+    if (formula || /[",\r\n]/.test(safe)) {
+      return `"${safe.replace(/"/g, '""')}"`;
+    }
+    return safe;
   };
 
   const lines = [header.join(",")];
