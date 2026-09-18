@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { folders } from "@/db/schema";
 import { wouldCreateFolderCycle } from "@/lib/folder-tree";
+import { isLockFailure } from "@/lib/pg-error";
 import { requireProjectAccess } from "@/lib/project";
 
 const updateFolderSchema = z
@@ -58,73 +59,100 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Folder not found" }, { status: 404 });
   }
 
-  const name = parsed.data.name ?? existing.name;
-  const parentId =
-    parsed.data.parentId !== undefined
-      ? parsed.data.parentId
-      : (existing.parentId ?? null);
+  try {
+    // Lock every folder in the project (id order) and re-check the cycle on
+    // that snapshot. Interleaved A.parent=B / B.parent=A both pass an unlocked
+    // check; the second waits, sees the first write, and is rejected.
+    const outcome = await db.transaction(async (tx) => {
+      const locked = await tx
+        .select({
+          id: folders.id,
+          name: folders.name,
+          parentId: folders.parentId,
+        })
+        .from(folders)
+        .where(eq(folders.workspaceId, workspaceId))
+        .orderBy(folders.id)
+        .for("update");
 
-  if (parentId) {
-    const parent = await db.query.folders.findFirst({
-      where: and(
-        eq(folders.id, parentId),
-        eq(folders.workspaceId, workspaceId),
-      ),
+      const moving = locked.find((folder) => folder.id === id);
+      if (!moving) return { kind: "missing" as const };
+
+      const name = parsed.data.name ?? moving.name;
+      const parentId =
+        parsed.data.parentId !== undefined
+          ? parsed.data.parentId
+          : (moving.parentId ?? null);
+
+      if (parentId) {
+        const parent = locked.find((folder) => folder.id === parentId);
+        if (!parent) return { kind: "parent-missing" as const };
+        if (
+          wouldCreateFolderCycle(
+            locked.map((folder) => ({
+              id: folder.id,
+              name: folder.name,
+              parentId: folder.parentId ?? null,
+            })),
+            id,
+            parentId,
+          )
+        ) {
+          return { kind: "cycle" as const };
+        }
+      }
+
+      const clash = await tx
+        .select({ id: folders.id })
+        .from(folders)
+        .where(
+          and(
+            eq(folders.workspaceId, workspaceId),
+            ne(folders.id, id),
+            sql`lower(${folders.name}) = ${name.toLowerCase()}`,
+            parentId ? eq(folders.parentId, parentId) : isNull(folders.parentId),
+          ),
+        )
+        .limit(1);
+      if (clash.length > 0) return { kind: "clash" as const };
+
+      const [updated] = await tx
+        .update(folders)
+        .set({ name, parentId, updatedAt: new Date() })
+        .where(and(eq(folders.id, id), eq(folders.workspaceId, workspaceId)))
+        .returning();
+      return { kind: "ok" as const, folder: updated };
     });
-    if (!parent) {
-      return NextResponse.json({ error: "Parent folder not found" }, { status: 404 });
+
+    if (outcome.kind === "missing") {
+      return NextResponse.json({ error: "Folder not found" }, { status: 404 });
     }
-    const allFolders = await db.query.folders.findMany({
-      where: eq(folders.workspaceId, workspaceId),
-      columns: { id: true, name: true, parentId: true },
-    });
-    if (
-      wouldCreateFolderCycle(
-        allFolders.map((f) => ({
-          id: f.id,
-          name: f.name,
-          parentId: f.parentId ?? null,
-        })),
-        id,
-        parentId,
-      )
-    ) {
+    if (outcome.kind === "parent-missing") {
+      return NextResponse.json(
+        { error: "Parent folder not found" },
+        { status: 404 },
+      );
+    }
+    if (outcome.kind === "cycle") {
       return NextResponse.json(
         { error: "Cannot move a folder into itself or a descendant" },
         { status: 400 },
       );
     }
-  }
-
-  const clash = await db
-    .select({ id: folders.id })
-    .from(folders)
-    .where(
-      and(
-        eq(folders.workspaceId, workspaceId),
-        ne(folders.id, id),
-        sql`lower(${folders.name}) = ${name.toLowerCase()}`,
-        parentId ? eq(folders.parentId, parentId) : isNull(folders.parentId),
-      ),
-    )
-    .limit(1);
-
-  if (clash.length > 0) {
-    return NextResponse.json(
-      { error: "A folder with this name already exists" },
-      { status: 409 },
-    );
-  }
-
-  try {
-    const [updated] = await db
-      .update(folders)
-      .set({ name, parentId, updatedAt: new Date() })
-      .where(and(eq(folders.id, id), eq(folders.workspaceId, workspaceId)))
-      .returning();
-
-    return NextResponse.json({ folder: updated });
-  } catch {
+    if (outcome.kind === "clash") {
+      return NextResponse.json(
+        { error: "A folder with this name already exists" },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ folder: outcome.folder });
+  } catch (err) {
+    if (isLockFailure(err)) {
+      return NextResponse.json(
+        { error: "Could not lock folders to apply this move. Retry." },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
       { error: "Failed to update folder" },
       { status: 500 },

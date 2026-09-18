@@ -12,6 +12,10 @@ const createSchema = z.object({
   body: z.string().trim().min(1).max(4000),
 });
 
+function invalidResultId(id: string) {
+  return !z.string().uuid().safeParse(id).success;
+}
+
 async function loadScopedResult(resultId: string, workspaceId: string) {
   const result = await db.query.runResults.findFirst({
     where: eq(runResults.id, resultId),
@@ -33,6 +37,9 @@ export async function GET(request: Request, { params }: Params) {
   }
 
   const { id: resultId } = await params;
+  if (invalidResultId(resultId)) {
+    return NextResponse.json({ error: "Invalid result id" }, { status: 400 });
+  }
   const result = await loadScopedResult(resultId, access.ctx.project.id);
   if (!result) {
     return NextResponse.json({ error: "Result not found" }, { status: 404 });
@@ -71,12 +78,22 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const { id: resultId } = await params;
+  if (invalidResultId(resultId)) {
+    return NextResponse.json({ error: "Invalid result id" }, { status: 400 });
+  }
   const result = await loadScopedResult(resultId, access.ctx.project.id);
   if (!result) {
     return NextResponse.json({ error: "Result not found" }, { status: 404 });
   }
 
-  const parsed = createSchema.safeParse(await request.json());
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },

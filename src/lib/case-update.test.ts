@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCasePatch, updateCaseSchema } from "./case-update";
+import { buildCasePatch, unionTags, updateCaseSchema } from "./case-update";
 
 const base = {
   title: "Login happy path",
@@ -70,5 +70,18 @@ describe("buildCasePatch", () => {
       status: "draft",
     });
     expect(result.fields).toEqual([]);
+  });
+});
+
+describe("unionTags", () => {
+  it("keeps existing tags and appends both sides of a concurrent add", () => {
+    expect(unionTags(["base"], ["alpha"])).toEqual(["base", "alpha"]);
+    expect(unionTags(["base", "alpha"], ["beta"])).toEqual([
+      "base",
+      "alpha",
+      "beta",
+    ]);
+    expect(unionTags(["base", "alpha"], ["alpha"])).toEqual(["base", "alpha"]);
+    expect(unionTags(null, ["alpha"])).toEqual(["alpha"]);
   });
 });

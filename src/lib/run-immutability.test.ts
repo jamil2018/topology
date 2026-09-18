@@ -5,6 +5,7 @@ import {
   RUN_IMMUTABLE_MESSAGE,
   immutableMessageFor,
   isRunFrozen,
+  pendingResultCount,
 } from "./run-immutability";
 import { runImmutableResponse } from "./run-immutability-http";
 
@@ -20,6 +21,16 @@ describe("isRunFrozen", () => {
 
   it("lists completed and aborted as frozen statuses", () => {
     expect([...FROZEN_RUN_STATUSES]).toEqual(["completed", "aborted"]);
+  });
+});
+
+describe("pendingResultCount", () => {
+  it("counts untested and unknown statuses as pending", () => {
+    expect(pendingResultCount([])).toBe(0);
+    expect(
+      pendingResultCount(["passed", "failed", "blocked", "skipped"]),
+    ).toBe(0);
+    expect(pendingResultCount(["untested", "passed", "pending"])).toBe(2);
   });
 });
 
