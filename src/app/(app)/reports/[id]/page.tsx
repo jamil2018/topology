@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { ReportDetail } from "@/components/report-detail";
 import { resolveActiveProject } from "@/lib/project";
-import { getRunReport } from "@/lib/queries";
+import { getRunReport, isUuid } from "@/lib/queries";
 import { ensureMembership } from "@/lib/workspace";
 
 type Props = { params: Promise<{ id: string }> };
@@ -17,6 +17,7 @@ export default async function ReportDetailPage({ params }: Props) {
   if (!ctx) return <NoProjectEmptyState />;
 
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   const report = await getRunReport(ctx.project.id, id);
   if (!report) notFound();
 
