@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { LoginForm, safeCallbackPath } from "./login-form";
+import { LoginForm } from "./login-form";
+import { safeCallbackPath } from "@/lib/safe-callback-path";
 
 vi.mock("next-auth/react", () => ({
   signIn: vi.fn(),

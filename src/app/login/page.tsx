@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { LoginForm, safeCallbackPath } from "@/components/login-form";
+import { LoginForm } from "@/components/login-form";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { safeCallbackPath } from "@/lib/safe-callback-path";
 
 export default async function LoginPage({
   searchParams,
