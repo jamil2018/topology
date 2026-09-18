@@ -2,6 +2,7 @@ import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   buildTriageQueue,
   computeMilestoneReadiness,
+  latestOutcomeByCase,
   computeQualityPulse,
   detectFlakeSignal,
   readinessBadgeLabel,
@@ -20,6 +21,7 @@ import {
   triageItems,
 } from "@/db/schema";
 import { listRetestQueue } from "@/lib/issues";
+import { parseCaseViewConfig, parseRunViewConfig } from "@/lib/saved-views";
 import {
   buildReportKpis,
   buildResultTimeline,
@@ -285,11 +287,22 @@ export async function listSavedViews(
     id: row.id,
     name: row.name,
     entity: row.entity,
-    config: JSON.parse(row.configJson) as unknown,
+    config:
+      row.entity === "cases"
+        ? parseCaseViewConfig(row.configJson)
+        : parseRunViewConfig(row.configJson),
   }));
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(id: string): boolean {
+  return UUID_RE.test(id);
+}
+
 export async function getRunWithResults(workspaceId: string, runId: string) {
+  if (!isUuid(runId)) return null;
   return db.query.runs.findFirst({
     where: and(eq(runs.id, runId), eq(runs.workspaceId, workspaceId)),
     with: {
@@ -337,7 +350,7 @@ export function runProgress(
 }
 
 export async function getActiveMilestoneReadiness(workspaceId: string) {
-  const milestone = await db.query.milestones.findFirst({
+  const rows = await db.query.milestones.findMany({
     where: and(
       eq(milestones.workspaceId, workspaceId),
       eq(milestones.status, "active"),
@@ -345,11 +358,13 @@ export async function getActiveMilestoneReadiness(workspaceId: string) {
     orderBy: [desc(milestones.updatedAt)],
   });
 
-  if (!milestone) {
-    return null;
+  for (const milestone of rows) {
+    const view = await computeReadinessForMilestone(milestone);
+    if (view.readiness.status === "unknown") continue;
+    return view;
   }
 
-  return computeReadinessForMilestone(milestone);
+  return null;
 }
 
 export async function listMilestonesWithReadiness(workspaceId: string) {
@@ -378,24 +393,29 @@ async function computeReadinessForMilestone(
         where: eq(cases.workspaceId, milestone.workspaceId),
       });
 
-  const latestByCase = new Map<string, string>();
-  const recentResults = await db
-    .select({
-      caseId: runResults.caseId,
-      status: runResults.status,
-      executedAt: runResults.executedAt,
-    })
-    .from(runResults)
-    .innerJoin(runs, eq(runResults.runId, runs.id))
-    .where(eq(runs.workspaceId, milestone.workspaceId))
-    .orderBy(desc(runResults.executedAt))
-    .limit(1000);
-  for (const result of recentResults) {
-    if (!result.caseId) continue;
-    if (!latestByCase.has(result.caseId)) {
-      latestByCase.set(result.caseId, result.status);
-    }
-  }
+  const caseIds = suiteCases.map((c) => c.id);
+  const recentResults =
+    caseIds.length === 0
+      ? []
+      : await db
+          .selectDistinctOn([runResults.caseId], {
+            caseId: runResults.caseId,
+            status: runResults.status,
+            executedAt: runResults.executedAt,
+          })
+          .from(runResults)
+          .innerJoin(runs, eq(runResults.runId, runs.id))
+          .where(
+            and(
+              eq(runs.workspaceId, milestone.workspaceId),
+              inArray(runResults.caseId, caseIds),
+            ),
+          )
+          .orderBy(
+            runResults.caseId,
+            sql`${runResults.executedAt} desc nulls last`,
+          );
+  const latestByCase = latestOutcomeByCase(recentResults);
 
   const milestoneCases: MilestoneCase[] = suiteCases.map((c) => ({
     key: c.key,
@@ -404,7 +424,7 @@ async function computeReadinessForMilestone(
     lastResult: (latestByCase.get(c.id) as MilestoneCase["lastResult"]) ?? null,
   }));
 
-  const caseIds = new Set(suiteCases.map((c) => c.id));
+  const caseIdSet = new Set(caseIds);
   const openBlockers = await db.query.linkedIssues.findMany({
     where: and(
       eq(linkedIssues.workspaceId, milestone.workspaceId),
@@ -413,7 +433,7 @@ async function computeReadinessForMilestone(
   });
   const openBlockerIssues = openBlockers.filter(
     (i) =>
-      (i.caseId && caseIds.has(i.caseId)) ||
+      (i.caseId && caseIdSet.has(i.caseId)) ||
       // Treat open issues without a case as blockers for project-wide milestones
       (!milestone.folderId && !i.caseId),
   ).length;
@@ -655,6 +675,7 @@ export async function listRunReports(workspaceId: string) {
 
 /** Full report for a single completed run (manual or CI). */
 export async function getRunReport(workspaceId: string, runId: string) {
+  if (!isUuid(runId)) return null;
   const run = await db.query.runs.findFirst({
     where: and(
       eq(runs.id, runId),

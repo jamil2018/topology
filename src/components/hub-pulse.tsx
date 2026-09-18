@@ -58,7 +58,7 @@ type MilestoneView = {
     minExecutedPct?: number;
   };
   readiness: {
-    status: "go" | "at_risk" | "no_go";
+    status: "go" | "at_risk" | "no_go" | "unknown";
     score: number;
     passRate: number | null;
     executedPct?: number;

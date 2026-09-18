@@ -7,6 +7,8 @@ import { savedViews } from "@/db/schema";
 import { requireProjectAccess } from "@/lib/project";
 import {
   caseViewConfigSchema,
+  parseCaseViewConfig,
+  parseRunViewConfig,
   runViewConfigSchema,
 } from "@/lib/saved-views";
 
@@ -65,7 +67,10 @@ export async function GET(request: Request) {
       id: row.id,
       name: row.name,
       entity: row.entity,
-      config: JSON.parse(row.configJson) as unknown,
+      config:
+        row.entity === "cases"
+          ? parseCaseViewConfig(row.configJson)
+          : parseRunViewConfig(row.configJson),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     })),

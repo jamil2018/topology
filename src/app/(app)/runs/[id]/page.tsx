@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { RunExecutor } from "@/components/run-executor";
-import { getRunWithResults } from "@/lib/queries";
+import { getRunWithResults, isUuid } from "@/lib/queries";
 import { resolveActiveProject } from "@/lib/project";
 import { ensureMembership } from "@/lib/workspace";
 import { db } from "@/db";
@@ -26,6 +26,7 @@ export default async function RunDetailPage({ params }: Props) {
   });
 
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   const run = await getRunWithResults(workspaceId, id);
   if (!run) notFound();
 

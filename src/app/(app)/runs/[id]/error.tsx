@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-export default function ReportsError({
+export default function RunDetailError({
   reset,
 }: {
   error: Error & { digest?: string };
@@ -14,10 +14,10 @@ export default function ReportsError({
       className="space-y-3 rounded-md border border-red-500/30 bg-red-500/10 p-4"
     >
       <h2 className="text-sm font-semibold text-red-700 dark:text-red-300">
-        Reports failed to load
+        This run couldn’t load
       </h2>
       <p className="text-xs text-[color:var(--topo-muted)]">
-        Unexpected error while loading run reports.
+        Unexpected error while loading this run.
       </p>
       <div className="flex flex-wrap gap-2">
         <button

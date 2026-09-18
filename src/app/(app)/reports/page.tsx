@@ -18,8 +18,8 @@ export default async function ReportsPage() {
   let loadError: string | null = null;
   try {
     reports = await listRunReports(ctx.project.id);
-  } catch (err) {
-    loadError = err instanceof Error ? err.message : "Unknown error";
+  } catch {
+    loadError = "Could not load reports.";
   }
 
   return (
