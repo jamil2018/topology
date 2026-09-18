@@ -7,6 +7,7 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { authConfig } from "@/auth.config";
+import { credentialStamp, jwtMatchesCredentials } from "@/auth-session";
 import { db } from "@/db";
 import { accounts, sessions, users, verificationTokens } from "@/db/schema";
 
@@ -71,6 +72,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
   callbacks: {
     ...authConfig.callbacks,
+    async jwt({ token, user, trigger }) {
+      if (user?.id) token.sub = user.id;
+      const userId = token.sub;
+      if (!userId) return null;
+
+      const row = await db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { passwordHash: true },
+      });
+
+      // Stamp only when Auth.js issues the token. Refreshing this claim on
+      // later reads would re-authorize a cookie after the password changed.
+      if (trigger === "signIn" || trigger === "signUp") {
+        token.credentialsVersion = credentialStamp(row?.passwordHash);
+        return token;
+      }
+
+      if (
+        !row ||
+        !jwtMatchesCredentials(token.credentialsVersion, row.passwordHash)
+      ) {
+        return null;
+      }
+      return token;
+    },
     async session({ session, token }) {
       if (!session.user || !token.sub) return session;
 

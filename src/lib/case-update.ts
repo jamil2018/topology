@@ -49,6 +49,14 @@ export type CasePatchResult = {
   fields: string[];
 };
 
+/** Preserve existing tag order, then append new tags. Duplicates are dropped. */
+export function unionTags(
+  existing: readonly string[] | null | undefined,
+  additions: readonly string[],
+): string[] {
+  return Array.from(new Set([...(existing ?? []), ...additions]));
+}
+
 function tagsEqual(a: string[], b: string[]) {
   return (
     JSON.stringify([...a].sort()) === JSON.stringify([...b].sort())

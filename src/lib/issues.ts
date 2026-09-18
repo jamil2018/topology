@@ -202,7 +202,9 @@ export function refreshKeepsLocalFields(input: {
   const fabricated =
     input.remoteId !== input.localRemoteId ||
     input.remoteId.startsWith("mock-linked-");
-  const contested = input.siblingTitles.some((title) => title !== input.localTitle);
+  const contested = input.siblingTitles.some(
+    (title) => title !== input.localTitle,
+  );
   const keepTitle = fabricated || contested;
   const keepStatus =
     keepTitle ||
