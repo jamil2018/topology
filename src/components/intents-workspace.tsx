@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, TextArea } from "@heroui/react";
+import { EntityCollabPanel } from "./entity-collab-panel";
 import { IntentRepresentationPanel } from "./intent-representation";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
@@ -291,6 +292,12 @@ export function IntentsWorkspace({
                   </ul>
                 )}
               </div>
+
+              <EntityCollabPanel
+                key={`collab-${active.id}`}
+                entityType="intent"
+                entityId={active.id}
+              />
             </div>
           ) : null}
         </section>
