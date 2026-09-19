@@ -1,9 +1,86 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
+import {
+  type HubPersona,
+  parseHubPersona,
+} from "@/lib/hub-persona";
+
+export type { HubPersona };
+export { parseHubPersona };
+
+const PERSONAS: Array<{ id: HubPersona; label: string }> = [
+  { id: "em", label: "EM" },
+  { id: "qa", label: "QA" },
+  { id: "dev", label: "Dev" },
+  { id: "pm", label: "PM" },
+];
+
+/** Client-only Hub section visibility by persona (Phase 8). */
+const PERSONA_SECTIONS: Record<
+  HubPersona,
+  {
+    casesLink: boolean;
+    quality: boolean;
+    milestone: boolean;
+    casesReady: boolean;
+    activeRuns: boolean;
+    coverage: boolean;
+    gaps: boolean;
+    recentRuns: boolean;
+    retest: boolean;
+  }
+> = {
+  em: {
+    casesLink: false,
+    quality: true,
+    milestone: true,
+    casesReady: false,
+    activeRuns: false,
+    coverage: true,
+    gaps: true,
+    recentRuns: false,
+    retest: false,
+  },
+  qa: {
+    casesLink: true,
+    quality: true,
+    milestone: true,
+    casesReady: true,
+    activeRuns: true,
+    coverage: false,
+    gaps: false,
+    recentRuns: true,
+    retest: true,
+  },
+  dev: {
+    casesLink: false,
+    quality: true,
+    milestone: false,
+    casesReady: false,
+    activeRuns: true,
+    coverage: true,
+    gaps: true,
+    recentRuns: true,
+    retest: false,
+  },
+  pm: {
+    casesLink: false,
+    quality: false,
+    milestone: true,
+    casesReady: false,
+    activeRuns: false,
+    coverage: true,
+    gaps: true,
+    recentRuns: false,
+    retest: false,
+  },
+};
 
 type RunPulse = {
   id: string;
@@ -49,6 +126,27 @@ type Pulse = {
     runId: string | null;
     resultId: string | null;
   }>;
+  coverage?: {
+    requirement: { covered: number; total: number; pct: number | null };
+    risk: { covered: number; total: number; pct: number | null };
+    automation: { covered: number; total: number; pct: number | null };
+    execution: { covered: number; total: number; pct: number | null };
+    gaps: Array<{
+      kind: string;
+      id: string;
+      key: string;
+      title: string;
+    }>;
+    freshnessSummary?: { fresh: number; unverified: number };
+  };
+  journeyCoverage?: { covered: number; total: number; pct: number | null };
+};
+
+type ReleaseOption = {
+  id: string;
+  name: string;
+  gitTag: string | null;
+  sha: string | null;
 };
 
 type MilestoneView = {
@@ -88,6 +186,56 @@ function WidgetCard({
       {children}
     </motion.section>
   );
+}
+
+function CoverageBar({
+  label,
+  dimension,
+  href,
+}: {
+  label: string;
+  dimension: { covered: number; total: number; pct: number | null };
+  href: string;
+}) {
+  const na = dimension.pct == null;
+  return (
+    <Link href={href} className="block rounded-sm transition hover:bg-[color:var(--topo-chip)]/40">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          {label}
+        </span>
+        <span className="font-mono text-xs tabular-nums text-[color:var(--topo-ink)]">
+          {na ? "n/a" : `${dimension.pct}%`}
+          {!na ? (
+            <span className="text-[color:var(--topo-muted)]">
+              {" "}
+              ({dimension.covered}/{dimension.total})
+            </span>
+          ) : dimension.total === 0 ? (
+            <span className="text-[color:var(--topo-muted)]"> · none yet</span>
+          ) : null}
+        </span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[color:var(--topo-surface)]">
+        <div
+          className="h-full rounded-full bg-[color:var(--topo-accent)]"
+          style={{ width: na ? "0%" : `${dimension.pct}%` }}
+        />
+      </div>
+    </Link>
+  );
+}
+
+function gapLabel(kind: string) {
+  if (kind === "uncovered_requirement") return "Uncovered requirement";
+  if (kind === "manual_only_p0") return "P0 manual-only";
+  if (kind === "never_executed") return "Never executed";
+  return kind;
+}
+
+function gapHref(kind: string, id: string) {
+  if (kind === "uncovered_requirement") return `/requirements`;
+  return `/intents?intent=${id}`;
 }
 
 function WidgetLabel({ children }: { children: React.ReactNode }) {
@@ -196,9 +344,15 @@ function PassFailGraph({
 export function HubPulse({
   pulse,
   milestone,
+  releases = [],
+  selectedReleaseId = null,
+  initialPersona = null,
 }: {
   pulse: Pulse;
   milestone: MilestoneView;
+  releases?: ReleaseOption[];
+  selectedReleaseId?: string | null;
+  initialPersona?: HubPersona | null;
 }) {
   const health = pulse.quality?.health ?? "healthy";
   const reduceMotion = useReducedMotion();
@@ -206,6 +360,35 @@ export function HubPulse({
   const trend = pulse.runTrend ?? pulse.recentRuns;
   const passRateLabel =
     pulse.results.passRate == null ? "n/a" : `${pulse.results.passRate}%`;
+  const selectedRelease =
+    releases.find((r) => r.id === selectedReleaseId) ?? releases[0] ?? null;
+  const router = useRouter();
+  const [persona, setPersonaState] = useState<HubPersona | null>(initialPersona);
+  const sections = persona
+    ? PERSONA_SECTIONS[persona]
+    : {
+        casesLink: true,
+        quality: true,
+        milestone: true,
+        casesReady: true,
+        activeRuns: true,
+        coverage: true,
+        gaps: true,
+        recentRuns: true,
+        retest: true,
+      };
+
+  function setPersona(next: HubPersona | null) {
+    setPersonaState(next);
+    const params = new URLSearchParams(
+      typeof window !== "undefined" ? window.location.search : "",
+    );
+    if (next) params.set("persona", next);
+    else params.delete("persona");
+    if (selectedRelease?.id) params.set("release", selectedRelease.id);
+    const qs = params.toString();
+    router.replace(qs ? `/?${qs}` : "/", { scroll: false });
+  }
 
   return (
     <div className="space-y-5">
@@ -228,15 +411,85 @@ export function HubPulse({
                 {milestone.badge}
               </StatusChip>
             ) : null}
+            {selectedRelease ? (
+              <StatusChip mono>{selectedRelease.name}</StatusChip>
+            ) : null}
+            {persona ? <StatusChip mono>persona {persona}</StatusChip> : null}
           </>
         }
         actions={
           <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-0.5">
+              <button
+                type="button"
+                onClick={() => setPersona(null)}
+                className={`rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wide transition ${
+                  persona == null
+                    ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
+                    : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+                }`}
+              >
+                All
+              </button>
+              {PERSONAS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setPersona(p.id)}
+                  className={`rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wide transition ${
+                    persona === p.id
+                      ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
+                      : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {releases.length > 0 ? (
+              <label className="flex items-center gap-1.5 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-2 py-1 text-xs text-[color:var(--topo-muted)]">
+                Release
+                <select
+                  className="bg-transparent font-medium text-[color:var(--topo-ink)] outline-none"
+                  aria-label="Release switcher"
+                  value={selectedRelease?.id ?? ""}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const params = new URLSearchParams();
+                    if (id) params.set("release", id);
+                    if (persona) params.set("persona", persona);
+                    const qs = params.toString();
+                    router.push(qs ? `/?${qs}` : "/");
+                  }}
+                >
+                  {releases.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <Link
+                href="/releases"
+                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+              >
+                Releases
+              </Link>
+            )}
+            {sections.casesLink ? (
+              <Link
+                href="/cases"
+                className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
+              >
+                Cases
+              </Link>
+            ) : null}
             <Link
-              href="/cases"
-              className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
+              href="/intents"
+              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
             >
-              Cases
+              Intents
             </Link>
             <Link
               href="/settings?section=integrations#ci"
@@ -281,6 +534,7 @@ export function HubPulse({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
         {/* 1. Highest: quality + pass rate + pass/fail graph */}
+        {sections.quality ? (
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.02}
@@ -318,8 +572,10 @@ export function HubPulse({
             <PassFailGraph trend={trend} flakeSuspects={flakeSuspects} />
           </div>
         </WidgetCard>
+        ) : null}
 
         {/* 2. Milestone readiness gate */}
+        {sections.milestone ? (
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.05}
@@ -375,8 +631,10 @@ export function HubPulse({
             </>
           )}
         </WidgetCard>
+        ) : null}
 
         {/* 3. Cases ready / blocked */}
+        {sections.casesReady ? (
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.08}
@@ -403,8 +661,10 @@ export function HubPulse({
             </div>
           ) : null}
         </WidgetCard>
+        ) : null}
 
         {/* 4. Active runs */}
+        {sections.activeRuns ? (
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.1}
@@ -418,12 +678,133 @@ export function HubPulse({
             {pulse.runs.automation ?? 0} CI · {pulse.runs.completed} done
           </p>
         </WidgetCard>
+        ) : null}
 
-        {/* 5. Recent runs — wide span */}
+        {/* Coverage bars */}
+        {sections.coverage ? (
+        <WidgetCard
+          reduceMotion={reduceMotion}
+          delay={0.11}
+          className="flex flex-col gap-3 p-4 sm:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-3"
+        >
+          <div className="flex items-baseline justify-between gap-2">
+            <WidgetLabel>Graph coverage</WidgetLabel>
+            <div className="flex gap-2">
+              {selectedRelease ? (
+                <Link
+                  href={`/releases/${selectedRelease.id}`}
+                  className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
+                >
+                  {selectedRelease.name}
+                </Link>
+              ) : null}
+              <Link
+                href="/journeys"
+                className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
+              >
+                Journeys
+              </Link>
+            </div>
+          </div>
+          {pulse.coverage ? (
+            <div className="space-y-3">
+              <CoverageBar
+                label="Requirements"
+                dimension={pulse.coverage.requirement}
+                href="/requirements"
+              />
+              <CoverageBar
+                label="Risks"
+                dimension={pulse.coverage.risk}
+                href="/requirements"
+              />
+              <CoverageBar
+                label="Journeys"
+                dimension={
+                  pulse.journeyCoverage ?? { covered: 0, total: 0, pct: null }
+                }
+                href="/journeys"
+              />
+              <CoverageBar
+                label="Automation"
+                dimension={pulse.coverage.automation}
+                href="/intents"
+              />
+              <CoverageBar
+                label="Execution"
+                dimension={pulse.coverage.execution}
+                href="/intents"
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-[color:var(--topo-muted)]">
+              Coverage unavailable until intents are backfilled.
+            </p>
+          )}
+        </WidgetCard>
+        ) : null}
+
+        {/* Potential gaps */}
+        {sections.gaps ? (
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.12}
-          className="overflow-hidden sm:col-span-2 lg:col-span-4 lg:col-start-1 lg:row-start-3"
+          className="overflow-hidden sm:col-span-2 lg:col-span-3 lg:col-start-4 lg:row-start-3"
+        >
+          <div className="flex items-baseline justify-between gap-2 border-b border-[color:var(--topo-line)] px-4 py-3">
+            <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+              Potential gaps
+            </h2>
+            <StatusChip
+              tone={(pulse.coverage?.gaps.length ?? 0) > 0 ? "warning" : "success"}
+              mono
+            >
+              {pulse.coverage?.gaps.length ?? 0}
+            </StatusChip>
+          </div>
+          {(pulse.coverage?.gaps.length ?? 0) === 0 ? (
+            <p className="px-4 py-6 text-sm text-[color:var(--topo-muted)]">
+              No coverage gaps derived from the graph.
+              {pulse.coverage?.requirement.total === 0
+                ? " Add requirements to unlock requirement coverage."
+                : ""}
+            </p>
+          ) : (
+            <ul className="divide-y divide-[color:var(--topo-line)]">
+              {(pulse.coverage?.gaps ?? []).slice(0, 8).map((gap) => (
+                <li key={`${gap.kind}-${gap.id}`}>
+                  <Link
+                    href={gapHref(gap.kind, gap.id)}
+                    className="flex items-start justify-between gap-2 px-4 py-2.5 text-sm transition-colors hover:bg-[color:var(--topo-chip)]/60"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-[color:var(--topo-ink)]">
+                        <span className="font-mono text-xs text-[color:var(--topo-accent)]">
+                          {gap.key}
+                        </span>
+                        <span className="text-[color:var(--topo-muted)]">
+                          {" "}
+                          · {gap.title}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+                        {gapLabel(gap.kind)}
+                      </p>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </WidgetCard>
+        ) : null}
+
+        {/* 5. Recent runs — wide span */}
+        {sections.recentRuns ? (
+        <WidgetCard
+          reduceMotion={reduceMotion}
+          delay={0.13}
+          className="overflow-hidden sm:col-span-2 lg:col-span-4 lg:col-start-1 lg:row-start-4"
         >
           <div className="flex items-baseline justify-between gap-2 border-b border-[color:var(--topo-line)] px-4 py-3">
             <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
@@ -482,12 +863,14 @@ export function HubPulse({
             </ul>
           )}
         </WidgetCard>
+        ) : null}
 
         {/* 6. Retest queue */}
+        {sections.retest ? (
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.14}
-          className="overflow-hidden sm:col-span-2 lg:col-span-2 lg:col-start-5 lg:row-start-3"
+          className="overflow-hidden sm:col-span-2 lg:col-span-2 lg:col-start-5 lg:row-start-4"
         >
           <div className="flex items-baseline justify-between gap-2 border-b border-[color:var(--topo-line)] px-4 py-3">
             <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
@@ -547,6 +930,7 @@ export function HubPulse({
             </ul>
           )}
         </WidgetCard>
+        ) : null}
       </div>
     </div>
   );
