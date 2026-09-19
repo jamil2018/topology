@@ -5,7 +5,12 @@ import {
   latestOutcomeByCase,
   readinessBadgeLabel,
 } from "./readiness";
-import { buildTriageQueue, failureFingerprint } from "./triage";
+import {
+  buildTriageQueue,
+  clusterTriageBySignature,
+  failureFingerprint,
+} from "./triage";
+import { failureSignatureHash } from "./failure-signature";
 import { detectFlakeSignal, flakeBadgeLabel } from "./flake";
 
 describe("computeQualityPulse", () => {
@@ -325,6 +330,113 @@ describe("buildTriageQueue", () => {
         notes: "a".repeat(200),
       }),
     ).toHaveLength("x::".length + 120);
+  });
+
+  it("clusters queue items by signatureId without changing fingerprints", () => {
+    const queue = buildTriageQueue([
+      {
+        id: "1",
+        caseKey: "TOP-1",
+        caseTitle: "A",
+        priority: "P0",
+        runId: "r1",
+        runName: "ci",
+        notes: "boom",
+        failedAt: new Date().toISOString(),
+        occurrenceCount: 1,
+        signatureId: "sig-a",
+      },
+      {
+        id: "2",
+        caseKey: "TOP-2",
+        caseTitle: "B",
+        priority: "P1",
+        runId: "r1",
+        runName: "ci",
+        notes: "other",
+        failedAt: new Date().toISOString(),
+        occurrenceCount: 1,
+        signatureId: "sig-a",
+      },
+      {
+        id: "3",
+        caseKey: "TOP-3",
+        caseTitle: "C",
+        priority: "P2",
+        runId: "r1",
+        runName: "ci",
+        notes: "solo",
+        failedAt: new Date().toISOString(),
+        occurrenceCount: 1,
+      },
+    ]);
+
+    expect(queue[0]?.fingerprint).toBe(
+      failureFingerprint({ caseKey: "TOP-1", notes: "boom" }),
+    );
+
+    const clusters = clusterTriageBySignature(queue);
+    expect(clusters).toHaveLength(2);
+    expect(clusters[0]?.signatureId).toBe("sig-a");
+    expect(clusters[0]?.count).toBe(2);
+    expect(clusters[0]?.representative.caseKey).toBe("TOP-1");
+    expect(clusters[1]?.count).toBe(1);
+    expect(clusters[1]?.signatureId).toMatch(/^fp:/);
+  });
+
+  it("clusters on-the-fly signature hashes from normalized notes", () => {
+    const shared = failureSignatureHash({
+      notes: "Timeout after 3000ms\nstack",
+    });
+    const other = failureSignatureHash({ notes: "Element not found" });
+    expect(shared).toBe(
+      failureSignatureHash({ notes: "Timeout after 9000ms" }),
+    );
+
+    const queue = buildTriageQueue([
+      {
+        id: "1",
+        caseKey: "TOP-1",
+        caseTitle: "Checkout A",
+        priority: "P1",
+        runId: "r1",
+        runName: "ci",
+        notes: "Timeout after 3000ms\nstack",
+        failedAt: new Date().toISOString(),
+        occurrenceCount: 1,
+        signatureId: shared,
+      },
+      {
+        id: "2",
+        caseKey: "TOP-2",
+        caseTitle: "Checkout B",
+        priority: "P2",
+        runId: "r1",
+        runName: "ci",
+        notes: "Timeout after 9000ms",
+        failedAt: new Date().toISOString(),
+        occurrenceCount: 1,
+        signatureId: shared,
+      },
+      {
+        id: "3",
+        caseKey: "TOP-3",
+        caseTitle: "Other",
+        priority: "P2",
+        runId: "r1",
+        runName: "ci",
+        notes: "Element not found",
+        failedAt: new Date().toISOString(),
+        occurrenceCount: 1,
+        signatureId: other,
+      },
+    ]);
+
+    const clusters = clusterTriageBySignature(queue);
+    expect(clusters).toHaveLength(2);
+    expect(clusters[0]?.count).toBe(2);
+    expect(clusters[0]?.signatureId).toBe(shared);
+    expect(clusters[1]?.signatureId).toBe(other);
   });
 });
 

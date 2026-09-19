@@ -2,11 +2,14 @@ import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   buildTriageQueue,
   computeMilestoneReadiness,
+  computeReliability,
+  failureSignatureHash,
   latestOutcomeByCase,
   computeQualityPulse,
   detectFlakeSignal,
   readinessBadgeLabel,
   type MilestoneCase,
+  type ReliabilityHistoryPoint,
   type TriageFailure,
 } from "@topology/domain";
 import { db } from "@/db";
@@ -21,7 +24,12 @@ import {
   triageItems,
 } from "@/db/schema";
 import { listRetestQueue } from "@/lib/issues";
-import { parseCaseViewConfig, parseRunViewConfig } from "@/lib/saved-views";
+import { getWorkspaceCoverage } from "@/lib/quality-graph";
+import {
+  parseCaseViewConfig,
+  parseIntentViewConfig,
+  parseRunViewConfig,
+} from "@/lib/saved-views";
 import {
   buildReportKpis,
   buildResultTimeline,
@@ -116,6 +124,7 @@ export async function getHubPulse(workspaceId: string) {
       ),
     );
   const retestQueue = await listRetestQueue(workspaceId);
+  const coverage = await getWorkspaceCoverage(workspaceId);
 
   const passed = Number(resultStats?.passed ?? 0);
   const failed = Number(resultStats?.failed ?? 0);
@@ -187,6 +196,7 @@ export async function getHubPulse(workspaceId: string) {
     triageOpen: Number(triageStats?.open ?? 0),
     flakeSuspects,
     openLinkedIssues: Number(openLinked[0]?.value ?? 0),
+    coverage,
     retestQueue: retestQueue.slice(0, 8).map((i) => ({
       id: i.id,
       key: i.remoteKey,
@@ -198,7 +208,7 @@ export async function getHubPulse(workspaceId: string) {
   };
 }
 
-async function countFlakeSuspects(workspaceId: string): Promise<number> {
+export async function countFlakeSuspects(workspaceId: string): Promise<number> {
   const recent = await db
     .select({
       caseId: runResults.caseId,
@@ -252,13 +262,13 @@ export async function listCases(
         eq(cases.workspaceId, workspaceId),
         eq(cases.folderId, folderId),
       ),
-      with: { folder: true },
+      with: { folder: true, intent: true },
       orderBy: [desc(cases.updatedAt)],
     });
   }
   return db.query.cases.findMany({
     where: eq(cases.workspaceId, workspaceId),
-    with: { folder: true },
+    with: { folder: true, intent: true },
     orderBy: [desc(cases.updatedAt)],
   });
 }
@@ -272,7 +282,7 @@ export async function listFolders(workspaceId: string) {
 
 export async function listSavedViews(
   workspaceId: string,
-  entity: "cases" | "runs",
+  entity: "cases" | "runs" | "intents",
   userId: string,
 ) {
   const rows = await db.query.savedViews.findMany({
@@ -290,7 +300,9 @@ export async function listSavedViews(
     config:
       row.entity === "cases"
         ? parseCaseViewConfig(row.configJson)
-        : parseRunViewConfig(row.configJson),
+        : row.entity === "intents"
+          ? parseIntentViewConfig(row.configJson)
+          : parseRunViewConfig(row.configJson),
   }));
 }
 
@@ -488,6 +500,9 @@ export async function getTriageQueue(workspaceId: string) {
     notes: item.notes,
     failedAt: item.lastSeenAt,
     occurrenceCount: item.occurrenceCount,
+    // Prefer persisted Phase 4 signature UUID; fall back to hash of notes.
+    signatureId:
+      item.signatureId ?? failureSignatureHash({ notes: item.notes }),
   }));
 
   const flakeHints = await getFlakeHintsForCaseIds(
@@ -583,6 +598,93 @@ export async function getFlakeHints(workspaceId: string, limit = 20) {
   }
 
   return hints.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+function parseEnvironmentFields(
+  environmentJson: string | null | undefined,
+): { browser?: string; os?: string } {
+  if (!environmentJson?.trim()) return {};
+  try {
+    const raw = JSON.parse(environmentJson) as {
+      browser?: unknown;
+      os?: unknown;
+    };
+    return {
+      browser: typeof raw.browser === "string" ? raw.browser : undefined,
+      os: typeof raw.os === "string" ? raw.os : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Lightweight browser reliability hint for recent automation results.
+ * Returns null when there is not enough env-tagged history to compare.
+ */
+export async function getAutomationReliabilityHint(workspaceId: string) {
+  const automationRuns = await db.query.runs.findMany({
+    where: and(
+      eq(runs.workspaceId, workspaceId),
+      eq(runs.kind, "automation"),
+    ),
+    columns: { id: true },
+    orderBy: [desc(runs.updatedAt)],
+    limit: 40,
+  });
+  if (automationRuns.length === 0) return null;
+
+  const results = await db.query.runResults.findMany({
+    where: inArray(
+      runResults.runId,
+      automationRuns.map((r) => r.id),
+    ),
+    columns: {
+      status: true,
+      executedAt: true,
+      createdAt: true,
+      environmentJson: true,
+    },
+    orderBy: [desc(runResults.executedAt)],
+    limit: 200,
+  });
+
+  const history: ReliabilityHistoryPoint[] = [];
+  for (const row of results) {
+    if (row.status !== "passed" && row.status !== "failed") continue;
+    const env = parseEnvironmentFields(row.environmentJson);
+    if (!env.browser && !env.os) continue;
+    history.push({
+      status: row.status,
+      at: row.executedAt ?? row.createdAt,
+      browser: env.browser ?? null,
+      os: env.os ?? null,
+    });
+  }
+
+  const report = computeReliability(history);
+  if (report.overall.sampleCount < 3 || report.byBrowser.length < 2) {
+    return null;
+  }
+
+  const slices = [...report.byBrowser].sort(
+    (a, b) => (b.passRate ?? 0) - (a.passRate ?? 0),
+  );
+  const best = slices[0];
+  const worst = slices[slices.length - 1];
+  if (!best || !worst || best.key === worst.key) return null;
+  if (best.passRate === null || worst.passRate === null) return null;
+
+  return {
+    overallPassRate: report.overall.passRate,
+    sampleCount: report.overall.sampleCount,
+    byBrowser: slices.map((s) => ({
+      browser: s.key,
+      passRate: s.passRate,
+      sampleCount: s.sampleCount,
+    })),
+    summary: `${best.key} ${best.passRate}% vs ${worst.key} ${worst.passRate}% (${report.overall.sampleCount} env-tagged results)`,
+  };
 }
 
 /** One report per completed run — list summaries for the Reports surface. */

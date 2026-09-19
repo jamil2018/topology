@@ -7,7 +7,7 @@ import { BookmarkSimpleIcon, FloppyDiskIcon, TrashIcon } from "@phosphor-icons/r
 export type SavedViewRow = {
   id: string;
   name: string;
-  entity: "cases" | "runs";
+  entity: "cases" | "runs" | "intents";
   config: unknown;
 };
 
@@ -28,7 +28,7 @@ export function SavedViewsBar({
   buildConfig,
   className,
 }: {
-  entity: "cases" | "runs";
+  entity: "cases" | "runs" | "intents";
   initialViews?: SavedViewRow[];
   activeViewId: string | null;
   onApply: (view: SavedViewRow) => void;

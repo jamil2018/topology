@@ -171,6 +171,62 @@ describe.skipIf(!hasDb)("Issues + agent MCP surface (integration)", () => {
     expect(Array.isArray(data.cases)).toBe(true);
   });
 
+  it("agent API lists intents and coverage", async () => {
+    const { GET, POST } = await import("@/app/api/agent/route");
+    const auth = {
+      Authorization: `Bearer ${process.env.TOPOLOGY_API_TOKEN}`,
+    };
+
+    const listRes = await GET(
+      new Request("http://127.0.0.1/api/agent?resource=intents", {
+        headers: auth,
+      }),
+    );
+    expect(listRes.status).toBe(200);
+    const listData = (await listRes.json()) as { intents?: unknown[] };
+    expect(Array.isArray(listData.intents)).toBe(true);
+
+    const coverageRes = await GET(
+      new Request("http://127.0.0.1/api/agent?resource=coverage", {
+        headers: auth,
+      }),
+    );
+    expect(coverageRes.status).toBe(200);
+    const coverageData = (await coverageRes.json()) as {
+      coverage?: { requirement?: { total: number }; gaps?: unknown[] };
+    };
+    expect(coverageData.coverage).toBeTruthy();
+    expect(typeof coverageData.coverage?.requirement?.total).toBe("number");
+    expect(Array.isArray(coverageData.coverage?.gaps)).toBe(true);
+
+    const key = `MCP-INT-${Date.now()}`;
+    const createRes = await POST(
+      new Request("http://127.0.0.1/api/agent", {
+        method: "POST",
+        headers: { ...auth, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create_test_intent",
+          key,
+          title: "Agent-created intent",
+          criticality: "P2",
+        }),
+      }),
+    );
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { intent?: { key: string } };
+    expect(created.intent?.key).toBe(key);
+
+    const getRes = await GET(
+      new Request(
+        `http://127.0.0.1/api/agent?resource=intents&key=${encodeURIComponent(key)}`,
+        { headers: auth },
+      ),
+    );
+    expect(getRes.status).toBe(200);
+    const detail = (await getRes.json()) as { intent?: { key: string } };
+    expect(detail.intent?.key).toBe(key);
+  });
+
   it("agent API rejects missing bearer tokens", async () => {
     const { GET } = await import("@/app/api/agent/route");
     const res = await GET(

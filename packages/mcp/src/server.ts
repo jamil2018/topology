@@ -92,6 +92,113 @@ export function createTopologyMcpServer(client: TopologyClient) {
   );
 
   server.tool(
+    "list_intents",
+    "List or search Topology test intents",
+    { q: z.string().optional() },
+    async ({ q }) => jsonText(await client.listIntents(q)),
+  );
+
+  server.tool(
+    "get_test_intent",
+    "Get a test intent by id or key, including implementations and edges",
+    {
+      id: z.string().optional(),
+      key: z.string().optional(),
+    },
+    async (args) => jsonText(await client.getTestIntent(args)),
+  );
+
+  server.tool(
+    "create_test_intent",
+    "Create a test intent in the quality graph",
+    {
+      key: z.string(),
+      title: z.string(),
+      behavior: z.string().optional(),
+      criticality: z.enum(["P0", "P1", "P2", "P3"]).optional(),
+      status: z.enum(["draft", "ready", "blocked", "deprecated"]).optional(),
+    },
+    async (args) => jsonText(await client.createTestIntent(args)),
+  );
+
+  server.tool(
+    "get_coverage",
+    "Get requirement/risk/automation/execution coverage and gaps for the workspace",
+    async () => jsonText(await client.getCoverage()),
+  );
+
+  server.tool(
+    "propose_coverage",
+    "Queue a coverage proposal (create intent / link edge) for human review. Does NOT write to the graph until accepted.",
+    {
+      payload: z.object({
+        diffs: z.array(z.record(z.string(), z.unknown())).min(1),
+        rationale: z.string().optional(),
+      }),
+      entityType: z.string().optional(),
+      model: z.string().optional(),
+      inputRefs: z.array(z.string()).optional(),
+    },
+    async (args) => jsonText(await client.proposeCoverage(args)),
+  );
+
+  server.tool(
+    "get_affected_tests",
+    "Walk changed paths through path→component rules to list affected requirements, intents, implementations, and gaps",
+    {
+      paths: z.array(z.string()).min(1),
+      rules: z
+        .array(
+          z.object({
+            pattern: z.string(),
+            componentKey: z.string(),
+          }),
+        )
+        .optional(),
+    },
+    async (args) => jsonText(await client.getAffectedTests(args)),
+  );
+
+  const qualitySearchSchema = {
+    dsl: z
+      .string()
+      .optional()
+      .describe(
+        'Quality QL DSL, e.g. intents where component = payments and criticality = P0',
+      ),
+    query: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe("QualityQuery AST: { entity, filters, sort }"),
+    limit: z.number().int().positive().max(1000).optional(),
+  };
+
+  async function runQualitySearch(args: {
+    dsl?: string;
+    query?: Record<string, unknown>;
+    limit?: number;
+  }) {
+    if (!args.dsl && !args.query) {
+      throw new Error("Provide dsl or query");
+    }
+    return jsonText(await client.qualitySearch(args));
+  }
+
+  server.tool(
+    "quality_search",
+    "Search the quality graph with structured QL (DSL or AST). Entities: intents, requirements, implementations, executions.",
+    qualitySearchSchema,
+    runQualitySearch,
+  );
+
+  server.tool(
+    "search_tests",
+    "Alias for quality_search — query intents/requirements/implementations/executions",
+    qualitySearchSchema,
+    runQualitySearch,
+  );
+
+  server.tool(
     "create_issue",
     "Create a tracker issue from a failed/blocked result",
     {

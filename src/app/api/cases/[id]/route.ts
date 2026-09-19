@@ -36,7 +36,7 @@ export async function GET(request: Request, { params }: Params) {
 
   const row = await db.query.cases.findFirst({
     where: and(eq(cases.id, id), eq(cases.workspaceId, access.ctx.project.id)),
-    with: { folder: true },
+    with: { folder: true, intent: true },
   });
   if (!row) {
     return NextResponse.json({ error: "Case not found" }, { status: 404 });
@@ -55,6 +55,16 @@ export async function GET(request: Request, { params }: Params) {
       status: row.status,
       tags: row.tags ?? [],
       folderId: row.folderId,
+      intentId: row.intentId,
+      intent: row.intent
+        ? {
+            id: row.intent.id,
+            key: row.intent.key,
+            title: row.intent.title,
+            criticality: row.intent.criticality,
+            status: row.intent.status,
+          }
+        : null,
       folder: row.folder
         ? { id: row.folder.id, name: row.folder.name }
         : null,

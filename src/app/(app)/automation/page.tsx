@@ -3,7 +3,11 @@ import { auth } from "@/auth";
 import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { AutomationWorkspace } from "@/components/automation-workspace";
 import { resolveActiveProject } from "@/lib/project";
-import { getFlakeHints, listRuns } from "@/lib/queries";
+import {
+  getAutomationReliabilityHint,
+  getFlakeHints,
+  listRuns,
+} from "@/lib/queries";
 
 export default async function AutomationPage() {
   const session = await auth();
@@ -13,25 +17,27 @@ export default async function AutomationPage() {
   if (!ctx) return <NoProjectEmptyState />;
 
   const workspaceId = ctx.project.id;
-  const [runs, flakeHints] = await Promise.all([
+  const [runs, flakeHints, reliabilityHint] = await Promise.all([
     listRuns(workspaceId, "automation"),
     getFlakeHints(workspaceId, 20),
+    getAutomationReliabilityHint(workspaceId),
   ]);
 
   return (
     <AutomationWorkspace
-        initialRuns={runs.map((r) => ({
-          id: r.id,
-          name: r.name,
-          status: r.status,
-          source: r.source ?? "ci",
-          branch: r.branch,
-          commitSha: r.commitSha,
-          shardTotal: r.shardTotal,
-          shardsReceived: r.shardsReceived,
-          updatedAt: r.updatedAt,
-        }))}
-        flakeHints={flakeHints}
+      initialRuns={runs.map((r) => ({
+        id: r.id,
+        name: r.name,
+        status: r.status,
+        source: r.source ?? "ci",
+        branch: r.branch,
+        commitSha: r.commitSha,
+        shardTotal: r.shardTotal,
+        shardsReceived: r.shardsReceived,
+        updatedAt: r.updatedAt,
+      }))}
+      flakeHints={flakeHints}
+      reliabilityHint={reliabilityHint}
     />
   );
 }

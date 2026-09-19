@@ -108,6 +108,153 @@ describe("TopologyClient", () => {
     ]);
   });
 
+  it("lists intents, gets an intent, coverage, and creates test intents", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST") {
+        return ok({ intent: { key: "AUTH-1" } });
+      }
+      if (url.includes("resource=coverage")) return ok({ coverage: { gaps: [] } });
+      if (url.includes("resource=intents") && url.includes("key="))
+        return ok({ intent: { key: "TOP-1" } });
+      if (url.includes("resource=intents")) return ok({ intents: [] });
+      return ok({});
+    });
+    const client = new TopologyClient({
+      baseUrl: "http://topology.test",
+      token: "t",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    await client.listIntents("auth");
+    await client.getTestIntent({ key: "TOP-1" });
+    await client.getCoverage();
+    await client.createTestIntent({
+      key: "AUTH-1",
+      title: "Account lockout",
+      criticality: "P0",
+    });
+
+    const urls = fetchImpl.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes("resource=intents") && u.includes("q=auth"))).toBe(
+      true,
+    );
+    expect(urls.some((u) => u.includes("key=TOP-1"))).toBe(true);
+    expect(urls.some((u) => u.includes("resource=coverage"))).toBe(true);
+    const body = JSON.parse(String(fetchImpl.mock.calls.at(-1)![1]?.body));
+    expect(body.action).toBe("create_test_intent");
+    expect(body.key).toBe("AUTH-1");
+  });
+
+  it("posts proposeCoverage as pending proposal action", async () => {
+    const fetchImpl = vi.fn(async () =>
+      ok({
+        proposal: { id: "p1", status: "pending" },
+        message: "queued",
+      }),
+    );
+    const client = new TopologyClient({
+      baseUrl: "http://topology.test",
+      token: "t",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const payload = {
+      diffs: [
+        {
+          entityType: "intent",
+          action: "create",
+          before: null,
+          after: { key: "AUTH-200", title: "Negative path" },
+        },
+      ],
+      rationale: "Coverage gap",
+    };
+    await client.proposeCoverage({
+      payload,
+      model: "external-agent",
+      inputRefs: ["REQ-1"],
+    });
+
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe(
+      "http://topology.test/api/agent",
+    );
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body));
+    expect(body.action).toBe("propose_coverage");
+    expect(body.payload).toEqual(payload);
+    expect(body.model).toBe("external-agent");
+  });
+
+  it("posts getAffectedTests to /api/affected", async () => {
+    const fetchImpl = vi.fn(async () =>
+      ok({
+        summary: { intents: 1 },
+        impact: { intents: [{ key: "AUTH-021" }] },
+        rulesSource: "request",
+      }),
+    );
+    const client = new TopologyClient({
+      baseUrl: "http://topology.test",
+      token: "t",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const out = (await client.getAffectedTests({
+      paths: ["src/auth/lockout.ts"],
+      rules: [{ pattern: "src/auth/", componentKey: "COMP-AUTH" }],
+    })) as { summary: { intents: number } };
+
+    expect(out.summary.intents).toBe(1);
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe(
+      "http://topology.test/api/affected",
+    );
+    expect(fetchImpl.mock.calls[0]![1]?.method).toBe("POST");
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body));
+    expect(body).toEqual({
+      paths: ["src/auth/lockout.ts"],
+      rules: [{ pattern: "src/auth/", componentKey: "COMP-AUTH" }],
+    });
+  });
+
+  it("posts getAffectedTests without rules so server can use DB path rules", async () => {
+    const fetchImpl = vi.fn(async () =>
+      ok({
+        summary: { intents: 2 },
+        rulesSource: "database",
+      }),
+    );
+    const client = new TopologyClient({
+      baseUrl: "http://topology.test",
+      token: "t",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    await client.getAffectedTests({ paths: ["src/auth/lockout.ts"] });
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body));
+    expect(body).toEqual({ paths: ["src/auth/lockout.ts"] });
+    expect(body.rules).toBeUndefined();
+  });
+
+  it("posts qualitySearch DSL to /api/query", async () => {
+    const fetchImpl = vi.fn(async () =>
+      ok({ entity: "intents", rows: [], count: 0 }),
+    );
+    const client = new TopologyClient({
+      baseUrl: "http://topology.test",
+      token: "t",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await client.qualitySearch({
+      dsl: "intents where criticality = P0",
+    });
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe(
+      "http://topology.test/api/query",
+    );
+    expect(fetchImpl.mock.calls[0]![1]?.method).toBe("POST");
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body));
+    expect(body.dsl).toBe("intents where criticality = P0");
+  });
+
   it("requireEnv validates TOPOLOGY_URL and TOPOLOGY_API_TOKEN", () => {
     const prevUrl = process.env.TOPOLOGY_URL;
     const prevToken = process.env.TOPOLOGY_API_TOKEN;

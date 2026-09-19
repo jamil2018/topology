@@ -187,6 +187,10 @@ export async function POST(request: Request) {
       })
       .returning();
 
+    const { ensureIntentForCase } = await import("@/lib/quality-graph");
+    const { intentId } = await ensureIntentForCase(created);
+    const withIntent = { ...created, intentId };
+
     await recordCaseActivity({
       caseId: created.id,
       actorId: session.user.id,
@@ -194,7 +198,7 @@ export async function POST(request: Request) {
       summary: `Created case ${created.key}`,
     });
 
-    return NextResponse.json({ case: created }, { status: 201 });
+    return NextResponse.json({ case: withIntent }, { status: 201 });
   } catch (err) {
     const mapped = caseWriteError(err);
     if (mapped) {

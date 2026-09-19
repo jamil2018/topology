@@ -103,8 +103,12 @@ export function WebhooksPanel() {
           Webhooks
         </h2>
         <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
-          JSON POST on <span className="font-mono">run.completed</span> and{" "}
-          <span className="font-mono">issue.created</span>. Optional HMAC via
+          JSON POST on{" "}
+          <span className="font-mono">run.completed</span>,{" "}
+          <span className="font-mono">issue.created</span>,{" "}
+          <span className="font-mono">intent.stale</span>,{" "}
+          <span className="font-mono">coverage.dropped</span>, and{" "}
+          <span className="font-mono">proposal.created</span>. Optional HMAC via
           secret (<span className="font-mono">X-Topology-Signature</span>).
         </p>
       </div>
