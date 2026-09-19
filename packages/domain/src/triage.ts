@@ -9,6 +9,8 @@ export type TriageFailure = {
   failedAt: Date | string | null;
   occurrenceCount?: number;
   isFlaky?: boolean;
+  /** Optional Phase 4 failure-signature id / hash for clustering. */
+  signatureId?: string | null;
 };
 
 export type TriageQueueItem = TriageFailure & {
@@ -16,6 +18,14 @@ export type TriageQueueItem = TriageFailure & {
   rank: number;
   urgency: "immediate" | "soon" | "later";
   reason: string;
+};
+
+export type TriageSignatureCluster = {
+  signatureId: string;
+  count: number;
+  /** Highest-ranked item in the cluster (already sorted by buildTriageQueue). */
+  representative: TriageQueueItem;
+  items: TriageQueueItem[];
 };
 
 const priorityWeight: Record<TriageFailure["priority"], number> = {
@@ -75,4 +85,36 @@ export function buildTriageQueue(
   });
 
   return items.sort((a, b) => b.rank - a.rank);
+}
+
+/**
+ * Group a triage queue by Phase 4 signatureId.
+ * Items without signatureId each form a singleton cluster keyed by fingerprint.
+ */
+export function clusterTriageBySignature(
+  items: TriageQueueItem[],
+): TriageSignatureCluster[] {
+  const groups = new Map<string, TriageQueueItem[]>();
+
+  for (const item of items) {
+    const key = item.signatureId?.trim() || `fp:${item.fingerprint}`;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(item);
+    else groups.set(key, [item]);
+  }
+
+  return [...groups.entries()]
+    .map(([signatureId, clusterItems]) => {
+      const sorted = [...clusterItems].sort((a, b) => b.rank - a.rank);
+      return {
+        signatureId,
+        count: sorted.length,
+        representative: sorted[0]!,
+        items: sorted,
+      };
+    })
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.representative.rank - a.representative.rank;
+    });
 }
