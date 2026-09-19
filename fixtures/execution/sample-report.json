@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "run": {
+    "externalId": "ci-build-42",
+    "commitSha": "abc123def456",
+    "branch": "main",
+    "environment": {
+      "browser": "chromium",
+      "os": "linux"
+    }
+  },
+  "results": [
+    {
+      "status": "passed",
+      "durationMs": 1280,
+      "environment": {
+        "browser": "chromium",
+        "os": "linux"
+      },
+      "intentKey": "AUTH-001",
+      "title": "Login with valid credentials",
+      "externalKey": "auth::login_valid",
+      "artifacts": []
+    },
+    {
+      "status": "failed",
+      "durationMs": 4200,
+      "environment": {
+        "browser": "chromium",
+        "os": "linux"
+      },
+      "intentKey": "AUTH-021",
+      "implementationId": "11111111-1111-1111-1111-111111111111",
+      "title": "Account lockout after failed attempts",
+      "artifacts": [
+        {
+          "kind": "screenshot",
+          "name": "lockout.png",
+          "path": "artifacts/lockout.png"
+        },
+        {
+          "kind": "trace",
+          "path": "artifacts/trace.zip"
+        }
+      ],
+      "errorMessage": "Expected lockout banner",
+      "stack": "Error: Expected lockout banner\n    at Object.<anonymous> (tests/auth.spec.ts:84:7)"
+    },
+    {
+      "status": "skipped",
+      "durationMs": 0,
+      "intentKey": "PAY-010",
+      "externalKey": "payments::checkout_guest",
+      "errorMessage": "Skipped: feature flag off"
+    }
+  ]
+}

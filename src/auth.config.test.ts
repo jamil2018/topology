@@ -21,10 +21,13 @@ describe("authConfig.authorized", () => {
     expect(authorized("/api/auth/callback/github", null)).toBe(true);
   });
 
-  it("allows CI and agent APIs without a session (Bearer handled in-route)", () => {
+  it("allows CI, agent, executions, and releases APIs without a session (Bearer handled in-route)", () => {
     expect(authorized("/api/ci/junit", null)).toBe(true);
     expect(authorized("/api/ci/runs", null)).toBe(true);
     expect(authorized("/api/agent", null)).toBe(true);
+    expect(authorized("/api/executions", null)).toBe(true);
+    expect(authorized("/api/releases/analyze", null)).toBe(true);
+    expect(authorized("/api/releases/compare", null)).toBe(true);
   });
 
   it("allows Next.js internals", () => {

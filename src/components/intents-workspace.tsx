@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, TextArea } from "@heroui/react";
+import { IntentRepresentationPanel } from "./intent-representation";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 
@@ -248,6 +249,13 @@ export function IntentsWorkspace({
               <p className="mt-3 text-sm text-[color:var(--topo-muted)]">
                 {active.behavior || "No behavior description yet."}
               </p>
+
+              <IntentRepresentationPanel
+                key={active.id}
+                intentTitle={active.title}
+                behavior={active.behavior}
+                linkedCaseId={linkedCaseId}
+              />
 
               <div className="mt-4">
                 <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
