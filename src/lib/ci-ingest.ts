@@ -8,7 +8,9 @@ import {
   type NormalizedResult,
 } from "@topology/domain";
 import { db } from "@/db";
-import { cases, runResults, runShards, runs, triageItems } from "@/db/schema";
+import { cases, runResults, runShards, runs, triageItems, type Case } from "@/db/schema";
+import { upsertFailureSignature } from "@/lib/failure-signature-persist";
+import { refreshImplementationStatsForRun } from "@/lib/implementation-stats";
 import { immutableMessageFor, isRunFrozen } from "@/lib/run-immutability";
 
 const INT4_MIN = -2_147_483_648;
@@ -118,23 +120,61 @@ export async function findOrCreateCaseForExternal(
   userId: string | null,
   workspaceId: string,
   executor: IngestDb = db,
-): Promise<string> {
+): Promise<{ caseId: string; implementationId: string }> {
   const key = automationCaseKey(result.externalKey);
+
+  const linkIntent = async (
+    row: Pick<
+      Case,
+      | "id"
+      | "workspaceId"
+      | "key"
+      | "title"
+      | "description"
+      | "priority"
+      | "status"
+      | "folderId"
+      | "assigneeId"
+      | "intentId"
+      | "tags"
+    >,
+  ) => {
+    const { ensureIntentForCase } = await import("@/lib/quality-graph");
+    return ensureIntentForCase(row, executor, {
+      externalKey: result.externalKey,
+      framework: "junit",
+    });
+  };
+
   const existing = await executor.query.cases.findFirst({
     where: and(eq(cases.key, key), eq(cases.workspaceId, workspaceId)),
   });
-  if (existing) return existing.id;
+  if (existing) {
+    const linked = await linkIntent(existing);
+    return { caseId: existing.id, implementationId: linked.implementationId };
+  }
 
   const createdId = await insertCase(
     executor,
     caseValues(result, userId, workspaceId, key),
   );
-  if (createdId) return createdId;
+  if (createdId) {
+    const created = await executor.query.cases.findFirst({
+      where: eq(cases.id, createdId),
+    });
+    if (created) {
+      const linked = await linkIntent(created);
+      return { caseId: created.id, implementationId: linked.implementationId };
+    }
+  }
 
   const raced = await executor.query.cases.findFirst({
     where: and(eq(cases.key, key), eq(cases.workspaceId, workspaceId)),
   });
-  if (raced) return raced.id;
+  if (raced) {
+    const linked = await linkIntent(raced);
+    return { caseId: raced.id, implementationId: linked.implementationId };
+  }
 
   const altKey = `${key.slice(0, Math.max(1, key.length - 9))}-${createHash("sha256")
     .update(`${workspaceId}:${result.externalKey}:${randomBytes(4).toString("hex")}`)
@@ -144,12 +184,26 @@ export async function findOrCreateCaseForExternal(
     executor,
     caseValues(result, userId, workspaceId, altKey),
   );
-  if (altId) return altId;
+  if (altId) {
+    const created = await executor.query.cases.findFirst({
+      where: eq(cases.id, altId),
+    });
+    if (created) {
+      const linked = await linkIntent(created);
+      return { caseId: created.id, implementationId: linked.implementationId };
+    }
+  }
 
   const altExisting = await executor.query.cases.findFirst({
     where: and(eq(cases.key, altKey), eq(cases.workspaceId, workspaceId)),
   });
-  if (altExisting) return altExisting.id;
+  if (altExisting) {
+    const linked = await linkIntent(altExisting);
+    return {
+      caseId: altExisting.id,
+      implementationId: linked.implementationId,
+    };
+  }
 
   throw new CiIngestError(409, { error: "Conflict" });
 }
@@ -189,7 +243,7 @@ async function replaceExternalResults(
     .where(and(eq(runResults.runId, runId), isNotNull(runResults.externalKey)));
 
   for (const result of deduped) {
-    const caseId = await findOrCreateCaseForExternal(
+    const { caseId, implementationId } = await findOrCreateCaseForExternal(
       result,
       userId,
       workspaceId,
@@ -198,11 +252,14 @@ async function replaceExternalResults(
     await tx.insert(runResults).values({
       runId,
       caseId,
+      implementationId,
       externalKey: result.externalKey,
       classname: result.classname,
       title: result.name,
       status: result.status,
       notes: result.notes,
+      errorMessage: result.errorMessage?.trim() || null,
+      stack: result.stack?.trim() || null,
       durationMs: clampDurationMs(result.durationMs),
       executedById: userId,
       executedAt: new Date(),
@@ -266,6 +323,8 @@ async function upsertTriageItem(
   failure: {
     id: string;
     notes: string;
+    errorMessage?: string | null;
+    stack?: string | null;
     caseId: string | null;
     title: string | null;
     externalKey: string | null;
@@ -277,6 +336,12 @@ async function upsertTriageItem(
   const caseKey = failure.case?.key ?? failure.externalKey ?? failure.id;
   const fingerprint = failureFingerprint({
     caseKey,
+    notes: failure.notes,
+  });
+
+  const signature = await upsertFailureSignature(workspaceId, {
+    errorMessage: failure.errorMessage,
+    stack: failure.stack,
     notes: failure.notes,
   });
 
@@ -301,6 +366,7 @@ async function upsertTriageItem(
       .update(triageItems)
       .set({
         fingerprint,
+        signatureId: signature.id,
         occurrenceCount: existing.occurrenceCount + 1,
         lastSeenAt: new Date(),
         updatedAt: new Date(),
@@ -314,6 +380,7 @@ async function upsertTriageItem(
     await db.insert(triageItems).values({
       workspaceId,
       fingerprint,
+      signatureId: signature.id,
       title: failure.case?.title ?? failure.title ?? caseKey,
       priority: failure.case?.priority ?? "P2",
       caseId: failure.caseId,
@@ -465,7 +532,7 @@ export async function completeCiRun(input: {
   workspaceId: string;
   userId: string | null;
 }) {
-  return db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
     const locked = await lockRun(tx, input.runId, input.workspaceId);
     if (!locked) throw new CiIngestError(404, { error: "Run not found" });
     if (isRunFrozen(locked.status)) {
@@ -508,6 +575,14 @@ export async function completeCiRun(input: {
 
     return { run: updated, summary };
   });
+
+  try {
+    await refreshImplementationStatsForRun(outcome.run.id);
+  } catch {
+    // Rollups are best-effort; the run is already completed.
+  }
+
+  return outcome;
 }
 
 export async function submitJunitResults(input: {
@@ -520,7 +595,7 @@ export async function submitJunitResults(input: {
   commitSha?: string;
   results: NormalizedResult[];
 }) {
-  return db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
     let runId = input.runId;
     let runName = input.name;
 
@@ -589,6 +664,14 @@ export async function submitJunitResults(input: {
 
     return { runId, runName: updated.name || runName, summary };
   });
+
+  try {
+    await refreshImplementationStatsForRun(outcome.runId);
+  } catch {
+    // Rollups are best-effort; the run is already completed.
+  }
+
+  return outcome;
 }
 
 export async function listAutomationRuns(workspaceId: string) {

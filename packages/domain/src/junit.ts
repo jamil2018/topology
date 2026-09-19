@@ -4,6 +4,8 @@ export type JUnitTestCase = {
   timeSeconds: number;
   status: "passed" | "failed" | "error" | "skipped";
   message: string;
+  /** Failure/error element body (typically a stack trace). */
+  stack: string;
   systemOut: string;
 };
 
@@ -29,6 +31,10 @@ export type NormalizedResult = {
   status: "passed" | "failed" | "skipped" | "blocked" | "untested";
   notes: string;
   durationMs: number;
+  /** Short failure message when JUnit/JSON provides one. */
+  errorMessage?: string;
+  /** Stack trace body when JUnit/JSON provides one. */
+  stack?: string;
 };
 
 type XmlText = { type: "text"; value: string };
@@ -235,6 +241,23 @@ function directElements(node: XmlElement): XmlElement[] {
   return node.children.filter((child): child is XmlElement => child.type === "element");
 }
 
+/** Split failure/error/@message vs element body (stack). */
+function failureMessageAndStack(node: XmlElement): {
+  message: string;
+  stack: string;
+} {
+  const attrMessage = (node.attrs.message ?? "").trim();
+  const body = elementText(node).trim();
+  if (attrMessage) {
+    return { message: attrMessage, stack: body };
+  }
+  if (!body) return { message: "", stack: "" };
+  const lines = body.replace(/\r\n/g, "\n").split("\n");
+  const first = lines[0]?.trim() ?? "";
+  const rest = lines.slice(1).join("\n").trim();
+  return { message: first, stack: rest };
+}
+
 function caseFrom(node: XmlElement): JUnitTestCase {
   const classname = node.attrs.classname ?? "";
   const name = node.attrs.name ?? "";
@@ -246,12 +269,13 @@ function caseFrom(node: XmlElement): JUnitTestCase {
 
   let status: JUnitTestCase["status"] = "passed";
   let message = "";
+  let stack = "";
   if (failure) {
     status = "failed";
-    message = failure.attrs.message || elementText(failure);
+    ({ message, stack } = failureMessageAndStack(failure));
   } else if (error) {
     status = "error";
-    message = error.attrs.message || elementText(error);
+    ({ message, stack } = failureMessageAndStack(error));
   } else if (skipped) {
     status = "skipped";
     message = skipped.attrs.message || elementText(skipped);
@@ -269,6 +293,7 @@ function caseFrom(node: XmlElement): JUnitTestCase {
     timeSeconds,
     status,
     message,
+    stack,
     systemOut,
   };
 }
@@ -374,7 +399,10 @@ export function normalizeJUnitCases(cases: JUnitTestCase[]): NormalizedResult[] 
             ? "skipped"
             : "passed";
 
-    const notes = [c.message, c.systemOut].filter(Boolean).join("\n").trim();
+    const notes = [c.message, c.stack, c.systemOut]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
 
     return {
       externalKey: externalKeyForCase(c),
@@ -383,6 +411,8 @@ export function normalizeJUnitCases(cases: JUnitTestCase[]): NormalizedResult[] 
       status,
       notes,
       durationMs: Math.round(c.timeSeconds * 1000),
+      ...(c.message ? { errorMessage: c.message } : {}),
+      ...(c.stack ? { stack: c.stack } : {}),
     };
   });
 }

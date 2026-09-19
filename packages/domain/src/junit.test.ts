@@ -45,6 +45,7 @@ describe("parseJUnitXml", () => {
     expect(normalized[1]).toMatchObject({
       externalKey: "auth::logout",
       status: "failed",
+      errorMessage: "expected 200",
     });
     expect(summarizeResults(normalized)).toMatchObject({
       passed: 1,
@@ -78,7 +79,21 @@ describe("parseJUnitXml", () => {
     expect(normalized[0]).toMatchObject({
       status: "failed",
       notes: "kaboom",
+      errorMessage: "kaboom",
     });
+  });
+
+  it("separates failure message attr from stack body", () => {
+    const normalized = normalizeJUnitCases(
+      parseJUnitXml(
+        `<testsuite><testcase classname="pay" name="checkout" time="0.2"><failure message="iframe timeout">Error: iframe timeout
+    at wait (/src/pay.spec.ts:12:3)
+</failure></testcase></testsuite>`,
+      ).cases,
+    );
+    expect(normalized[0]?.errorMessage).toBe("iframe timeout");
+    expect(normalized[0]?.stack).toContain("at wait");
+    expect(normalized[0]?.notes).toContain("iframe timeout");
   });
 
   it("does not treat </testcase> in output or a nested suite as the end of a failure", async () => {

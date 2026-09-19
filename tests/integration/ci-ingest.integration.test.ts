@@ -36,6 +36,7 @@ describe.skipIf(!hasDb)("CI ingest API (integration)", () => {
 
   it("submits junit-normalized results and completes a run", async () => {
     const { POST } = await import("@/app/api/ci/junit/route");
+    const externalKey = `hub::loads_${Date.now()}`;
     const res = await POST(
       new Request("http://127.0.0.1/api/ci/junit", {
         method: "POST",
@@ -45,7 +46,7 @@ describe.skipIf(!hasDb)("CI ingest API (integration)", () => {
           source: "cli",
           results: [
             {
-              externalKey: "hub::loads",
+              externalKey,
               classname: "hub",
               name: "loads",
               status: "passed",
@@ -72,6 +73,23 @@ describe.skipIf(!hasDb)("CI ingest API (integration)", () => {
     expect(data.run.id).toBeTruthy();
     expect(data.summary.failed).toBe(1);
     expect(data.summary.passed).toBe(1);
+
+    const { db } = await import("@/db");
+    const { cases, testImplementations } = await import("@/db/schema");
+    const { automationCaseKey } = await import("@/lib/ci-ingest");
+    const { eq, and } = await import("drizzle-orm");
+    const key = automationCaseKey(externalKey);
+    const linked = await db.query.cases.findFirst({
+      where: eq(cases.key, key),
+    });
+    expect(linked?.intentId).toBeTruthy();
+    const impl = await db.query.testImplementations.findFirst({
+      where: and(
+        eq(testImplementations.caseId, linked!.id),
+        eq(testImplementations.type, "junit"),
+      ),
+    });
+    expect(impl?.externalKey).toBe(externalKey);
   });
 
   it("creates a sharded run, merges threads, and completes", async () => {
