@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { authenticateCiRequest } from "@/lib/ci-auth";
 import { ciFailureResponse } from "@/lib/ci-ingest";
+import { resolveRunGitRefs } from "@/lib/git-sync";
 import { db } from "@/db";
 import { runs } from "@/db/schema";
 import { auth } from "@/auth";
@@ -13,6 +14,10 @@ const createSchema = z.object({
   source: z.string().optional().default("cli"),
   branch: z.string().optional(),
   commitSha: z.string().optional(),
+  /** Pull request number (e.g. from `topology runs create --pr 843`). */
+  pr: z.number().int().min(1).optional(),
+  prTitle: z.string().max(500).optional(),
+  remoteUrl: z.string().min(1).max(2048).optional(),
   shardTotal: z.number().int().min(1).max(256).optional().default(1),
   environment: z.string().optional().default("ci"),
 });
@@ -68,6 +73,15 @@ export async function POST(request: Request) {
   }
 
   try {
+    const gitRefs = await resolveRunGitRefs({
+      workspaceId: authResult.workspaceId,
+      remoteUrl: parsed.data.remoteUrl,
+      commitSha: parsed.data.commitSha,
+      pr: parsed.data.pr,
+      prTitle: parsed.data.prTitle,
+      branch: parsed.data.branch,
+    });
+
     const [run] = await db
       .insert(runs)
       .values({
@@ -77,6 +91,8 @@ export async function POST(request: Request) {
         source: parsed.data.source,
         branch: parsed.data.branch,
         commitSha: parsed.data.commitSha,
+        commitId: gitRefs.commitId,
+        pullRequestId: gitRefs.pullRequestId,
         environment: parsed.data.environment,
         status: "in_progress",
         startedAt: new Date(),
