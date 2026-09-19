@@ -255,6 +255,63 @@ describe("TopologyClient", () => {
     expect(body.dsl).toBe("intents where criticality = P0");
   });
 
+  it("calls phase-6 agent resources and actions", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        if (body.action === "link_automation") {
+          return ok({ ok: true, intentId: "i1", implementationId: "impl1" });
+        }
+        if (body.action === "compare_releases") {
+          return ok({ comparison: { flakeCount: { delta: -1 } } });
+        }
+      }
+      if (url.includes("resource=requirement")) return ok({ requirement: { key: "REQ-1" } });
+      if (url.includes("resource=execution_history")) return ok({ results: [] });
+      if (url.includes("resource=failure_evidence")) return ok({ evidence: { notes: "x" } });
+      if (url.includes("resource=coverage") && url.includes("filter=manual"))
+        return ok({ coverage: { gaps: [] } });
+      return ok({});
+    });
+    const client = new TopologyClient({
+      baseUrl: "http://topology.test",
+      token: "t",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    await client.getRequirement({ key: "REQ-1" });
+    await client.getExecutionHistory({ intentKey: "AUTH-1", limit: 10 });
+    await client.getFailureEvidence({
+      resultId: "00000000-0000-0000-0000-000000000001",
+    });
+    await client.getCoverage("manual");
+    await client.linkAutomation({ externalKey: "AUTO-1", intentKey: "AUTH-1" });
+    await client.compareReleases({
+      beforeReleaseId: "00000000-0000-0000-0000-000000000001",
+      afterReleaseId: "00000000-0000-0000-0000-000000000002",
+    });
+
+    const urls = fetchImpl.mock.calls.map((c) => String(c[0]));
+    expect(
+      urls.some((u) => u.includes("resource=requirement") && u.includes("key=REQ-1")),
+    ).toBe(true);
+    expect(
+      urls.some(
+        (u) => u.includes("execution_history") && u.includes("intentKey=AUTH-1"),
+      ),
+    ).toBe(true);
+    expect(urls.some((u) => u.includes("failure_evidence"))).toBe(true);
+    expect(urls.some((u) => u.includes("filter=manual"))).toBe(true);
+    const postBodies = fetchImpl.mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === "POST")
+      .map((c) => JSON.parse(String(c[1]?.body)));
+    expect(postBodies.map((b) => b.action)).toEqual([
+      "link_automation",
+      "compare_releases",
+    ]);
+  });
+
   it("requireEnv validates TOPOLOGY_URL and TOPOLOGY_API_TOKEN", () => {
     const prevUrl = process.env.TOPOLOGY_URL;
     const prevToken = process.env.TOPOLOGY_API_TOKEN;

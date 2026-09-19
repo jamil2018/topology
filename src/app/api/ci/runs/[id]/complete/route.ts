@@ -76,6 +76,11 @@ export async function POST(request: Request, { params }: Params) {
       ).catch(() => {});
     }
 
+    const { syncIntentStaleWebhooks } = await import(
+      "@/lib/intent-freshness-webhooks"
+    );
+    void syncIntentStaleWebhooks(authResult.workspaceId).catch(() => {});
+
     return NextResponse.json({
       run: completed.run,
       summary: completed.summary,

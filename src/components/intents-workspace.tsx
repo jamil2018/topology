@@ -5,7 +5,9 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, TextArea } from "@heroui/react";
 import { EntityCollabPanel } from "./entity-collab-panel";
+import { IntentReliabilityCards } from "./intent-reliability-cards";
 import { IntentRepresentationPanel } from "./intent-representation";
+import { LinkAutomationPanel } from "./link-automation-panel";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 
@@ -14,6 +16,7 @@ export type IntentListItem = {
   key: string;
   title: string;
   behavior: string;
+  representationJson?: string | null;
   criticality: string;
   status: string;
   freshness: "fresh" | "potentially_stale" | "stale" | "unverified";
@@ -253,9 +256,16 @@ export function IntentsWorkspace({
 
               <IntentRepresentationPanel
                 key={active.id}
+                intentId={active.id}
                 intentTitle={active.title}
                 behavior={active.behavior}
+                representationJson={active.representationJson ?? null}
                 linkedCaseId={linkedCaseId}
+              />
+
+              <IntentReliabilityCards
+                key={`rel-${active.id}`}
+                intentId={active.id}
               />
 
               <div className="mt-4">
@@ -291,6 +301,7 @@ export function IntentsWorkspace({
                     ))}
                   </ul>
                 )}
+                <LinkAutomationPanel intentId={active.id} />
               </div>
 
               <EntityCollabPanel

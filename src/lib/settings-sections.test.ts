@@ -37,6 +37,10 @@ describe("settings-sections", () => {
       page: "integrations",
       anchor: "ci",
     });
+    expect(resolveSettingsSection("repositories")).toEqual({
+      page: "integrations",
+      anchor: "repositories",
+    });
     expect(resolveSettingsSection("webhooks")).toEqual({
       page: "integrations",
       anchor: "webhooks",

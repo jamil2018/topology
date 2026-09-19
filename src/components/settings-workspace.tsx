@@ -7,12 +7,14 @@ import { Button } from "@heroui/react";
 import { PageHeader } from "./page-header";
 import { ConnectAgentPanel } from "./connect-agent-panel";
 import { CiSetupPanel } from "./ci-setup-panel";
+import { RepositoriesPanel } from "./repositories-panel";
 import { WebhooksPanel } from "./webhooks-panel";
 import { useTheme, type ThemePreference } from "./theme-provider";
 import { StatusChip } from "./status-chip";
 import { WorkspaceMembersPanel } from "./workspace-members-panel";
 import { CustomRolesPanel } from "./custom-roles-panel";
 import { ProjectsPanel } from "./projects-panel";
+import { AiSettingsPanel } from "./ai-settings-panel";
 import {
   SETTINGS_NAV,
   isLegacySettingsSection,
@@ -438,23 +440,34 @@ export function SettingsWorkspace({
               </section>
 
               <section
+                id="repositories"
+                className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
+              >
+                <div>
+                  <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+                    Repositories
+                  </h2>
+                  <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
+                    Connect remotes, webhooks, and path rules for change impact.
+                  </p>
+                </div>
+                <RepositoriesPanel />
+              </section>
+
+              <section
                 id="ai"
-                className="scroll-mt-4 space-y-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
+                className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
               >
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
                     AI (optional)
                   </h2>
                   <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
-                    Topology is fully usable with no LLM. Coverage, impact,
-                    query, and Hub stay deterministic. Set{" "}
-                    <code className="font-mono">TOPOLOGY_AI_PROVIDER</code> to
-                    enable in-app drafting later; leave unset or{" "}
-                    <code className="font-mono">none</code> for air-gapped
-                    installs. Agents may still queue proposals via MCP for human
-                    review under Insights → Proposals.
+                    Topology works without an LLM. When enabled, drafting jobs
+                    queue proposals for human review — never direct graph writes.
                   </p>
                 </div>
+                <AiSettingsPanel />
               </section>
 
               <section

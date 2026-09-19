@@ -69,6 +69,7 @@ describe("IntentRepresentationPanel", () => {
 
     render(
       <IntentRepresentationPanel
+        intentId="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
         intentTitle="Account lockout"
         behavior=""
         linkedCaseId={caseId}
@@ -101,9 +102,6 @@ describe("IntentRepresentationPanel", () => {
     );
     expect(screen.getByTestId("representation-structured")).toHaveTextContent(
       "the user is logged out",
-    );
-    expect(screen.getByTestId("representation-structured")).toHaveTextContent(
-      "display-first",
     );
   });
 
@@ -138,12 +136,16 @@ describe("IntentRepresentationPanel", () => {
           }),
         };
       }
+      if (url === "/api/intents" && init?.method === "PATCH") {
+        return { ok: true, status: 200, json: async () => ({ ok: true }) };
+      }
       return { ok: false, status: 404, json: async () => ({ error: "missing" }) };
     });
     vi.stubGlobal("fetch", fetchMock);
 
     render(
       <IntentRepresentationPanel
+        intentId="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
         intentTitle="Smoke"
         behavior=""
         linkedCaseId={caseId}

@@ -4,6 +4,7 @@ import {
   isAiProviderEnabled,
   parseInputRefs,
   parseProposalPayload,
+  proposalApplyProvenance,
 } from "./proposals";
 
 describe("proposals helpers", () => {
@@ -30,6 +31,18 @@ describe("proposals helpers", () => {
     expect(parseInputRefs(JSON.stringify(["a", "b"]))).toEqual(["a", "b"]);
     expect(parseInputRefs("req-1, req-2")).toEqual(["req-1", "req-2"]);
     expect(parseInputRefs(null)).toEqual([]);
+  });
+
+  it("builds apply provenance for model proposals", () => {
+    const meta = proposalApplyProvenance(
+      { actorType: "model", model: "gpt-4o-mini" },
+      "user-1",
+    );
+    expect(meta).toEqual({
+      generatedBy: "model",
+      model: "gpt-4o-mini",
+      approvedById: "user-1",
+    });
   });
 
   it("parses and validates proposal payload JSON", () => {

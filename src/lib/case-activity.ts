@@ -27,6 +27,9 @@ export async function recordCaseActivity(input: {
   fromValue?: unknown;
   toValue?: unknown;
   summary: string;
+  generatedBy?: string | null;
+  model?: string | null;
+  approvedById?: string | null;
 }) {
   const [row] = await db
     .insert(caseActivities)
@@ -38,6 +41,9 @@ export async function recordCaseActivity(input: {
       fromValue: stringifyActivityValue(input.fromValue),
       toValue: stringifyActivityValue(input.toValue),
       summary: input.summary,
+      generatedBy: input.generatedBy ?? null,
+      model: input.model ?? null,
+      approvedById: input.approvedById ?? null,
     })
     .returning();
   return row;

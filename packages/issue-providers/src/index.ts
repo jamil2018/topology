@@ -19,4 +19,8 @@ export {
   resetMockIssueStore,
   setMockIssueStatus,
 } from "./mock";
-export { listIssueProviders, resolveIssueProvider } from "./factory";
+export {
+  listIssueProviders,
+  registerIssueProvider,
+  resolveIssueProvider,
+} from "./factory";

@@ -1,22 +1,33 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
+import { resolveAffectedPaths } from "@/lib/affected-resolve";
 import { authenticateCiRequest } from "@/lib/ci-auth";
 import { requireProjectAccess } from "@/lib/project";
 import { getWorkspaceImpact } from "@/lib/quality-graph";
 
-const bodySchema = z.object({
-  paths: z.array(z.string().min(1)).min(1),
-  /** When omitted, path_component_rules are loaded from the workspace DB. */
-  rules: z
-    .array(
-      z.object({
-        pattern: z.string().min(1),
-        componentKey: z.string().min(1),
-      }),
-    )
-    .optional(),
-});
+const bodySchema = z
+  .object({
+    paths: z.array(z.string().min(1)).optional(),
+    commitSha: z.string().min(1).optional(),
+    pr: z.number().int().positive().optional(),
+    /** When omitted, path_component_rules are loaded from the workspace DB. */
+    rules: z
+      .array(
+        z.object({
+          pattern: z.string().min(1),
+          componentKey: z.string().min(1),
+        }),
+      )
+      .optional(),
+  })
+  .refine(
+    (data) =>
+      (data.paths != null && data.paths.length > 0) ||
+      Boolean(data.commitSha?.trim()) ||
+      data.pr != null,
+    { message: "Provide paths, commitSha, or pr" },
+  );
 
 async function resolveWorkspaceId(
   request: Request,
@@ -67,12 +78,28 @@ export async function POST(request: Request) {
     );
   }
 
-  const { paths, rules } = parsed.data;
+  const { rules, commitSha, pr, paths } = parsed.data;
+  const resolved = await resolveAffectedPaths(access.workspaceId, {
+    paths,
+    commitSha,
+    pr,
+  });
+  if (!resolved.ok) {
+    return NextResponse.json(
+      { error: resolved.error },
+      { status: resolved.status },
+    );
+  }
+
+  const impactPaths = resolved.paths;
   const { impact, pathRulesApplied, unknownComponentKeys, rulesSource } =
-    await getWorkspaceImpact(access.workspaceId, paths, rules);
+    await getWorkspaceImpact(access.workspaceId, impactPaths, rules);
 
   return NextResponse.json({
-    paths,
+    paths: impactPaths,
+    pathsSource: resolved.pathsSource,
+    commitSha: commitSha ?? null,
+    pr: pr ?? null,
     impact,
     summary: {
       components: impact.components.length,

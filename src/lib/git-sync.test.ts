@@ -1,9 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
+import { parseChangedPaths, serializeChangedPaths } from "./git-sync";
 
 /**
  * Unit-level coverage for resolveRunGitRefs branching without a live DB.
  * Integration coverage lives in affected.integration / ci paths.
  */
+
+describe("changed path JSON helpers", () => {
+  it("round-trips unique non-empty paths", () => {
+    const json = serializeChangedPaths(["src/a.ts", " src/b.ts ", "src/a.ts", ""]);
+    expect(JSON.parse(json)).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(parseChangedPaths(json)).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+
+  it("returns empty for invalid JSON", () => {
+    expect(parseChangedPaths("not-json")).toEqual([]);
+    expect(parseChangedPaths(null)).toEqual([]);
+  });
+});
 
 describe("resolveRunGitRefs empty short-circuit", () => {
   it("returns null refs when neither sha nor pr is provided", async () => {

@@ -27,6 +27,8 @@ type QueueItem = {
   resultId?: string | null;
   caseId?: string | null;
   signatureId?: string | null;
+  /** Commit SHA from the failing run, when known (Phase 4 correlation). */
+  commitSha?: string | null;
 };
 
 type FlakeHint = {
@@ -186,6 +188,14 @@ export function TriageWorkspace({
                 >
                   {item.runName}
                 </Link>
+              </>
+            ) : null}
+            {item.commitSha ? (
+              <>
+                {" · "}
+                <span className="font-mono" title={item.commitSha}>
+                  {item.commitSha.slice(0, 7)}
+                </span>
               </>
             ) : null}
           </p>

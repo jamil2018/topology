@@ -12,6 +12,7 @@ export type SettingsAnchor =
   | "roles"
   | "connections"
   | "ci"
+  | "repositories"
   | "ai"
   | "webhooks";
 
@@ -47,6 +48,7 @@ const SECTION_ALIASES: Record<string, ResolvedSettingsSection> = {
   integrations: { page: "integrations" },
   connections: { page: "integrations", anchor: "connections" },
   ci: { page: "integrations", anchor: "ci" },
+  repositories: { page: "integrations", anchor: "repositories" },
   ai: { page: "integrations", anchor: "ai" },
   webhooks: { page: "integrations", anchor: "webhooks" },
 };

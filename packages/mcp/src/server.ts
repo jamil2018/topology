@@ -124,7 +124,64 @@ export function createTopologyMcpServer(client: TopologyClient) {
   server.tool(
     "get_coverage",
     "Get requirement/risk/automation/execution coverage and gaps for the workspace",
-    async () => jsonText(await client.getCoverage()),
+    { filter: z.string().optional().describe("Narrow gaps by kind, key, or title") },
+    async ({ filter }) => jsonText(await client.getCoverage(filter)),
+  );
+
+  server.tool(
+    "get_requirement",
+    "Get a requirement by id or key (getRequirement), including quality graph edges",
+    {
+      id: z.string().optional(),
+      key: z.string().optional(),
+    },
+    async (args) => jsonText(await client.getRequirement(args)),
+  );
+
+  server.tool(
+    "get_execution_history",
+    "Recent run results for an intent or implementation (getExecutionHistory)",
+    {
+      intentId: z.string().optional(),
+      intentKey: z.string().optional(),
+      implementationId: z.string().optional(),
+      limit: z.number().int().positive().max(200).optional(),
+    },
+    async (args) => jsonText(await client.getExecutionHistory(args)),
+  );
+
+  server.tool(
+    "get_failure_evidence",
+    "Failure notes, error, stack, attachments, and signature for a result or signature id (getFailureEvidence)",
+    {
+      resultId: z.string().optional(),
+      signatureId: z.string().optional(),
+    },
+    async (args) => jsonText(await client.getFailureEvidence(args)),
+  );
+
+  server.tool(
+    "link_automation",
+    "Link an automation implementation to a test intent (linkAutomation)",
+    {
+      implementationId: z.string().optional(),
+      externalKey: z.string().optional(),
+      intentId: z.string().optional(),
+      intentKey: z.string().optional(),
+    },
+    async (args) => jsonText(await client.linkAutomation(args)),
+  );
+
+  server.tool(
+    "compare_releases",
+    "Compare release snapshots or stored release ids (compareReleases)",
+    {
+      beforeReleaseId: z.string().optional(),
+      afterReleaseId: z.string().optional(),
+      before: z.record(z.string(), z.unknown()).optional(),
+      after: z.record(z.string(), z.unknown()).optional(),
+    },
+    async (args) => jsonText(await client.compareReleases(args)),
   );
 
   server.tool(

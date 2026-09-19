@@ -134,6 +134,12 @@ export const proposalStatusEnum = pgEnum("proposal_status", [
   "rejected",
 ]);
 
+export const coverageSnapshotSourceEnum = pgEnum("coverage_snapshot_source", [
+  "nightly",
+  "release",
+  "manual",
+]);
+
 export const proposalActorTypeEnum = pgEnum("proposal_actor_type", [
   "user",
   "agent",
@@ -199,6 +205,10 @@ export const workspaces = pgTable("workspaces", {
   slug: text("slug").notNull().unique(),
   /** Soft-archive; archived projects are hidden from the switcher. */
   archivedAt: timestamp("archived_at", { mode: "date" }),
+  /** Overrides TOPOLOGY_AI_PROVIDER when set (null = use env). */
+  aiProvider: text("ai_provider"),
+  aiModel: text("ai_model"),
+  aiBaseUrl: text("ai_base_url"),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
@@ -304,6 +314,8 @@ export const testIntents = pgTable(
     }),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+    /** Last freshness state we emitted intent.stale for (dedupe). */
+    freshnessWebhookState: text("freshness_webhook_state"),
   },
   (table) => [unique().on(table.workspaceId, table.key)],
 );
@@ -484,6 +496,8 @@ export const commits = pgTable(
     sha: text("sha").notNull(),
     message: text("message").default("").notNull(),
     committedAt: timestamp("committed_at", { mode: "date" }).notNull(),
+    /** JSON array of changed file paths for impact analysis. */
+    changedPathsJson: text("changed_paths_json").default("[]").notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (table) => [unique().on(table.repositoryId, table.sha)],
@@ -501,6 +515,8 @@ export const pullRequests = pgTable(
     base: text("base").notNull(),
     head: text("head").notNull(),
     status: pullRequestStatusEnum("status").default("open").notNull(),
+    /** JSON array of changed file paths for impact analysis. */
+    changedPathsJson: text("changed_paths_json").default("[]").notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },
@@ -782,6 +798,41 @@ export const releaseSnapshots = pgTable("release_snapshots", {
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
 
+/** Workspace coverage history (Phase 8). */
+export const coverageSnapshots = pgTable("coverage_snapshots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  capturedAt: timestamp("captured_at", { mode: "date" }).defaultNow().notNull(),
+  label: text("label"),
+  source: coverageSnapshotSourceEnum("source").default("manual").notNull(),
+  dimensionsJson: text("dimensions_json").notNull(),
+  gapsJson: text("gaps_json"),
+  releaseId: uuid("release_id").references(() => releases.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+/** In-app notification for a workspace member (Phase 8). */
+export const notifications = pgTable("notifications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  body: text("body").default("").notNull(),
+  entityType: text("entity_type"),
+  entityId: uuid("entity_id"),
+  readAt: timestamp("read_at", { mode: "date" }),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+});
+
 export const issueProviderEnum = pgEnum("issue_provider", [
   "mock",
   "jira",
@@ -885,6 +936,12 @@ export const caseActivities = pgTable("case_activities", {
   fromValue: text("from_value"),
   toValue: text("to_value"),
   summary: text("summary").notNull(),
+  /** When activity reflects AI-assisted graph changes (optional). */
+  generatedBy: text("generated_by"),
+  model: text("model"),
+  approvedById: uuid("approved_by_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
 
@@ -970,6 +1027,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   comments: many(resultComments),
   entityComments: many(entityComments),
   entityOwners: many(entityOwners),
+  notifications: many(notifications),
   uploadedAttachments: many(attachments),
 }));
 
@@ -1001,6 +1059,8 @@ export const workspacesRelations = relations(workspaces, ({ many }) => ({
   proposals: many(proposals),
   entityComments: many(entityComments),
   entityOwners: many(entityOwners),
+  coverageSnapshots: many(coverageSnapshots),
+  notifications: many(notifications),
 }));
 
 export const entityCommentsRelations = relations(entityComments, ({ one }) => ({
@@ -1021,6 +1081,31 @@ export const entityOwnersRelations = relations(entityOwners, ({ one }) => ({
   }),
   user: one(users, {
     fields: [entityOwners.userId],
+    references: [users.id],
+  }),
+}));
+
+export const coverageSnapshotsRelations = relations(
+  coverageSnapshots,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [coverageSnapshots.workspaceId],
+      references: [workspaces.id],
+    }),
+    release: one(releases, {
+      fields: [coverageSnapshots.releaseId],
+      references: [releases.id],
+    }),
+  }),
+);
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [notifications.workspaceId],
+    references: [workspaces.id],
+  }),
+  user: one(users, {
+    fields: [notifications.userId],
     references: [users.id],
   }),
 }));
@@ -1501,6 +1586,10 @@ export type FailureSignature = typeof failureSignatures.$inferSelect;
 export type Journey = typeof journeys.$inferSelect;
 export type Release = typeof releases.$inferSelect;
 export type ReleaseSnapshot = typeof releaseSnapshots.$inferSelect;
+export type CoverageSnapshot = typeof coverageSnapshots.$inferSelect;
+export type CoverageSnapshotSource =
+  (typeof coverageSnapshotSourceEnum.enumValues)[number];
+export type Notification = typeof notifications.$inferSelect;
 export type Folder = typeof folders.$inferSelect;
 export type Run = typeof runs.$inferSelect;
 export type RunResult = typeof runResults.$inferSelect;

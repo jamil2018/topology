@@ -33,6 +33,82 @@ function normalizeRemoteUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
 }
 
+export function serializeChangedPaths(paths: string[]): string {
+  const unique = [
+    ...new Set(paths.map((p) => p.trim()).filter((p) => p.length > 0)),
+  ];
+  return JSON.stringify(unique);
+}
+
+export function parseChangedPaths(json: string | null | undefined): string[] {
+  if (!json?.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(json);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (p): p is string => typeof p === "string" && p.trim().length > 0,
+    );
+  } catch {
+    return [];
+  }
+}
+
+export type CommitWithPaths = Commit & { changedPaths: string[] };
+export type PullRequestWithPaths = PullRequest & { changedPaths: string[] };
+
+function withParsedCommitPaths(row: Commit): CommitWithPaths {
+  return { ...row, changedPaths: parseChangedPaths(row.changedPathsJson) };
+}
+
+function withParsedPullRequestPaths(row: PullRequest): PullRequestWithPaths {
+  return { ...row, changedPaths: parseChangedPaths(row.changedPathsJson) };
+}
+
+export async function getCommitBySha(
+  workspaceId: string,
+  sha: string,
+): Promise<CommitWithPaths | null> {
+  const normalized = sha.trim();
+  if (!normalized) return null;
+
+  const rows = await db
+    .select({ commit: commits })
+    .from(commits)
+    .innerJoin(repositories, eq(commits.repositoryId, repositories.id))
+    .where(
+      and(
+        eq(repositories.workspaceId, workspaceId),
+        eq(commits.sha, normalized),
+      ),
+    )
+    .limit(1);
+  const row = rows[0]?.commit;
+  if (!row) return null;
+  return withParsedCommitPaths(row);
+}
+
+export async function getPullRequestByNumber(
+  workspaceId: string,
+  number: number,
+): Promise<PullRequestWithPaths | null> {
+  if (!Number.isInteger(number) || number < 1) return null;
+
+  const rows = await db
+    .select({ pullRequest: pullRequests })
+    .from(pullRequests)
+    .innerJoin(repositories, eq(pullRequests.repositoryId, repositories.id))
+    .where(
+      and(
+        eq(repositories.workspaceId, workspaceId),
+        eq(pullRequests.number, number),
+      ),
+    )
+    .limit(1);
+  const row = rows[0]?.pullRequest;
+  if (!row) return null;
+  return withParsedPullRequestPaths(row);
+}
+
 /**
  * Find or create a repository row for the workspace.
  * Matching is by (workspaceId, remoteUrl).
@@ -79,6 +155,7 @@ export async function ensureCommit(
     sha: string;
     message?: string;
     committedAt?: Date | string;
+    changedPaths?: string[];
   },
   executor: GitSyncDb = db,
 ): Promise<Commit> {
@@ -91,10 +168,17 @@ export async function ensureCommit(
     where: and(eq(commits.repositoryId, repositoryId), eq(commits.sha, sha)),
   });
   if (existing) {
+    const patch: { message?: string; changedPathsJson?: string } = {};
     if (input.message != null && input.message !== existing.message) {
+      patch.message = input.message;
+    }
+    if (input.changedPaths != null) {
+      patch.changedPathsJson = serializeChangedPaths(input.changedPaths);
+    }
+    if (Object.keys(patch).length > 0) {
       const [updated] = await executor
         .update(commits)
-        .set({ message: input.message })
+        .set(patch)
         .where(eq(commits.id, existing.id))
         .returning();
       return updated ?? existing;
@@ -118,6 +202,10 @@ export async function ensureCommit(
       committedAt: Number.isFinite(committedAt.getTime())
         ? committedAt
         : new Date(),
+      changedPathsJson:
+        input.changedPaths != null
+          ? serializeChangedPaths(input.changedPaths)
+          : "[]",
     })
     .returning();
   if (!created) {
@@ -137,6 +225,7 @@ export async function ensurePullRequest(
     base?: string;
     head?: string;
     status?: PullRequestStatus;
+    changedPaths?: string[];
   },
   executor: GitSyncDb = db,
 ): Promise<PullRequest> {
@@ -156,6 +245,7 @@ export async function ensurePullRequest(
       base?: string;
       head?: string;
       status?: PullRequestStatus;
+      changedPathsJson?: string;
       updatedAt: Date;
     } = {
       updatedAt: new Date(),
@@ -164,6 +254,9 @@ export async function ensurePullRequest(
     if (input.base != null) patch.base = input.base;
     if (input.head != null) patch.head = input.head;
     if (input.status != null) patch.status = input.status;
+    if (input.changedPaths != null) {
+      patch.changedPathsJson = serializeChangedPaths(input.changedPaths);
+    }
 
     const [updated] = await executor
       .update(pullRequests)
@@ -182,6 +275,10 @@ export async function ensurePullRequest(
       base: input.base ?? "main",
       head: input.head ?? "",
       status: input.status ?? "open",
+      changedPathsJson:
+        input.changedPaths != null
+          ? serializeChangedPaths(input.changedPaths)
+          : "[]",
     })
     .returning();
   if (!created) {

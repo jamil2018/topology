@@ -48,3 +48,35 @@ describe("cli affected path flags", () => {
     expect(collectAffectedPaths(["--rule", "src/=COMP"])).toEqual([]);
   });
 });
+
+function buildAffectedBody(args: string[]): Record<string, unknown> {
+  const paths = collectAffectedPaths(args);
+  const commitSha = getFlag(args, "--commit");
+  const prRaw = getFlag(args, "--pr");
+  const body: Record<string, unknown> = {};
+  if (paths.length > 0) body.paths = paths;
+  if (commitSha?.trim()) body.commitSha = commitSha.trim();
+  if (prRaw != null) {
+    const pr = Number(prRaw);
+    if (Number.isInteger(pr) && pr >= 1) body.pr = pr;
+  }
+  return body;
+}
+
+describe("cli affected commit/pr flags", () => {
+  it("builds body with --commit", () => {
+    expect(buildAffectedBody(["--commit", "abc1234"])).toEqual({
+      commitSha: "abc1234",
+    });
+  });
+
+  it("builds body with --pr", () => {
+    expect(buildAffectedBody(["--pr", "99"])).toEqual({ pr: 99 });
+  });
+
+  it("prefers paths when both path and commit provided", () => {
+    expect(
+      buildAffectedBody(["--path", "src/x.ts", "--commit", "abc"]),
+    ).toEqual({ paths: ["src/x.ts"], commitSha: "abc" });
+  });
+});

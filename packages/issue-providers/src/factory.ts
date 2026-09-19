@@ -1,3 +1,4 @@
+import { registerPlugin } from "@topology/plugin-sdk";
 import { createGithubIssuesProvider } from "./github";
 import { createJiraProvider } from "./jira";
 import { createLinearProvider } from "./linear";
@@ -55,4 +56,17 @@ export function resolveIssueProvider(
 
 export function listIssueProviders(): IssueProviderId[] {
   return ["mock", "jira", "linear", "github"];
+}
+
+/** Register a custom issue provider plugin (same pattern as @topology/plugin-sdk). */
+export function registerIssueProvider(
+  id: IssueProviderId | string,
+  factory: (config: IssueProviderConfig) => IssueProvider,
+) {
+  return registerPlugin({
+    id,
+    kind: "issue",
+    label: String(id),
+    create: (config: IssueProviderConfig) => factory(config),
+  });
 }

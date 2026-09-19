@@ -17,6 +17,10 @@ import {
   testIntents,
   type Proposal as ProposalRow,
 } from "@/db/schema";
+import {
+  getAiProviderConfig,
+  isAiProviderEnabled as isAiConfigEnabled,
+} from "@/lib/ai-provider";
 
 const PRIORITIES = new Set(["P0", "P1", "P2", "P3"]);
 const CASE_STATUSES = new Set(["draft", "ready", "blocked", "deprecated"]);
@@ -111,15 +115,29 @@ export function parseProposalPayload(payloadJson: string): ProposalPayload {
 }
 
 export function getAiProvider(): string {
-  const raw = process.env.TOPOLOGY_AI_PROVIDER?.trim().toLowerCase();
-  if (!raw) return "none";
-  return raw;
+  return getAiProviderConfig().provider;
 }
 
 /** True when an in-app LLM provider is configured (proposals review still works with none). */
 export function isAiProviderEnabled(): boolean {
-  const provider = getAiProvider();
-  return provider !== "none" && provider !== "off" && provider !== "disabled";
+  return isAiConfigEnabled(getAiProviderConfig());
+}
+
+export type ProposalApplyProvenance = {
+  generatedBy: string;
+  model: string | null;
+  approvedById: string;
+};
+
+export function proposalApplyProvenance(
+  row: Pick<ProposalRow, "actorType" | "model">,
+  approvedById: string,
+): ProposalApplyProvenance {
+  return {
+    generatedBy: row.actorType === "model" ? "model" : row.actorType,
+    model: row.model,
+    approvedById,
+  };
 }
 
 export type ProposalListItem = {
@@ -218,6 +236,21 @@ export async function createProposal(
       createdById: input.createdById ?? null,
     })
     .returning();
+
+  const { dispatchWebhook } = await import("@/lib/webhooks");
+  void dispatchWebhook(
+    "proposal.created",
+    {
+      proposalId: row.id,
+      entityType: row.entityType,
+      status: row.status,
+      actorType: row.actorType,
+      model: row.model,
+      diffCount: input.payload.diffs.length,
+    },
+    input.workspaceId,
+  ).catch(() => {});
+
   return row;
 }
 
@@ -228,6 +261,7 @@ type ApplyResult = {
     id: string;
     key?: string;
   }>;
+  provenance?: ProposalApplyProvenance;
 };
 
 async function resolveEntityIdByKey(
@@ -655,6 +689,7 @@ async function applyUpdateDiff(
 export async function applyProposalPayload(
   workspaceId: string,
   payload: ProposalPayload,
+  provenance?: ProposalApplyProvenance,
 ): Promise<ApplyResult> {
   const applied: ApplyResult["applied"] = [];
   const keyToId = new Map<string, string>();
@@ -671,7 +706,7 @@ export async function applyProposalPayload(
     }
   }
 
-  return { applied };
+  return provenance ? { applied, provenance } : { applied };
 }
 
 export async function reviewProposal(opts: {
@@ -679,7 +714,11 @@ export async function reviewProposal(opts: {
   proposalId: string;
   decision: "accepted" | "rejected";
   approvedById: string;
-}): Promise<{ proposal: ProposalListItem; applied?: ApplyResult["applied"] }> {
+}): Promise<{
+  proposal: ProposalListItem;
+  applied?: ApplyResult["applied"];
+  provenance?: ProposalApplyProvenance;
+}> {
   const row = await db.query.proposals.findFirst({
     where: and(
       eq(proposals.id, opts.proposalId),
@@ -707,9 +746,17 @@ export async function reviewProposal(opts: {
   }
 
   const payload = parseProposalPayload(row.payloadJson);
+  const provenance = proposalApplyProvenance(row, opts.approvedById);
   let applied: ApplyResult["applied"];
+  let applyMeta: ProposalApplyProvenance | undefined;
   try {
-    ({ applied } = await applyProposalPayload(opts.workspaceId, payload));
+    const result = await applyProposalPayload(
+      opts.workspaceId,
+      payload,
+      provenance,
+    );
+    applied = result.applied;
+    applyMeta = result.provenance;
   } catch (err) {
     if (err instanceof ProposalApplyError) throw err;
     throw new ProposalApplyError(
@@ -728,5 +775,9 @@ export async function reviewProposal(opts: {
     .where(eq(proposals.id, row.id))
     .returning();
 
-  return { proposal: toProposalListItem(updated), applied };
+  return {
+    proposal: toProposalListItem(updated),
+    applied,
+    provenance: applyMeta,
+  };
 }
