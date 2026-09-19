@@ -14,8 +14,15 @@ type ImplCard = {
   lastStatus: string | null;
 };
 
+type BrowserSlice = {
+  browser: string;
+  passRate: number | null;
+  sampleCount: number;
+};
+
 export function IntentReliabilityCards({ intentId }: { intentId: string }) {
   const [cards, setCards] = useState<ImplCard[] | null>(null);
+  const [byBrowser, setByBrowser] = useState<BrowserSlice[]>([]);
   const [windowDays, setWindowDays] = useState(30);
   const [loading, setLoading] = useState(true);
 
@@ -29,16 +36,22 @@ export function IntentReliabilityCards({ intentId }: { intentId: string }) {
         const reliability = data.reliability as {
           windowDays: number;
           implementations: ImplCard[];
+          byBrowser?: BrowserSlice[];
         } | null;
         if (reliability?.implementations?.length) {
           setCards(reliability.implementations);
           setWindowDays(reliability.windowDays);
+          setByBrowser(reliability.byBrowser ?? []);
         } else {
           setCards(null);
+          setByBrowser([]);
         }
       })
       .catch(() => {
-        if (!cancelled) setCards(null);
+        if (!cancelled) {
+          setCards(null);
+          setByBrowser([]);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -61,11 +74,11 @@ export function IntentReliabilityCards({ intentId }: { intentId: string }) {
   }
 
   return (
-    <div className="mt-4">
+    <div className="mt-4 space-y-3">
       <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
         Reliability · {windowDays}d
       </div>
-      <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+      <ul className="grid gap-2 sm:grid-cols-2">
         {cards.map((card) => (
           <li
             key={card.implementationId}
@@ -108,6 +121,21 @@ export function IntentReliabilityCards({ intentId }: { intentId: string }) {
           </li>
         ))}
       </ul>
+      {byBrowser.length > 0 ? (
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+            Env matrix
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {byBrowser.map((slice) => (
+              <StatusChip key={slice.browser} mono>
+                {slice.browser}{" "}
+                {slice.passRate == null ? "—" : `${slice.passRate}%`}
+              </StatusChip>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,13 +1,26 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  components,
   entityComments,
   entityOwners,
+  releases,
   requirements,
   testIntents,
 } from "@/db/schema";
 
-export type CollabEntityType = "intent" | "requirement";
+export const COLLAB_ENTITY_TYPES = [
+  "intent",
+  "requirement",
+  "component",
+  "release",
+] as const;
+
+export type CollabEntityType = (typeof COLLAB_ENTITY_TYPES)[number];
+
+export function isCollabEntityType(value: string): value is CollabEntityType {
+  return (COLLAB_ENTITY_TYPES as readonly string[]).includes(value);
+}
 
 export function serializeOwner(
   row: {
@@ -57,11 +70,28 @@ export async function entityExistsInWorkspace(
     });
     return Boolean(row);
   }
-  const row = await db.query.requirements.findFirst({
-    where: and(
-      eq(requirements.id, entityId),
-      eq(requirements.workspaceId, workspaceId),
-    ),
+  if (entityType === "requirement") {
+    const row = await db.query.requirements.findFirst({
+      where: and(
+        eq(requirements.id, entityId),
+        eq(requirements.workspaceId, workspaceId),
+      ),
+      columns: { id: true },
+    });
+    return Boolean(row);
+  }
+  if (entityType === "component") {
+    const row = await db.query.components.findFirst({
+      where: and(
+        eq(components.id, entityId),
+        eq(components.workspaceId, workspaceId),
+      ),
+      columns: { id: true },
+    });
+    return Boolean(row);
+  }
+  const row = await db.query.releases.findFirst({
+    where: and(eq(releases.id, entityId), eq(releases.workspaceId, workspaceId)),
     columns: { id: true },
   });
   return Boolean(row);

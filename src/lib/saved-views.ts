@@ -76,3 +76,12 @@ export function serializeRunViewConfig(config: {
 }): string {
   return JSON.stringify(runViewConfigSchema.parse(config));
 }
+
+export function serializeIntentViewConfig(config: {
+  search: string;
+  criticalityFilter: string;
+  statusFilter: string;
+  sort: IntentViewConfig["sort"];
+}): string {
+  return JSON.stringify(intentViewConfigSchema.parse(config));
+}

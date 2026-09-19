@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, TextArea } from "@heroui/react";
+import { EntityCollabPanel } from "./entity-collab-panel";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 
@@ -23,6 +24,7 @@ export function RequirementsWorkspace({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [items, setItems] = useState(initial);
+  const [selected, setSelected] = useState<string | null>(initial[0]?.id ?? null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     key: "",
@@ -120,29 +122,45 @@ export function RequirementsWorkspace({
         ) : (
           <ul className="divide-y divide-[color:var(--topo-line)]">
             {items.map((req) => (
-              <li key={req.id} className="px-4 py-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-medium text-[color:var(--topo-ink)]">
-                      <span className="font-mono text-xs text-[color:var(--topo-accent)]">
-                        {req.key}
-                      </span>{" "}
-                      {req.title}
+              <li key={req.id}>
+                <button
+                  type="button"
+                  className={`w-full px-4 py-3 text-left ${
+                    selected === req.id ? "bg-[color:var(--topo-chip)]/80" : ""
+                  }`}
+                  onClick={() => setSelected(req.id)}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium text-[color:var(--topo-ink)]">
+                        <span className="font-mono text-xs text-[color:var(--topo-accent)]">
+                          {req.key}
+                        </span>{" "}
+                        {req.title}
+                      </div>
+                      {req.description ? (
+                        <p className="mt-1 text-sm text-[color:var(--topo-muted)]">
+                          {req.description}
+                        </p>
+                      ) : null}
                     </div>
-                    {req.description ? (
-                      <p className="mt-1 text-sm text-[color:var(--topo-muted)]">
-                        {req.description}
-                      </p>
-                    ) : null}
+                    <div className="flex flex-wrap gap-1.5">
+                      <StatusChip mono>{req.criticality}</StatusChip>
+                      <StatusChip mono>
+                        {req.coversIntentIds.length} intent
+                        {req.coversIntentIds.length === 1 ? "" : "s"}
+                      </StatusChip>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    <StatusChip mono>{req.criticality}</StatusChip>
-                    <StatusChip mono>
-                      {req.coversIntentIds.length} intent
-                      {req.coversIntentIds.length === 1 ? "" : "s"}
-                    </StatusChip>
+                </button>
+                {selected === req.id ? (
+                  <div className="border-t border-[color:var(--topo-line)] px-4 pb-4">
+                    <EntityCollabPanel
+                      entityType="requirement"
+                      entityId={req.id}
+                    />
                   </div>
-                </div>
+                ) : null}
               </li>
             ))}
           </ul>

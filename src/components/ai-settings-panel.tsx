@@ -151,7 +151,8 @@ export function AiSettingsPanel() {
         Self-host: set <code className="font-mono">TOPOLOGY_AI_PROVIDER</code> in{" "}
         <code className="font-mono">.env.local</code> when no workspace override
         is needed. Draft jobs create pending proposals only — review under
-        Insights → Proposals.
+        Insights → Proposals. Jobs: intents from requirement, negative paths,
+        link suggestions, duplicate-intent hints, and change-impact explanation.
       </p>
     </div>
   );

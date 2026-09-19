@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { validateProposalPayload } from "@topology/domain";
-import { heuristicIntentFromRequirementTitle } from "./ai-draft";
+import {
+  findDuplicateIntentPairs,
+  heuristicIntentFromRequirementTitle,
+} from "./ai-draft";
 
 describe("ai-draft heuristics", () => {
   it("builds a valid proposal payload from requirement title", () => {
@@ -16,5 +19,16 @@ describe("ai-draft heuristics", () => {
     expect(validated.payload.diffs[0]?.entityType).toBe("intent");
     expect(validated.payload.diffs[0]?.action).toBe("create");
     expect(validated.payload.rationale).toContain("REQ-1");
+  });
+
+  it("finds duplicate intent pairs by normalized title", () => {
+    const pairs = findDuplicateIntentPairs([
+      { id: "1", key: "A", title: "Account Lockout" },
+      { id: "2", key: "B", title: "account  lockout" },
+      { id: "3", key: "C", title: "Refund retry" },
+    ]);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]?.[0].key).toBe("A");
+    expect(pairs[0]?.[1].key).toBe("B");
   });
 });

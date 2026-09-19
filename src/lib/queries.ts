@@ -608,7 +608,43 @@ export async function getIntentReliabilityCards(
     })
     .filter(Boolean);
 
-  return cards.length > 0 ? { windowDays, implementations: cards } : null;
+  if (cards.length === 0) return null;
+
+  const results = await db.query.runResults.findMany({
+    where: inArray(
+      runResults.implementationId,
+      impls.map((i) => i.id),
+    ),
+    columns: {
+      status: true,
+      executedAt: true,
+      createdAt: true,
+      environmentJson: true,
+    },
+    orderBy: [desc(runResults.executedAt)],
+    limit: 200,
+  });
+
+  const history: ReliabilityHistoryPoint[] = [];
+  for (const row of results) {
+    if (row.status !== "passed" && row.status !== "failed") continue;
+    const env = parseEnvironmentFields(row.environmentJson);
+    if (!env.browser && !env.os) continue;
+    history.push({
+      status: row.status,
+      at: row.executedAt ?? row.createdAt,
+      browser: env.browser ?? null,
+      os: env.os ?? null,
+    });
+  }
+  const report = computeReliability(history);
+  const byBrowser = report.byBrowser.map((s) => ({
+    browser: s.key,
+    passRate: s.passRate,
+    sampleCount: s.sampleCount,
+  }));
+
+  return { windowDays, implementations: cards, byBrowser };
 }
 
 async function getFlakeHintsForCaseIds(caseIds: string[]) {

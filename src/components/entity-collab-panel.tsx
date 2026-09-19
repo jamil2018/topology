@@ -40,13 +40,10 @@ export function EntityCollabPanel({
   entityType,
   entityId,
 }: {
-  entityType: "intent" | "requirement";
+  entityType: "intent" | "requirement" | "component" | "release";
   entityId: string;
 }) {
-  const base =
-    entityType === "intent"
-      ? `/api/intents/${entityId}`
-      : `/api/requirements/${entityId}`;
+  const base = `/api/collab/${entityType}/${entityId}`;
   const [pending, startTransition] = useTransition();
   const [comments, setComments] = useState<Comment[]>([]);
   const [owner, setOwner] = useState<Owner>(null);
