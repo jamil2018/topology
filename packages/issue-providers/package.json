@@ -8,6 +8,9 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "dependencies": {
+    "@topology/plugin-sdk": "0.1.0"
+  },
   "scripts": {
     "test": "vitest run --config ../../vitest.packages.config.ts"
   }

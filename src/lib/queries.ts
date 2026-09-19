@@ -16,11 +16,13 @@ import { db } from "@/db";
 import {
   cases,
   folders,
+  implementationStats,
   linkedIssues,
   milestones,
   runResults,
   runs,
   savedViews,
+  testImplementations,
   triageItems,
 } from "@/db/schema";
 import { listRetestQueue } from "@/lib/issues";
@@ -208,7 +210,35 @@ export async function getHubPulse(workspaceId: string) {
   };
 }
 
+/**
+ * Prefer Phase 4 implementation_stats rollups (30-day window) for Hub flake
+ * count; fall back to scanning recent result history when rollups are empty.
+ */
 export async function countFlakeSuspects(workspaceId: string): Promise<number> {
+  const fromRollups = await db
+    .select({
+      implementationId: implementationStats.implementationId,
+      flakeProbability: implementationStats.flakeProbability,
+    })
+    .from(implementationStats)
+    .innerJoin(
+      testImplementations,
+      eq(implementationStats.implementationId, testImplementations.id),
+    )
+    .where(
+      and(
+        eq(testImplementations.workspaceId, workspaceId),
+        eq(implementationStats.windowDays, 30),
+      ),
+    );
+
+  if (fromRollups.length > 0) {
+    return fromRollups.filter(
+      (row) =>
+        row.flakeProbability != null && Number(row.flakeProbability) >= 0.35,
+    ).length;
+  }
+
   const recent = await db
     .select({
       caseId: runResults.caseId,
@@ -524,11 +554,61 @@ export async function getTriageQueue(workspaceId: string) {
       ...item,
       resultId: source?.resultId ?? null,
       caseId: source?.caseId ?? null,
+      commitSha: source?.run?.commitSha ?? null,
       flakeHint: source?.caseId
         ? (flakeHints.get(source.caseId)?.hint ?? null)
         : null,
     };
   });
+}
+
+/**
+ * Reliability + duration cards for a single intent from implementation_stats.
+ */
+export async function getIntentReliabilityCards(
+  workspaceId: string,
+  intentId: string,
+  windowDays = 30,
+) {
+  const impls = await db.query.testImplementations.findMany({
+    where: and(
+      eq(testImplementations.workspaceId, workspaceId),
+      eq(testImplementations.intentId, intentId),
+    ),
+  });
+  if (impls.length === 0) return null;
+
+  const stats = await db.query.implementationStats.findMany({
+    where: and(
+      inArray(
+        implementationStats.implementationId,
+        impls.map((i) => i.id),
+      ),
+      eq(implementationStats.windowDays, windowDays),
+    ),
+  });
+  if (stats.length === 0) return null;
+
+  const byImpl = new Map(stats.map((s) => [s.implementationId, s]));
+  const cards = impls
+    .map((impl) => {
+      const rollup = byImpl.get(impl.id);
+      if (!rollup) return null;
+      return {
+        implementationId: impl.id,
+        type: impl.type,
+        externalKey: impl.externalKey,
+        passRate: rollup.passRate,
+        flakeProbability: rollup.flakeProbability,
+        durationP50: rollup.durationP50,
+        durationP95: rollup.durationP95,
+        lastRunAt: rollup.lastRunAt,
+        lastStatus: rollup.lastStatus,
+      };
+    })
+    .filter(Boolean);
+
+  return cards.length > 0 ? { windowDays, implementations: cards } : null;
 }
 
 async function getFlakeHintsForCaseIds(caseIds: string[]) {

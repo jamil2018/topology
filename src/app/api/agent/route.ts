@@ -4,7 +4,7 @@ import { z } from "zod";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { dbErrorResponse, isUniqueViolation, readJsonBody } from "@/lib/http-errors";
 import { db } from "@/db";
-import { cases, runResults, runs, testIntents } from "@/db/schema";
+import { cases, runResults, runs, testImplementations, testIntents } from "@/db/schema";
 import {
   createIssueFromResult,
   getScenarioContext,
@@ -123,9 +123,87 @@ export async function GET(request: Request) {
   }
 
   if (resource === "coverage") {
-    const { getWorkspaceCoverage } = await import("@/lib/quality-graph");
-    const coverage = await getWorkspaceCoverage(workspaceId);
+    const { getWorkspaceCoverage, filterCoverageReport } = await import(
+      "@/lib/quality-graph"
+    );
+    const filter = searchParams.get("filter");
+    const coverage = filterCoverageReport(
+      await getWorkspaceCoverage(workspaceId),
+      filter,
+    );
     return NextResponse.json({ coverage });
+  }
+
+  if (resource === "requirement") {
+    const { getRequirementDetail } = await import("@/lib/quality-graph");
+    const id = searchParams.get("id");
+    const key = searchParams.get("key");
+    if (!id && !key) {
+      return NextResponse.json(
+        { error: "id or key is required" },
+        { status: 400 },
+      );
+    }
+    const requirement = await getRequirementDetail(workspaceId, id ?? key!);
+    if (!requirement) {
+      return NextResponse.json({ error: "Requirement not found" }, { status: 404 });
+    }
+    return NextResponse.json({ requirement });
+  }
+
+  if (resource === "execution_history") {
+    const { getExecutionHistory } = await import("@/lib/quality-graph");
+    const intentId = searchParams.get("intentId") ?? undefined;
+    const intentKey = searchParams.get("intentKey") ?? undefined;
+    const implementationId = searchParams.get("implementationId") ?? undefined;
+    if (!intentId && !intentKey && !implementationId) {
+      return NextResponse.json(
+        { error: "intentId, intentKey, or implementationId is required" },
+        { status: 400 },
+      );
+    }
+    const limitRaw = searchParams.get("limit");
+    let limit: number | undefined;
+    if (limitRaw != null) {
+      const n = Number(limitRaw);
+      if (!Number.isFinite(n) || n < 1) {
+        return NextResponse.json({ error: "Invalid limit" }, { status: 400 });
+      }
+      limit = n;
+    }
+    const history = await getExecutionHistory(workspaceId, {
+      intentId,
+      intentKey,
+      implementationId,
+      limit,
+    });
+    return NextResponse.json(history);
+  }
+
+  if (resource === "failure_evidence") {
+    const { getFailureEvidence } = await import("@/lib/quality-graph");
+    const resultId = searchParams.get("resultId") ?? undefined;
+    const signatureId = searchParams.get("signatureId") ?? undefined;
+    if (!resultId && !signatureId) {
+      return NextResponse.json(
+        { error: "resultId or signatureId is required" },
+        { status: 400 },
+      );
+    }
+    if (resultId && !z.string().uuid().safeParse(resultId).success) {
+      return NextResponse.json({ error: "Invalid resultId" }, { status: 400 });
+    }
+    if (signatureId && !z.string().uuid().safeParse(signatureId).success) {
+      return NextResponse.json({ error: "Invalid signatureId" }, { status: 400 });
+    }
+    const evidence = await getFailureEvidence(workspaceId, {
+      resultId,
+      signatureId,
+    });
+    if (!evidence) {
+      return NextResponse.json({ error: "Evidence not found" }, { status: 404 });
+    }
+    return NextResponse.json({ evidence });
   }
 
   return NextResponse.json({ error: "Unknown resource" }, { status: 400 });
@@ -194,6 +272,39 @@ const linkIssueSchema = z.object({
   remoteKey: z.string().min(1),
   provider: z.enum(["mock", "jira", "linear", "github"]).optional(),
 });
+
+const linkAutomationSchema = z
+  .object({
+    action: z.literal("link_automation"),
+    implementationId: z.string().uuid().optional(),
+    externalKey: z.string().min(1).optional(),
+    intentId: z.string().uuid().optional(),
+    intentKey: z.string().min(1).optional(),
+  })
+  .refine((b) => Boolean(b.implementationId || b.externalKey), {
+    message: "implementationId or externalKey is required",
+  })
+  .refine((b) => Boolean(b.intentId || b.intentKey), {
+    message: "intentId or intentKey is required",
+  });
+
+const compareReleasesSchema = z
+  .object({
+    action: z.literal("compare_releases"),
+    beforeReleaseId: z.string().uuid().optional(),
+    afterReleaseId: z.string().uuid().optional(),
+    before: z.unknown().optional(),
+    after: z.unknown().optional(),
+  })
+  .refine(
+    (b) =>
+      (b.beforeReleaseId && b.afterReleaseId) ||
+      (b.before !== undefined && b.after !== undefined),
+    {
+      message:
+        "Provide beforeReleaseId and afterReleaseId, or before and after snapshots",
+    },
+  );
 
 export async function POST(request: Request) {
   const authResult = await requireToken(request);
@@ -448,6 +559,99 @@ export async function POST(request: Request) {
         workspaceId,
       });
       return NextResponse.json({ issue });
+    }
+
+    if (action === "link_automation") {
+      const parsed = linkAutomationSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.flatten() },
+          { status: 400 },
+        );
+      }
+      const {
+        LinkImplementationError,
+        linkImplementationToIntent,
+      } = await import("@/lib/quality-graph");
+
+      let implementationId = parsed.data.implementationId;
+      if (!implementationId && parsed.data.externalKey) {
+        const impl = await db.query.testImplementations.findFirst({
+          where: and(
+            eq(testImplementations.workspaceId, workspaceId),
+            eq(testImplementations.externalKey, parsed.data.externalKey),
+          ),
+        });
+        if (!impl) {
+          return NextResponse.json(
+            { error: "Implementation not found" },
+            { status: 404 },
+          );
+        }
+        implementationId = impl.id;
+      }
+
+      let intentId = parsed.data.intentId;
+      if (!intentId && parsed.data.intentKey) {
+        const intent = await db.query.testIntents.findFirst({
+          where: and(
+            eq(testIntents.workspaceId, workspaceId),
+            eq(testIntents.key, parsed.data.intentKey),
+          ),
+        });
+        if (!intent) {
+          return NextResponse.json({ error: "Intent not found" }, { status: 404 });
+        }
+        intentId = intent.id;
+      }
+
+      if (!implementationId || !intentId) {
+        return NextResponse.json({ error: "Invalid link request" }, { status: 400 });
+      }
+
+      try {
+        const linked = await linkImplementationToIntent(
+          workspaceId,
+          implementationId,
+          intentId,
+        );
+        return NextResponse.json({ ok: true, ...linked });
+      } catch (err) {
+        if (err instanceof LinkImplementationError) {
+          return NextResponse.json({ error: err.message }, { status: err.status });
+        }
+        throw err;
+      }
+    }
+
+    if (action === "compare_releases") {
+      const parsed = compareReleasesSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.flatten() },
+          { status: 400 },
+        );
+      }
+      const { compareReleaseSnapshots } = await import("@/lib/release-quality");
+      const { beforeReleaseId, afterReleaseId, before, after } = parsed.data;
+      const result = await compareReleaseSnapshots(
+        workspaceId,
+        beforeReleaseId && afterReleaseId
+          ? { beforeReleaseId, afterReleaseId }
+          : { before, after },
+      );
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+      return NextResponse.json({
+        comparison: result.comparison,
+        ...(result.beforeReleaseId
+          ? {
+              beforeReleaseId: result.beforeReleaseId,
+              afterReleaseId: result.afterReleaseId,
+            }
+          : {}),
+      });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });

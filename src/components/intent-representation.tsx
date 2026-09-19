@@ -6,6 +6,7 @@ import {
   emptyRepresentation,
   fromTraditionalSteps,
   isEmptyRepresentation,
+  normalizeRepresentation,
   parseRepresentation,
   toGherkin,
   toNaturalLanguage,
@@ -31,14 +32,24 @@ const VIEW_LABELS: Record<RepresentationView, string> = {
 };
 
 /**
- * Derive a structured intent representation from linked case steps
- * (preferred) or freeform behavior text. No representationJson column.
+ * Derive a structured intent representation from representationJson,
+ * linked case steps, or freeform behavior text.
  */
 export function deriveIntentRepresentation(input: {
+  representationJson?: string | null;
   steps?: string | null;
   expectedResult?: string | null;
   behavior?: string | null;
 }): StructuredRepresentation {
+  if (input.representationJson?.trim()) {
+    try {
+      const parsed = JSON.parse(input.representationJson) as Partial<StructuredRepresentation>;
+      const fromJson = normalizeRepresentation(parsed);
+      if (!isEmptyRepresentation(fromJson)) return fromJson;
+    } catch {
+      /* fall through */
+    }
+  }
   const steps = input.steps ?? "";
   const expectedResult = input.expectedResult ?? "";
   if (steps.trim() || expectedResult.trim()) {
@@ -58,12 +69,16 @@ type LinkedCaseDetail = {
 };
 
 export function IntentRepresentationPanel({
+  intentId,
   intentTitle,
   behavior,
+  representationJson = null,
   linkedCaseId,
 }: {
+  intentId: string;
   intentTitle: string;
   behavior: string;
+  representationJson?: string | null;
   linkedCaseId: string | null;
 }) {
   const [view, setView] = useState<RepresentationView>("traditional");
@@ -72,9 +87,15 @@ export function IntentRepresentationPanel({
   const [linkedCase, setLinkedCase] = useState<LinkedCaseDetail | null>(null);
   const [stepsDraft, setStepsDraft] = useState("");
   const [expectedDraft, setExpectedDraft] = useState("");
+  const [bddDraft, setBddDraft] = useState("");
+  const [storedJson, setStoredJson] = useState(representationJson);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
+
+  useEffect(() => {
+    setStoredJson(representationJson);
+  }, [representationJson]);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,7 +107,10 @@ export function IntentRepresentationPanel({
       setLinkedCase(null);
       setLoading(false);
       const projected = toTraditionalSteps(
-        deriveIntentRepresentation({ behavior }),
+        deriveIntentRepresentation({
+          representationJson: representationJson,
+          behavior,
+        }),
       );
       setStepsDraft(projected.steps);
       setExpectedDraft(projected.expectedResult);
@@ -123,7 +147,10 @@ export function IntentRepresentationPanel({
         setLoadError(err instanceof Error ? err.message : "Failed to load case");
         setLinkedCase(null);
         const projected = toTraditionalSteps(
-          deriveIntentRepresentation({ behavior }),
+          deriveIntentRepresentation({
+            representationJson,
+            behavior,
+          }),
         );
         setStepsDraft(projected.steps);
         setExpectedDraft(projected.expectedResult);
@@ -133,20 +160,27 @@ export function IntentRepresentationPanel({
     return () => {
       cancelled = true;
     };
-  }, [linkedCaseId, behavior]);
+  }, [linkedCaseId, behavior, representationJson]);
 
-  // Prefer live traditional drafts when editing; otherwise fall back to behavior.
   const liveStructured = useMemo(
     () =>
       deriveIntentRepresentation({
+        representationJson: storedJson,
         steps: stepsDraft,
         expectedResult: expectedDraft,
         behavior,
       }),
-    [stepsDraft, expectedDraft, behavior],
-  )
+    [storedJson, stepsDraft, expectedDraft, behavior],
+  );
 
-  const dirty =
+  // Keep BDD editor in sync when switching to that view.
+  useEffect(() => {
+    if (view === "bdd") {
+      setBddDraft(toGherkin(liveStructured, { scenario: intentTitle }));
+    }
+  }, [view, intentTitle]); // eslint-disable-line react-hooks/exhaustive-deps -- only sync on view change
+
+  const dirtyTraditional =
     Boolean(linkedCase) &&
     (stepsDraft !== (linkedCase?.steps ?? "") ||
       expectedDraft !== (linkedCase?.expectedResult ?? ""));
@@ -174,17 +208,58 @@ export function IntentRepresentationPanel({
         );
         return;
       }
+      const structured = fromTraditionalSteps(stepsDraft, expectedDraft);
+      await fetch("/api/intents", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: intentId,
+          representationJson: JSON.stringify(structured),
+        }),
+      });
       const next = data.case as {
         steps?: string;
         expectedResult?: string;
       };
+      const nextSteps = next.steps ?? stepsDraft;
+      const nextExpected = next.expectedResult ?? expectedDraft;
       setLinkedCase({
         id: linkedCaseId,
-        steps: next.steps ?? stepsDraft,
-        expectedResult: next.expectedResult ?? expectedDraft,
+        steps: nextSteps,
+        expectedResult: nextExpected,
       });
-      setStepsDraft(next.steps ?? stepsDraft);
-      setExpectedDraft(next.expectedResult ?? expectedDraft);
+      setStepsDraft(nextSteps);
+      setExpectedDraft(nextExpected);
+      setStoredJson(JSON.stringify(structured));
+      setSaveOk(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveCanonical(structured: StructuredRepresentation) {
+    setSaving(true);
+    setSaveError(null);
+    setSaveOk(false);
+    try {
+      const res = await fetch("/api/intents", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: intentId,
+          representationJson: JSON.stringify(structured),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSaveError(
+          typeof data.error === "string"
+            ? data.error
+            : "Could not save representation",
+        );
+        return;
+      }
+      setStoredJson(JSON.stringify(structured));
       setSaveOk(true);
     } finally {
       setSaving(false);
@@ -233,14 +308,14 @@ export function IntentRepresentationPanel({
 
       {loadError ? (
         <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-          {loadError}. Showing projections from intent behavior.
+          {loadError}. Showing projections from intent representation.
         </p>
       ) : null}
 
-      {!loading && empty && view !== "traditional" ? (
+      {!loading && empty && view !== "traditional" && view !== "bdd" ? (
         <p className="mt-3 text-sm text-[color:var(--topo-muted)]">
-          No structured steps yet. Add traditional steps on a linked case, or
-          describe Given/When/Then in behavior.
+          No structured steps yet. Add traditional steps, edit BDD, or describe
+          Given/When/Then in behavior.
         </p>
       ) : null}
 
@@ -250,12 +325,12 @@ export function IntentRepresentationPanel({
             <p className="text-xs text-[color:var(--topo-muted)]">
               {linkedCaseId
                 ? "Could not load the linked case for editing."
-                : "Read-only projection from behavior. Link a manual case to edit traditional steps."}
+                : "Read-only projection. Link a manual case to edit traditional steps, or use BDD to edit the canonical representation."}
             </p>
           ) : (
             <p className="text-xs text-[color:var(--topo-muted)]">
-              Edits write to the linked manual case (manual projection of this
-              intent).
+              Edits write to the linked manual case and update representationJson
+              on this intent.
             </p>
           )}
           <div>
@@ -292,11 +367,11 @@ export function IntentRepresentationPanel({
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 onPress={() => void saveTraditional()}
-                isDisabled={saving || !dirty}
+                isDisabled={saving || !dirtyTraditional}
               >
                 {saving ? "Saving…" : "Save steps"}
               </Button>
-              {saveOk && !dirty ? (
+              {saveOk && !dirtyTraditional ? (
                 <span className="text-xs text-emerald-700 dark:text-emerald-300">
                   Saved
                 </span>
@@ -311,13 +386,48 @@ export function IntentRepresentationPanel({
         </div>
       ) : null}
 
-      {!loading && view === "bdd" && !empty ? (
-        <pre
-          className="mt-3 whitespace-pre-wrap rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] p-3 font-mono text-[11px] text-[color:var(--topo-ink)]"
-          data-testid="representation-bdd"
-        >
-          {toGherkin(liveStructured, { scenario: intentTitle })}
-        </pre>
+      {!loading && view === "bdd" ? (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs text-[color:var(--topo-muted)]">
+            Edit Gherkin; Save writes representationJson on this intent.
+          </p>
+          <TextArea
+            aria-label="BDD Gherkin"
+            value={bddDraft}
+            onChange={(e) => {
+              setBddDraft(e.target.value);
+              setSaveOk(false);
+            }}
+            className="min-h-[8rem] w-full font-mono text-xs"
+            data-testid="representation-bdd-edit"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onPress={() => void saveCanonical(parseRepresentation(bddDraft))}
+              isDisabled={saving || !bddDraft.trim()}
+            >
+              {saving ? "Saving…" : "Save BDD"}
+            </Button>
+            {saveOk ? (
+              <span className="text-xs text-emerald-700 dark:text-emerald-300">
+                Saved
+              </span>
+            ) : null}
+            {saveError ? (
+              <span className="text-xs text-red-700 dark:text-red-300">
+                {saveError}
+              </span>
+            ) : null}
+          </div>
+          {!empty ? (
+            <pre
+              className="whitespace-pre-wrap rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] p-3 font-mono text-[11px] text-[color:var(--topo-ink)]"
+              data-testid="representation-bdd"
+            >
+              {toGherkin(liveStructured, { scenario: intentTitle })}
+            </pre>
+          ) : null}
+        </div>
       ) : null}
 
       {!loading && view === "natural" && !empty ? (
@@ -349,10 +459,14 @@ export function IntentRepresentationPanel({
               ))}
             </ol>
           </details>
-          <p className="text-xs text-[color:var(--topo-muted)]">
-            Structured and BDD views are display-first until a canonical
-            representation field is available.
-          </p>
+          <Button
+            size="sm"
+            variant="secondary"
+            onPress={() => void saveCanonical(liveStructured)}
+            isDisabled={saving}
+          >
+            Save structured JSON
+          </Button>
         </div>
       ) : null}
     </div>

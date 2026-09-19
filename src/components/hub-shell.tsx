@@ -29,6 +29,7 @@ import {
   ProjectSwitcher,
   type ProjectOption,
 } from "./project-switcher";
+import { NotificationsBell } from "./notifications-bell";
 import { ThemeToggle } from "./theme-toggle";
 
 type NavItem = {
@@ -57,6 +58,7 @@ const navGroups: NavGroup[] = [
       { href: "/cases", label: "Test Cases", Icon: ListChecksIcon },
       { href: "/runs", label: "Test Runs", Icon: PlayCircleIcon },
       { href: "/automation", label: "Automation", Icon: ChartLineIcon },
+      { href: "/impact", label: "Impact", Icon: ChartBarIcon },
       { href: "/milestones", label: "Milestones", Icon: FlagIcon },
       { href: "/releases", label: "Releases", Icon: FlagIcon },
       { href: "/journeys", label: "Journeys", Icon: CirclesFourIcon },
@@ -67,6 +69,8 @@ const navGroups: NavGroup[] = [
     label: "Insights",
     items: [
       { href: "/requirements", label: "Requirements", Icon: ListChecksIcon },
+      { href: "/risks", label: "Risks", Icon: BugIcon },
+      { href: "/components", label: "Components", Icon: CirclesFourIcon },
       { href: "/proposals", label: "Proposals", Icon: SparkleIcon },
       { href: "/reports", label: "Reports", Icon: ChartBarIcon },
       { href: "/triage", label: "Triage", Icon: BugIcon },
@@ -400,6 +404,7 @@ export function HubShell({
               </span>
             </div>
 
+            <NotificationsBell />
             <span title="Search ⌘K">
               <Button
                 size="sm"

@@ -6,6 +6,8 @@ export type CaseListItem = {
   status: string;
   tags: string[];
   folder: { id: string; name: string } | null;
+  intentId?: string | null;
+  intent?: { id: string; key: string; title: string } | null;
 };
 
 export type CaseListSort =

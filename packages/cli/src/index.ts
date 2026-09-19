@@ -21,9 +21,11 @@ Usage:
   topology runs create --name <name> [--source github|jenkins|cli] [--branch <b>] [--sha <sha>] [--pr <n>] [--shards <n>]
   topology runs submit-thread --run-id <id> --shard <i> --file <junit.xml>
   topology runs complete --run-id <id>
-  topology affected --path <p> [--path <p>...] [--paths a,b] [--rule <pattern=componentKey>]...
+  topology affected (--commit <sha> | --pr <n> | --path <p> [--path <p>...] | --paths a,b) [--rule <pattern=componentKey>]...
   topology release analyze [--file input.json]
   topology release compare --before a.json --after b.json
+  topology coverage [filter]
+  topology test get <keyOrId>
   topology query '<dsl>'
 
 Examples:
@@ -279,16 +281,32 @@ function collectAffectedRules(
 
 async function cmdAffected(args: string[]) {
   const paths = collectAffectedPaths(args);
-  if (paths.length === 0) {
-    console.error("Provide at least one --path <p> or --paths a,b");
+  const commitSha = getFlag(args, "--commit");
+  const prRaw = getFlag(args, "--pr");
+
+  let pr: number | undefined;
+  if (prRaw != null) {
+    pr = Number(prRaw);
+    if (!Number.isInteger(pr) || pr < 1) {
+      console.error(`Invalid --pr ${prRaw} (expected positive integer)`);
+      process.exit(1);
+    }
+  }
+
+  if (paths.length === 0 && !commitSha?.trim() && pr == null) {
+    console.error("Provide --commit <sha>, --pr <n>, or --path / --paths");
     usage();
   }
 
   const rules = collectAffectedRules(args);
-  const data = await api("POST", "/api/affected", {
-    paths,
+  const body: Record<string, unknown> = {
     ...(rules.length > 0 ? { rules } : {}),
-  });
+  };
+  if (paths.length > 0) body.paths = paths;
+  if (commitSha?.trim()) body.commitSha = commitSha.trim();
+  if (pr != null) body.pr = pr;
+
+  const data = await api("POST", "/api/affected", body);
   console.log(JSON.stringify(data, null, 2));
 }
 
@@ -319,6 +337,31 @@ async function cmdReleaseCompare(args: string[]) {
   const before = await loadJsonFile(beforePath);
   const after = await loadJsonFile(afterPath);
   const data = await api("POST", "/api/releases/compare", { before, after });
+  console.log(JSON.stringify(data, null, 2));
+}
+
+async function cmdCoverage(filter?: string) {
+  const qs = filter ? `?filter=${encodeURIComponent(filter)}` : "";
+  const data = await api("GET", `/api/coverage${qs}`);
+  console.log(JSON.stringify(data, null, 2));
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+async function cmdTestGet(args: string[]) {
+  const keyOrId = args[0];
+  if (!keyOrId || keyOrId.startsWith("-")) {
+    console.error("Missing test key or id");
+    usage();
+  }
+  const qs = new URLSearchParams({ resource: "intents" });
+  if (isUuid(keyOrId)) qs.set("id", keyOrId);
+  else qs.set("key", keyOrId);
+  const data = await api("GET", `/api/agent?${qs}`);
   console.log(JSON.stringify(data, null, 2));
 }
 
@@ -366,6 +409,16 @@ async function main() {
   }
   if (cmd === "release" && sub === "compare") {
     await cmdReleaseCompare(rest);
+    return;
+  }
+  if (cmd === "coverage") {
+    const filter =
+      sub && !sub.startsWith("-") ? sub : undefined;
+    await cmdCoverage(filter);
+    return;
+  }
+  if (cmd === "test" && sub === "get") {
+    await cmdTestGet(rest);
     return;
   }
   if (cmd === "query") {

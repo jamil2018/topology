@@ -56,6 +56,25 @@ export function ReleasesWorkspace({
   });
   const [compareBefore, setCompareBefore] = useState("");
   const [compareAfter, setCompareAfter] = useState("");
+  const [covSnapshots, setCovSnapshots] = useState<
+    Array<{ id: string; capturedAt: string; label: string | null }>
+  >([]);
+  const [covBefore, setCovBefore] = useState("");
+  const [covAfter, setCovAfter] = useState("");
+  const [covBusy, setCovBusy] = useState(false);
+
+  async function loadCoverageSnapshots() {
+    const res = await fetch("/api/coverage/snapshots");
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      snapshots?: Array<{
+        id: string;
+        capturedAt: string;
+        label: string | null;
+      }>;
+    };
+    setCovSnapshots(data.snapshots ?? []);
+  }
 
   async function createRelease() {
     if (!draft.name.trim()) return;
@@ -82,6 +101,57 @@ export function ReleasesWorkspace({
     startTransition(() => router.refresh());
     if (data.release?.id) {
       router.push(`/releases/${data.release.id}`);
+    }
+  }
+
+  async function snapshotCoverage() {
+    setCovBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/coverage/snapshots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "manual", label: "From releases" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "Could not capture snapshot",
+        );
+        return;
+      }
+      await loadCoverageSnapshots();
+    } finally {
+      setCovBusy(false);
+    }
+  }
+
+  async function openCoverageCompare() {
+    if (!covBefore || !covAfter || covBefore === covAfter) {
+      setError("Pick two different coverage snapshots");
+      return;
+    }
+    setError(null);
+    const res = await fetch(
+      `/api/coverage/snapshots/compare?before=${covBefore}&after=${covAfter}`,
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(
+        typeof data.error === "string" ? data.error : "Compare failed",
+      );
+      return;
+    }
+    const dropped = (data.deltas as Array<{ dropped: boolean; key: string }>)
+      ?.filter((d) => d.dropped)
+      .map((d) => d.key);
+    if (dropped?.length) {
+      setError(`Coverage dropped: ${dropped.join(", ")}`);
+    } else {
+      setError(null);
+      window.alert("No coverage drops between selected snapshots.");
     }
   }
 
@@ -153,6 +223,75 @@ export function ReleasesWorkspace({
         >
           Create release
         </Button>
+      </div>
+
+      <div className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+        <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+          Coverage snapshots
+        </h2>
+        <p className="mt-1 text-xs text-[color:var(--topo-muted)]">
+          Store workspace coverage over time (nightly CI can POST with a bearer
+          token). Compare two snapshot dates below.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            isDisabled={covBusy || pending}
+            onPress={() => {
+              void loadCoverageSnapshots().then(() => snapshotCoverage());
+            }}
+          >
+            Snapshot coverage
+          </Button>
+          <Button
+            variant="secondary"
+            isDisabled={pending}
+            onPress={() => void loadCoverageSnapshots()}
+          >
+            Refresh list
+          </Button>
+        </div>
+        {covSnapshots.length >= 2 ? (
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
+              Before
+              <select
+                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
+                value={covBefore}
+                onChange={(e) => setCovBefore(e.target.value)}
+              >
+                <option value="">Select…</option>
+                {covSnapshots.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {formatDate(s.capturedAt)}
+                    {s.label ? ` · ${s.label}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
+              After
+              <select
+                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
+                value={covAfter}
+                onChange={(e) => setCovAfter(e.target.value)}
+              >
+                <option value="">Select…</option>
+                {covSnapshots.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {formatDate(s.capturedAt)}
+                    {s.label ? ` · ${s.label}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button onPress={() => void openCoverageCompare()}>Compare</Button>
+          </div>
+        ) : covSnapshots.length === 1 ? (
+          <p className="mt-2 text-xs text-[color:var(--topo-muted)]">
+            One snapshot stored — capture another to compare.
+          </p>
+        ) : null}
       </div>
 
       {items.length >= 2 ? (

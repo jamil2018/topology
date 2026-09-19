@@ -28,6 +28,10 @@ export default defineConfig({
         __dirname,
         "./packages/issue-providers/src/index.ts",
       ),
+      "@topology/plugin-sdk": path.resolve(
+        __dirname,
+        "./packages/plugin-sdk/src/index.ts",
+      ),
       "@topology/mcp": path.resolve(__dirname, "./packages/mcp/src/index.ts"),
       "@topology/playwright": path.resolve(
         __dirname,

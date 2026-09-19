@@ -1,0 +1,34 @@
+# Topology — GitLab CI JSON execution protocol (Phase 2)
+
+stages:
+  - test
+
+topology-e2e:
+  stage: test
+  image: node:22
+  variables:
+    TOPOLOGY_URL: "https://topology.example.com"
+  script:
+    - npm ci
+    - npm run test:e2e || true
+    - |
+      REPORT="${CI_PROJECT_DIR}/topology-report.json"
+      if [ ! -f "$REPORT" ]; then
+        echo "Building report from fixtures/execution/sample-report.json"
+        cp fixtures/execution/sample-report.json "$REPORT"
+        node -e "
+          const fs = require('fs');
+          const p = process.argv[1];
+          const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+          j.run.externalId = 'gitlab-' + process.env.CI_PIPELINE_ID;
+          j.run.commitSha = process.env.CI_COMMIT_SHA || j.run.commitSha;
+          j.run.branch = process.env.CI_COMMIT_REF_NAME || j.run.branch;
+          fs.writeFileSync(p, JSON.stringify(j, null, 2));
+        " "$REPORT"
+      fi
+    - |
+      curl -sfS -X POST "${TOPOLOGY_URL}/api/executions" \
+        -H "Authorization: Bearer ${TOPOLOGY_API_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -H "x-topology-project-id: ${TOPOLOGY_PROJECT_ID}" \
+        --data-binary @"${REPORT}"

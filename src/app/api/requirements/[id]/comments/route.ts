@@ -6,6 +6,7 @@ import {
   entityExistsInWorkspace,
   listEntityComments,
 } from "@/lib/entity-collab";
+import { notifyEntityCommentMentions } from "@/lib/notifications";
 import { requireProjectAccess } from "@/lib/project";
 
 type Params = { params: Promise<{ id: string }> };
@@ -100,6 +101,14 @@ export async function POST(request: Request, { params }: Params) {
     userId: session.user.id,
     body: parsed.data.body,
   });
+
+  void notifyEntityCommentMentions({
+    workspaceId: access.ctx.project.id,
+    authorUserId: session.user.id,
+    entityType: "requirement",
+    entityId,
+    body: parsed.data.body,
+  }).catch(() => {});
 
   return NextResponse.json(
     {

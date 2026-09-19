@@ -81,8 +81,38 @@ export class TopologyClient {
     return this.request(`/api/agent?${qs}`);
   }
 
-  getCoverage() {
-    return this.request(`/api/agent?resource=coverage`);
+  getCoverage(filter?: string) {
+    const qs = new URLSearchParams({ resource: "coverage" });
+    if (filter) qs.set("filter", filter);
+    return this.request(`/api/agent?${qs}`);
+  }
+
+  getRequirement(opts: { id?: string; key?: string }) {
+    const qs = new URLSearchParams({ resource: "requirement" });
+    if (opts.id) qs.set("id", opts.id);
+    if (opts.key) qs.set("key", opts.key);
+    return this.request(`/api/agent?${qs}`);
+  }
+
+  getExecutionHistory(opts: {
+    intentId?: string;
+    intentKey?: string;
+    implementationId?: string;
+    limit?: number;
+  }) {
+    const qs = new URLSearchParams({ resource: "execution_history" });
+    if (opts.intentId) qs.set("intentId", opts.intentId);
+    if (opts.intentKey) qs.set("intentKey", opts.intentKey);
+    if (opts.implementationId) qs.set("implementationId", opts.implementationId);
+    if (opts.limit != null) qs.set("limit", String(opts.limit));
+    return this.request(`/api/agent?${qs}`);
+  }
+
+  getFailureEvidence(opts: { resultId?: string; signatureId?: string }) {
+    const qs = new URLSearchParams({ resource: "failure_evidence" });
+    if (opts.resultId) qs.set("resultId", opts.resultId);
+    if (opts.signatureId) qs.set("signatureId", opts.signatureId);
+    return this.request(`/api/agent?${qs}`);
   }
 
   /** Structured quality QL search (DSL and/or AST). */
@@ -157,6 +187,20 @@ export class TopologyClient {
     return this.request(`/api/agent`, {
       method: "POST",
       body: JSON.stringify({ action: "link_issue", ...body }),
+    });
+  }
+
+  linkAutomation(body: Record<string, unknown>) {
+    return this.request(`/api/agent`, {
+      method: "POST",
+      body: JSON.stringify({ action: "link_automation", ...body }),
+    });
+  }
+
+  compareReleases(body: Record<string, unknown>) {
+    return this.request(`/api/agent`, {
+      method: "POST",
+      body: JSON.stringify({ action: "compare_releases", ...body }),
     });
   }
 }

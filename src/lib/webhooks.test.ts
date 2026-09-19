@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  compareSnapshotDimensions,
+  droppedDimensionDeltas,
+} from "./coverage-snapshots";
 import { WEBHOOK_EVENTS, webhookUrlError } from "./webhooks";
 
 describe("webhookUrlError", () => {
@@ -33,5 +37,26 @@ describe("WEBHOOK_EVENTS", () => {
         "proposal.created",
       ]),
     );
+  });
+});
+
+describe("Phase 8 webhook hooks", () => {
+  it("coverage.dropped fires when compare finds a dimension drop", () => {
+    const before = {
+      requirement: { covered: 8, total: 10, pct: 80 },
+      risk: { covered: 5, total: 10, pct: 50 },
+      automation: { covered: 7, total: 10, pct: 70 },
+      execution: { covered: 6, total: 10, pct: 60 },
+    };
+    const after = {
+      ...before,
+      automation: { covered: 5, total: 10, pct: 50 },
+    };
+    const dropped = droppedDimensionDeltas(
+      compareSnapshotDimensions(before, after),
+    );
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0]?.key).toBe("automation");
+    expect(WEBHOOK_EVENTS).toContain("coverage.dropped");
   });
 });
