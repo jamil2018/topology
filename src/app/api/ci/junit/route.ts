@@ -22,6 +22,8 @@ const resultSchema = z.object({
   status: z.enum(["passed", "failed", "skipped", "blocked", "untested"]),
   notes: z.string().optional().default(""),
   durationMs,
+  errorMessage: z.string().optional(),
+  stack: z.string().optional(),
 });
 
 const bodySchema = z.object({

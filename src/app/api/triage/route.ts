@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { clusterTriageBySignature } from "@topology/domain";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { triageItems } from "@/db/schema";
@@ -19,7 +20,8 @@ export async function GET(request: Request) {
   }
 
   const queue = await getTriageQueue(access.ctx.project.id);
-  return NextResponse.json({ queue });
+  const clusters = clusterTriageBySignature(queue);
+  return NextResponse.json({ queue, clusters });
 }
 
 const patchSchema = z.object({
