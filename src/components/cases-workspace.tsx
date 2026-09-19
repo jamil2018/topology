@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useRef, useState, useTransition } from "react";
 import {
@@ -56,6 +57,8 @@ type CaseRow = {
   status: string;
   tags: string[];
   folder: { id: string; name: string } | null;
+  intentId?: string | null;
+  intent?: { id: string; key: string; title: string } | null;
 };
 
 const priorities = ["P0", "P1", "P2", "P3"] as const;
@@ -1364,6 +1367,17 @@ export function CasesWorkspace({
                     >
                       {c.key}
                     </button>
+                    {c.intent ? (
+                      <div className="mt-0.5">
+                        <Link
+                          href={`/intents?intent=${c.intent.id}`}
+                          className="text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)] hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Intent {c.intent.key}
+                        </Link>
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2">
                     <button

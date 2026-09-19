@@ -3,7 +3,21 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { runs, webhookEndpoints } from "@/db/schema";
 
-export type WebhookEvent = "run.completed" | "issue.created";
+export type WebhookEvent =
+  | "run.completed"
+  | "issue.created"
+  | "intent.stale"
+  | "coverage.dropped"
+  | "proposal.created";
+
+/** Documented outbound event names (subscribe via endpoint `events` CSV). */
+export const WEBHOOK_EVENTS: readonly WebhookEvent[] = [
+  "run.completed",
+  "issue.created",
+  "intent.stale",
+  "coverage.dropped",
+  "proposal.created",
+] as const;
 
 export type WebhookPayload = {
   id: string;

@@ -438,6 +438,26 @@ export function SettingsWorkspace({
               </section>
 
               <section
+                id="ai"
+                className="scroll-mt-4 space-y-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
+              >
+                <div>
+                  <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+                    AI (optional)
+                  </h2>
+                  <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
+                    Topology is fully usable with no LLM. Coverage, impact,
+                    query, and Hub stay deterministic. Set{" "}
+                    <code className="font-mono">TOPOLOGY_AI_PROVIDER</code> to
+                    enable in-app drafting later; leave unset or{" "}
+                    <code className="font-mono">none</code> for air-gapped
+                    installs. Agents may still queue proposals via MCP for human
+                    review under Insights → Proposals.
+                  </p>
+                </div>
+              </section>
+
+              <section
                 id="webhooks"
                 className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
               >

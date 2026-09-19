@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   Button,
@@ -33,6 +34,14 @@ type CaseDetail = {
   status: string;
   tags: string[];
   folderId: string | null;
+  intentId?: string | null;
+  intent?: {
+    id: string;
+    key: string;
+    title: string;
+    criticality: string;
+    status: string;
+  } | null;
 };
 
 type EditForm = {
@@ -246,6 +255,21 @@ export function CaseEditPanel({
           <p className="truncate text-sm font-medium text-[color:var(--topo-ink)]">
             {headerTitle}
           </p>
+          {detail?.intent ? (
+            <p className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
+              Intent{" "}
+              <Link
+                href={`/intents?intent=${detail.intent.id}`}
+                className="font-mono text-[color:var(--topo-accent)] hover:underline"
+              >
+                {detail.intent.key}
+              </Link>
+            </p>
+          ) : detail?.intentId ? (
+            <p className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
+              Linked intent
+            </p>
+          ) : null}
         </div>
         <Button
           size="sm"

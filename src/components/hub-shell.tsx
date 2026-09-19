@@ -19,6 +19,8 @@ import {
   PlayCircleIcon,
   SidebarSimpleIcon,
   SignOutIcon,
+  SparkleIcon,
+  TargetIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { BrandMark } from "./brand-mark";
@@ -51,16 +53,21 @@ const navGroups: NavGroup[] = [
     id: "testing",
     label: "Testing",
     items: [
+      { href: "/intents", label: "Intents", Icon: TargetIcon },
       { href: "/cases", label: "Test Cases", Icon: ListChecksIcon },
       { href: "/runs", label: "Test Runs", Icon: PlayCircleIcon },
       { href: "/automation", label: "Automation", Icon: ChartLineIcon },
       { href: "/milestones", label: "Milestones", Icon: FlagIcon },
+      { href: "/releases", label: "Releases", Icon: FlagIcon },
+      { href: "/journeys", label: "Journeys", Icon: CirclesFourIcon },
     ],
   },
   {
     id: "insights",
     label: "Insights",
     items: [
+      { href: "/requirements", label: "Requirements", Icon: ListChecksIcon },
+      { href: "/proposals", label: "Proposals", Icon: SparkleIcon },
       { href: "/reports", label: "Reports", Icon: ChartBarIcon },
       { href: "/triage", label: "Triage", Icon: BugIcon },
     ],

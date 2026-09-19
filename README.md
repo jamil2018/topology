@@ -134,6 +134,6 @@ Contributor test instructions: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 - Failure triage queue (file/link issue for failures without a linked issue)
 - Milestones with configurable readiness thresholds
 - Issue create/link/status + retest queue
-- Outbound webhooks on `run.completed` / `issue.created` (Settings → Webhooks)
+- Outbound webhooks on `run.completed` / `issue.created` / `intent.stale` / `coverage.dropped` / `proposal.created` (Settings → Webhooks)
 - MCP agent plugin + Settings connections/CI/webhooks
 - `/api/health` + Compose Postgres (+ attachments volume)

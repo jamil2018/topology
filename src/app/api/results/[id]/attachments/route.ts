@@ -4,7 +4,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { attachments, runResults } from "@/db/schema";
-import { ATTACHMENT_MAX_BYTES, storeAttachmentFile } from "@/lib/attachments";
+import { ATTACHMENT_MAX_BYTES, inferAttachmentKind, isAttachmentKind, storeAttachmentFile } from "@/lib/attachments";
 import { requireProjectAccess } from "@/lib/project";
 
 type Params = { params: Promise<{ id: string }> };
@@ -60,6 +60,7 @@ export async function GET(request: Request, { params }: Params) {
       filename: a.filename,
       contentType: a.contentType,
       sizeBytes: a.sizeBytes,
+      kind: a.kind,
       createdAt: a.createdAt,
       url: `/api/attachments/${a.id}`,
     })),
@@ -118,10 +119,16 @@ export async function POST(request: Request, { params }: Params) {
 
   try {
     const stored = await storeAttachmentFile(file);
+    const kindField = form.get("kind");
+    const kind =
+      typeof kindField === "string" && isAttachmentKind(kindField)
+        ? kindField
+        : inferAttachmentKind(stored.filename, stored.contentType);
     const [row] = await db
       .insert(attachments)
       .values({
         resultId,
+        kind,
         filename: stored.filename,
         contentType: stored.contentType,
         sizeBytes: stored.sizeBytes,
@@ -137,6 +144,7 @@ export async function POST(request: Request, { params }: Params) {
           filename: row.filename,
           contentType: row.contentType,
           sizeBytes: row.sizeBytes,
+          kind: row.kind,
           url: `/api/attachments/${row.id}`,
         },
       },

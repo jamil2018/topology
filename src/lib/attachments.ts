@@ -14,6 +14,59 @@ export function sanitizeFilename(name: string) {
   return name.replace(/[^\w.\- ()[\]]+/g, "_").slice(0, 180) || "upload.bin";
 }
 
+const ATTACHMENT_KINDS = [
+  "screenshot",
+  "log",
+  "video",
+  "trace",
+  "other",
+] as const;
+
+export type InferredAttachmentKind = (typeof ATTACHMENT_KINDS)[number];
+
+/** Infer attachment kind from filename / content-type for Phase 2 typed artifacts. */
+export function inferAttachmentKind(
+  filename: string,
+  contentType?: string | null,
+): InferredAttachmentKind {
+  const name = filename.toLowerCase();
+  const type = (contentType ?? "").toLowerCase();
+
+  if (
+    type.startsWith("image/") ||
+    /\.(png|jpe?g|gif|webp|bmp)$/.test(name) ||
+    name.includes("screenshot")
+  ) {
+    return "screenshot";
+  }
+  if (
+    type.startsWith("video/") ||
+    /\.(mp4|webm|mov)$/.test(name) ||
+    name.includes("video")
+  ) {
+    return "video";
+  }
+  if (
+    name.includes("trace") ||
+    (name.endsWith(".zip") && name.includes("trace")) ||
+    name.endsWith(".trace")
+  ) {
+    return "trace";
+  }
+  if (
+    type.startsWith("text/") ||
+    /\.(log|txt)$/.test(name) ||
+    name.includes("log")
+  ) {
+    return "log";
+  }
+  return "other";
+}
+
+export function isAttachmentKind(value: string): value is InferredAttachmentKind {
+  return (ATTACHMENT_KINDS as readonly string[]).includes(value);
+}
+
 export async function storeAttachmentFile(file: File) {
   if (file.size > MAX_BYTES) {
     throw new Error(`File exceeds ${MAX_BYTES / (1024 * 1024)} MB limit`);

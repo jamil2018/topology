@@ -25,12 +25,25 @@ type FlakeHint = {
   hint: string;
 };
 
+type ReliabilityHint = {
+  overallPassRate: number | null;
+  sampleCount: number;
+  byBrowser: Array<{
+    browser: string;
+    passRate: number | null;
+    sampleCount: number;
+  }>;
+  summary: string;
+};
+
 export function AutomationWorkspace({
   initialRuns,
   flakeHints = [],
+  reliabilityHint = null,
 }: {
   initialRuns: RunRow[];
   flakeHints?: FlakeHint[];
+  reliabilityHint?: ReliabilityHint | null;
 }) {
   return (
     <div className="space-y-5">
@@ -44,6 +57,11 @@ export function AutomationWorkspace({
             {flakeHints.length > 0 ? (
               <StatusChip tone="warning" mono>
                 {flakeHints.length} flake
+              </StatusChip>
+            ) : null}
+            {reliabilityHint?.overallPassRate != null ? (
+              <StatusChip tone="accent" mono>
+                {reliabilityHint.overallPassRate}% env pass
               </StatusChip>
             ) : null}
           </>
@@ -70,6 +88,29 @@ npx topology runs complete --run-id <id>`}
           .
         </p>
       </div>
+
+      {reliabilityHint ? (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+            Browser reliability
+          </h2>
+          <p className="text-xs text-[color:var(--topo-muted)]">
+            Pass rate from recent automation results that carry browser/os
+            environment metadata.
+          </p>
+          <div className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2.5 text-sm text-[color:var(--topo-ink)]">
+            <p>{reliabilityHint.summary}</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {reliabilityHint.byBrowser.map((slice) => (
+                <StatusChip key={slice.browser} mono>
+                  {slice.browser}{" "}
+                  {slice.passRate == null ? "—" : `${slice.passRate}%`}
+                </StatusChip>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-2">
         <div className="flex items-baseline justify-between gap-2">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { webhookUrlError } from "./webhooks";
+import { WEBHOOK_EVENTS, webhookUrlError } from "./webhooks";
 
 describe("webhookUrlError", () => {
   it("rejects non-http schemes and local or private targets", () => {
@@ -19,5 +19,19 @@ describe("webhookUrlError", () => {
     expect(webhookUrlError("https://example.com/hooks/topology")).toBeNull();
     expect(webhookUrlError("http://172.32.0.1/hook")).toBeNull();
     expect(webhookUrlError("https://8.8.8.8/hook")).toBeNull();
+  });
+});
+
+describe("WEBHOOK_EVENTS", () => {
+  it("includes Phase 8 collaboration events", () => {
+    expect(WEBHOOK_EVENTS).toEqual(
+      expect.arrayContaining([
+        "run.completed",
+        "issue.created",
+        "intent.stale",
+        "coverage.dropped",
+        "proposal.created",
+      ]),
+    );
   });
 });

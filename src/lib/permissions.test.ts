@@ -14,6 +14,12 @@ import {
 describe("permissions catalog", () => {
   it("exposes a stable allow-list of action keys", () => {
     expect(ACTION_CATALOG).toContain("cases.view");
+    expect(ACTION_CATALOG).toContain("intents.view");
+    expect(ACTION_CATALOG).toContain("requirements.create");
+    expect(ACTION_CATALOG).toContain("proposals.view");
+    expect(ACTION_CATALOG).toContain("proposals.review");
+    expect(ACTION_CATALOG).toContain("releases.view");
+    expect(ACTION_CATALOG).toContain("journeys.create");
     expect(ACTION_CATALOG).toContain("runs.complete");
     expect(ACTION_CATALOG).toContain("roles.manage");
     expect(ACTION_CATALOG).toContain("members.invite");

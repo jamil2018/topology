@@ -233,6 +233,14 @@ export async function PATCH(request: Request, { params }: Params) {
       if (data) {
         void dispatchWebhook("run.completed", data, workspaceId);
       }
+      try {
+        const { refreshImplementationStatsForRun } = await import(
+          "@/lib/implementation-stats"
+        );
+        await refreshImplementationStatsForRun(id);
+      } catch {
+        // Rollups are best-effort; the run is already completed.
+      }
       return NextResponse.json({ run: outcome.run });
     } catch (err) {
       if (isLockFailure(err)) {

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { dbErrorResponse, isUniqueViolation, readJsonBody } from "@/lib/http-errors";
 import { db } from "@/db";
-import { cases, runResults, runs } from "@/db/schema";
+import { cases, runResults, runs, testIntents } from "@/db/schema";
 import {
   createIssueFromResult,
   getScenarioContext,
@@ -96,6 +96,38 @@ export async function GET(request: Request) {
     return NextResponse.json(await getScenarioContext(workspaceId, q));
   }
 
+  if (resource === "intents") {
+    const { listIntentsWithMeta, getIntentDetail } = await import(
+      "@/lib/quality-graph"
+    );
+    const id = searchParams.get("id");
+    const key = searchParams.get("key");
+    if (id || key) {
+      const intent = await getIntentDetail(workspaceId, id ?? key!);
+      if (!intent) {
+        return NextResponse.json({ error: "Intent not found" }, { status: 404 });
+      }
+      return NextResponse.json({ intent });
+    }
+    const q = searchParams.get("q")?.toLowerCase();
+    let intents = await listIntentsWithMeta(workspaceId);
+    if (q) {
+      intents = intents.filter(
+        (i) =>
+          i.key.toLowerCase().includes(q) ||
+          i.title.toLowerCase().includes(q) ||
+          i.behavior.toLowerCase().includes(q),
+      );
+    }
+    return NextResponse.json({ intents });
+  }
+
+  if (resource === "coverage") {
+    const { getWorkspaceCoverage } = await import("@/lib/quality-graph");
+    const coverage = await getWorkspaceCoverage(workspaceId);
+    return NextResponse.json({ coverage });
+  }
+
   return NextResponse.json({ error: "Unknown resource" }, { status: 400 });
 }
 
@@ -133,6 +165,27 @@ const createIssueSchema = z.object({
   provider: z.enum(["mock", "jira", "linear", "github"]).optional(),
   title: z.string().optional(),
   description: z.string().optional(),
+});
+
+const createTestIntentSchema = z.object({
+  action: z.literal("create_test_intent"),
+  key: z.string().min(1).max(64),
+  title: z.string().min(1).max(240),
+  behavior: z.string().optional().default(""),
+  criticality: z.enum(["P0", "P1", "P2", "P3"]).optional().default("P2"),
+  status: z
+    .enum(["draft", "ready", "blocked", "deprecated"])
+    .optional()
+    .default("ready"),
+});
+
+const proposeCoverageSchema = z.object({
+  action: z.literal("propose_coverage"),
+  payload: z.unknown(),
+  entityType: z.string().min(1).max(64).optional(),
+  actorType: z.enum(["user", "agent", "model"]).optional().default("agent"),
+  model: z.string().max(120).nullable().optional(),
+  inputRefs: z.array(z.string()).optional(),
 });
 
 const linkIssueSchema = z.object({
@@ -189,7 +242,9 @@ export async function POST(request: Request) {
           createdById: authResult.userId,
         })
         .returning();
-      return NextResponse.json({ case: row });
+      const { ensureIntentForCase } = await import("@/lib/quality-graph");
+      const { intentId } = await ensureIntentForCase(row);
+      return NextResponse.json({ case: { ...row, intentId } });
     }
 
     if (action === "create_run") {
@@ -317,6 +372,66 @@ export async function POST(request: Request) {
         workspaceId,
       });
       return NextResponse.json({ issue });
+    }
+
+    if (action === "create_test_intent") {
+      const parsed = createTestIntentSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.flatten() },
+          { status: 400 },
+        );
+      }
+      const [intent] = await db
+        .insert(testIntents)
+        .values({
+          workspaceId,
+          key: parsed.data.key,
+          title: parsed.data.title,
+          behavior: parsed.data.behavior,
+          criticality: parsed.data.criticality,
+          status: parsed.data.status,
+        })
+        .returning();
+      return NextResponse.json({ intent }, { status: 201 });
+    }
+
+    if (action === "propose_coverage") {
+      const parsed = proposeCoverageSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.flatten() },
+          { status: 400 },
+        );
+      }
+      const { validateProposalPayload } = await import("@topology/domain");
+      const validated = validateProposalPayload(parsed.data.payload);
+      if (!validated.ok) {
+        return NextResponse.json(
+          { error: "Invalid proposal payload", issues: validated.issues },
+          { status: 400 },
+        );
+      }
+      const { createProposal, toProposalListItem } = await import(
+        "@/lib/proposals"
+      );
+      const row = await createProposal({
+        workspaceId,
+        payload: validated.payload,
+        entityType: parsed.data.entityType,
+        actorType: parsed.data.actorType,
+        model: parsed.data.model ?? null,
+        inputRefs: parsed.data.inputRefs,
+        createdById: authResult.userId,
+      });
+      return NextResponse.json(
+        {
+          proposal: toProposalListItem(row),
+          message:
+            "Proposal queued as pending. It will not write to the graph until a human accepts it.",
+        },
+        { status: 201 },
+      );
     }
 
     if (action === "link_issue") {

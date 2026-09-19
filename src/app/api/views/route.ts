@@ -7,7 +7,9 @@ import { savedViews } from "@/db/schema";
 import { requireProjectAccess } from "@/lib/project";
 import {
   caseViewConfigSchema,
+  intentViewConfigSchema,
   parseCaseViewConfig,
+  parseIntentViewConfig,
   parseRunViewConfig,
   runViewConfigSchema,
 } from "@/lib/saved-views";
@@ -22,6 +24,11 @@ const createSchema = z.discriminatedUnion("entity", [
     name: z.string().trim().min(1).max(80),
     entity: z.literal("runs"),
     config: runViewConfigSchema,
+  }),
+  z.object({
+    name: z.string().trim().min(1).max(80),
+    entity: z.literal("intents"),
+    config: intentViewConfigSchema,
   }),
 ]);
 
@@ -46,7 +53,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const entity = searchParams.get("entity");
-  const entityParsed = z.enum(["cases", "runs"]).safeParse(entity);
+  const entityParsed = z.enum(["cases", "runs", "intents"]).safeParse(entity);
 
   const rows = await db.query.savedViews.findMany({
     where: entityParsed.success
@@ -70,7 +77,9 @@ export async function GET(request: Request) {
       config:
         row.entity === "cases"
           ? parseCaseViewConfig(row.configJson)
-          : parseRunViewConfig(row.configJson),
+          : row.entity === "intents"
+            ? parseIntentViewConfig(row.configJson)
+            : parseRunViewConfig(row.configJson),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     })),

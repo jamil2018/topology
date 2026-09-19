@@ -68,10 +68,67 @@ export class TopologyClient {
     return this.request(`/api/agent?${qs}`);
   }
 
+  listIntents(q?: string) {
+    const qs = new URLSearchParams({ resource: "intents" });
+    if (q) qs.set("q", q);
+    return this.request(`/api/agent?${qs}`);
+  }
+
+  getTestIntent(opts: { id?: string; key?: string }) {
+    const qs = new URLSearchParams({ resource: "intents" });
+    if (opts.id) qs.set("id", opts.id);
+    if (opts.key) qs.set("key", opts.key);
+    return this.request(`/api/agent?${qs}`);
+  }
+
+  getCoverage() {
+    return this.request(`/api/agent?resource=coverage`);
+  }
+
+  /** Structured quality QL search (DSL and/or AST). */
+  qualitySearch(body: { dsl?: string; query?: unknown; limit?: number }) {
+    return this.request(`/api/query`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  getAffectedTests(body: {
+    paths: string[];
+    rules?: { pattern: string; componentKey: string }[];
+  }) {
+    return this.request(`/api/affected`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
   createCase(body: Record<string, unknown>) {
     return this.request(`/api/agent`, {
       method: "POST",
       body: JSON.stringify({ action: "create_case", ...body }),
+    });
+  }
+
+  createTestIntent(body: Record<string, unknown>) {
+    return this.request(`/api/agent`, {
+      method: "POST",
+      body: JSON.stringify({ action: "create_test_intent", ...body }),
+    });
+  }
+
+  /**
+   * Queue a coverage proposal for human review (pending only; no graph write).
+   */
+  proposeCoverage(body: {
+    payload: { diffs: unknown[]; rationale?: string };
+    entityType?: string;
+    model?: string;
+    inputRefs?: string[];
+  }) {
+    return this.request(`/api/agent`, {
+      method: "POST",
+      body: JSON.stringify({ action: "propose_coverage", ...body }),
     });
   }
 

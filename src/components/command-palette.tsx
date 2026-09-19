@@ -7,6 +7,7 @@ import {
   BugIcon,
   ChartLineIcon,
   CirclesFourIcon,
+  FlagIcon,
   FolderIcon,
   GearIcon,
   ListChecksIcon,
@@ -39,7 +40,12 @@ const PAGES: Array<{
   Icon: CommandItem["Icon"];
 }> = [
   { href: "/", label: "Hub", hint: "Pulse", Icon: CirclesFourIcon },
+  { href: "/intents", label: "Intents", hint: "Behavior", Icon: ListChecksIcon },
   { href: "/cases", label: "Test Cases", hint: "Suites", Icon: ListChecksIcon },
+  { href: "/requirements", label: "Requirements", hint: "Graph", Icon: FolderIcon },
+  { href: "/journeys", label: "Journeys", hint: "Paths", Icon: FolderIcon },
+  { href: "/releases", label: "Releases", hint: "Control", Icon: FlagIcon },
+  { href: "/proposals", label: "Proposals", hint: "Review", Icon: ListChecksIcon },
   { href: "/runs", label: "Test Runs", hint: "Manual", Icon: PlayCircleIcon },
   { href: "/reports", label: "Reports", hint: "Charts", Icon: ChartLineIcon },
   { href: "/triage", label: "Triage", hint: "Failures", Icon: BugIcon },

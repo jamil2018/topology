@@ -4,6 +4,7 @@ import {
   dedupeNormalizedResults,
   mergeShardResults,
   normalizeJUnitCases,
+  parseExecutionReport,
   parseJUnitXml,
   summarizeResults,
   type NormalizedResult,
@@ -16,13 +17,24 @@ function usage(): never {
 
 Usage:
   topology junit submit <file> [--run-id <id>] [--name <name>] [--source github|jenkins|cli]
-  topology runs create --name <name> [--source github|jenkins|cli] [--branch <b>] [--sha <sha>] [--shards <n>]
+  topology run upload <file.json>
+  topology runs create --name <name> [--source github|jenkins|cli] [--branch <b>] [--sha <sha>] [--pr <n>] [--shards <n>]
   topology runs submit-thread --run-id <id> --shard <i> --file <junit.xml>
   topology runs complete --run-id <id>
+  topology affected --path <p> [--path <p>...] [--paths a,b] [--rule <pattern=componentKey>]...
+  topology release analyze [--file input.json]
+  topology release compare --before a.json --after b.json
+  topology query '<dsl>'
+
+Examples:
+  topology query 'intents where component = payments and criticality = P0'
+  topology query 'requirements where key in ("REQ-1", "REQ-2") order by key desc'
+  topology query 'implementations where type = playwright and framework exists'
+  topology query 'executions where status = failed and branch = main'
 
 Env:
   TOPOLOGY_URL          Base URL (default http://127.0.0.1:4317)
-  TOPOLOGY_API_TOKEN    Bearer token for /api/ci/*
+  TOPOLOGY_API_TOKEN    Bearer token for /api/ci/*, /api/executions, /api/affected, /api/releases/*, /api/query
 `);
   process.exit(1);
 }
@@ -31,6 +43,18 @@ function getFlag(args: string[], name: string): string | undefined {
   const idx = args.indexOf(name);
   if (idx === -1) return undefined;
   return args[idx + 1];
+}
+
+/** Collect all values for a repeated flag (e.g. --path a --path b). */
+function getFlags(args: string[], name: string): string[] {
+  const values: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === name && args[i + 1] && !args[i + 1]!.startsWith("-")) {
+      values.push(args[i + 1]!);
+      i += 1;
+    }
+  }
+  return values;
 }
 
 function requireFlag(args: string[], name: string): string {
@@ -122,13 +146,24 @@ async function cmdRunsCreate(args: string[]) {
   const source = getFlag(args, "--source") ?? "cli";
   const branch = getFlag(args, "--branch");
   const commitSha = getFlag(args, "--sha");
+  const prRaw = getFlag(args, "--pr");
   const shards = Number(getFlag(args, "--shards") ?? "1");
+
+  let pr: number | undefined;
+  if (prRaw != null) {
+    pr = Number(prRaw);
+    if (!Number.isInteger(pr) || pr < 1) {
+      console.error(`Invalid --pr ${prRaw} (expected positive integer)`);
+      process.exit(1);
+    }
+  }
 
   const data = await api("POST", "/api/ci/runs", {
     name,
     source,
     branch,
     commitSha,
+    ...(pr != null ? { pr } : {}),
     shardTotal: Number.isFinite(shards) ? shards : 1,
   });
 
@@ -171,12 +206,132 @@ async function cmdMergeLocal(args: string[]) {
   );
 }
 
+async function cmdRunUpload(args: string[]) {
+  const file = args[0];
+  if (!file || file.startsWith("-")) usage();
+
+  const absolute = path.resolve(file);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(absolute, "utf8")) as unknown;
+  } catch (err) {
+    console.error(
+      `Failed to read JSON report ${absolute}:`,
+      err instanceof Error ? err.message : err,
+    );
+    process.exit(1);
+  }
+
+  const parsed = parseExecutionReport(raw);
+  if (!parsed.ok) {
+    console.error("Invalid execution report:");
+    for (const issue of parsed.errors) {
+      console.error(`  ${issue.path}: ${issue.message}`);
+    }
+    process.exit(1);
+  }
+
+  const data = await api("POST", "/api/executions", parsed.report);
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        results: parsed.report.results.length,
+        ...data,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+function collectAffectedPaths(args: string[]): string[] {
+  const fromRepeated = getFlags(args, "--path");
+  const csv = getFlag(args, "--paths");
+  const fromCsv = csv
+    ? csv
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean)
+    : [];
+  return [...new Set([...fromRepeated, ...fromCsv])];
+}
+
+function collectAffectedRules(
+  args: string[],
+): { pattern: string; componentKey: string }[] {
+  const rules: { pattern: string; componentKey: string }[] = [];
+  for (const raw of getFlags(args, "--rule")) {
+    const eq = raw.indexOf("=");
+    if (eq <= 0 || eq === raw.length - 1) {
+      console.error(
+        `Invalid --rule ${raw} (expected pattern=componentKey, e.g. src/auth/=COMP-AUTH)`,
+      );
+      process.exit(1);
+    }
+    rules.push({
+      pattern: raw.slice(0, eq),
+      componentKey: raw.slice(eq + 1),
+    });
+  }
+  return rules;
+}
+
+async function cmdAffected(args: string[]) {
+  const paths = collectAffectedPaths(args);
+  if (paths.length === 0) {
+    console.error("Provide at least one --path <p> or --paths a,b");
+    usage();
+  }
+
+  const rules = collectAffectedRules(args);
+  const data = await api("POST", "/api/affected", {
+    paths,
+    ...(rules.length > 0 ? { rules } : {}),
+  });
+  console.log(JSON.stringify(data, null, 2));
+}
+
+async function loadJsonFile(filePath: string): Promise<unknown> {
+  const absolute = path.resolve(filePath);
+  try {
+    return JSON.parse(await readFile(absolute, "utf8")) as unknown;
+  } catch (err) {
+    console.error(
+      `Failed to read JSON ${absolute}:`,
+      err instanceof Error ? err.message : err,
+    );
+    process.exit(1);
+  }
+}
+
+/** Workspace mode when no --file; otherwise POST precomputed ReleaseQualityInput. */
+async function cmdReleaseAnalyze(args: string[]) {
+  const file = getFlag(args, "--file");
+  const body = file ? await loadJsonFile(file) : {};
+  const data = await api("POST", "/api/releases/analyze", body);
+  console.log(JSON.stringify(data, null, 2));
+}
+
+async function cmdReleaseCompare(args: string[]) {
+  const beforePath = requireFlag(args, "--before");
+  const afterPath = requireFlag(args, "--after");
+  const before = await loadJsonFile(beforePath);
+  const after = await loadJsonFile(afterPath);
+  const data = await api("POST", "/api/releases/compare", { before, after });
+  console.log(JSON.stringify(data, null, 2));
+}
+
 async function main() {
   const [, , cmd, sub, ...rest] = process.argv;
   if (!cmd) usage();
 
   if (cmd === "junit" && sub === "submit") {
     await cmdJunitSubmit(rest);
+    return;
+  }
+  if (cmd === "run" && sub === "upload") {
+    await cmdRunUpload(rest);
     return;
   }
   if (cmd === "runs" && sub === "create") {
@@ -195,8 +350,41 @@ async function main() {
     await cmdMergeLocal(rest);
     return;
   }
+  if (cmd === "affected") {
+    // `topology affected --path …` — sub may be a flag
+    const affectedArgs =
+      sub === undefined ? rest : sub.startsWith("-") ? [sub, ...rest] : rest;
+    if (sub !== undefined && !sub.startsWith("-")) {
+      usage();
+    }
+    await cmdAffected(affectedArgs);
+    return;
+  }
+  if (cmd === "release" && sub === "analyze") {
+    await cmdReleaseAnalyze(rest);
+    return;
+  }
+  if (cmd === "release" && sub === "compare") {
+    await cmdReleaseCompare(rest);
+    return;
+  }
+  if (cmd === "query") {
+    const dsl = sub ? [sub, ...rest] : rest;
+    await cmdQuery(dsl);
+    return;
+  }
 
   usage();
+}
+
+async function cmdQuery(args: string[]) {
+  const dsl = args[0];
+  if (!dsl || dsl.startsWith("-")) {
+    console.error("Missing DSL argument");
+    usage();
+  }
+  const data = await api("POST", "/api/query", { dsl });
+  console.log(JSON.stringify(data, null, 2));
 }
 
 main().catch((err) => {

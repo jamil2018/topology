@@ -18,8 +18,16 @@ export const runViewConfigSchema = z.object({
   sort: z.enum(["updated", "created", "name", "status"]).default("updated"),
 });
 
+export const intentViewConfigSchema = z.object({
+  search: z.string().default(""),
+  criticalityFilter: z.string().default("all"),
+  statusFilter: z.string().default("all"),
+  sort: z.enum(["key", "title", "criticality", "status"]).default("key"),
+});
+
 export type CaseViewConfig = z.infer<typeof caseViewConfigSchema>;
 export type RunViewConfig = z.infer<typeof runViewConfigSchema>;
+export type IntentViewConfig = z.infer<typeof intentViewConfigSchema>;
 
 export function parseCaseViewConfig(raw: string): CaseViewConfig {
   try {
@@ -39,6 +47,16 @@ export function parseRunViewConfig(raw: string): RunViewConfig {
     /* fall through */
   }
   return runViewConfigSchema.parse({});
+}
+
+export function parseIntentViewConfig(raw: string): IntentViewConfig {
+  try {
+    const parsed = intentViewConfigSchema.safeParse(JSON.parse(raw));
+    if (parsed.success) return parsed.data;
+  } catch {
+    /* fall through */
+  }
+  return intentViewConfigSchema.parse({});
 }
 
 export function serializeCaseViewConfig(config: {
