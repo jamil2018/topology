@@ -3,6 +3,8 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import {
   draftIntentsFromRequirement,
+  explainChangeImpact,
+  suggestDuplicateIntents,
   suggestNegativePaths,
   suggestRequirementIntentLinks,
 } from "@/lib/ai-draft";
@@ -23,6 +25,17 @@ const bodySchema = z.discriminatedUnion("job", [
   }),
   z.object({
     job: z.literal("link_suggestions"),
+    allowHeuristic: z.boolean().optional(),
+  }),
+  z.object({
+    job: z.literal("duplicate_intents"),
+    allowHeuristic: z.boolean().optional(),
+  }),
+  z.object({
+    job: z.literal("change_impact"),
+    paths: z.array(z.string().min(1)).optional(),
+    commitSha: z.string().min(1).optional(),
+    pr: z.number().int().positive().optional(),
     allowHeuristic: z.boolean().optional(),
   }),
 ]);
@@ -102,6 +115,45 @@ export async function POST(request: Request) {
         workspaceId,
         intentId: parsed.data.intentId,
         requirementId: parsed.data.requirementId,
+        createdById,
+        config,
+        allowHeuristic,
+      });
+      if ("disabled" in result && result.disabled) {
+        return NextResponse.json({ code: "ai_disabled" }, { status: 503 });
+      }
+      return NextResponse.json(result, { status: 201 });
+    }
+
+    if (parsed.data.job === "duplicate_intents") {
+      const result = await suggestDuplicateIntents({
+        workspaceId,
+        createdById,
+        config,
+        allowHeuristic,
+      });
+      if ("disabled" in result && result.disabled) {
+        return NextResponse.json({ code: "ai_disabled" }, { status: 503 });
+      }
+      return NextResponse.json(result, { status: 201 });
+    }
+
+    if (parsed.data.job === "change_impact") {
+      if (
+        !(parsed.data.paths && parsed.data.paths.length > 0) &&
+        !parsed.data.commitSha?.trim() &&
+        parsed.data.pr == null
+      ) {
+        return NextResponse.json(
+          { error: "Provide paths, commitSha, or pr" },
+          { status: 400 },
+        );
+      }
+      const result = await explainChangeImpact({
+        workspaceId,
+        paths: parsed.data.paths,
+        commitSha: parsed.data.commitSha,
+        pr: parsed.data.pr,
         createdById,
         config,
         allowHeuristic,

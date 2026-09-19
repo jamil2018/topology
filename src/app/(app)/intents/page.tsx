@@ -8,6 +8,7 @@ import {
 } from "@/components/intents-workspace";
 import { resolveActiveProject } from "@/lib/project";
 import { listIntentsWithMeta } from "@/lib/quality-graph";
+import { listSavedViews } from "@/lib/queries";
 
 export const metadata: Metadata = {
   title: "Intents · Topology",
@@ -25,11 +26,16 @@ export default async function IntentsPage({
   if (!ctx) return <NoProjectEmptyState />;
 
   const params = await searchParams;
-  const intents = (await listIntentsWithMeta(
-    ctx.project.id,
-  )) as IntentListItem[];
+  const [intents, views] = await Promise.all([
+    listIntentsWithMeta(ctx.project.id) as Promise<IntentListItem[]>,
+    listSavedViews(ctx.project.id, "intents", session.user.id),
+  ]);
 
   return (
-    <IntentsWorkspace initial={intents} selectedId={params.intent ?? null} />
+    <IntentsWorkspace
+      initial={intents}
+      selectedId={params.intent ?? null}
+      initialViews={views}
+    />
   );
 }

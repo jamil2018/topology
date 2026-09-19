@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, TextArea } from "@heroui/react";
+import { EntityCollabPanel } from "./entity-collab-panel";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 
@@ -30,6 +31,7 @@ export function GraphEntityWorkspace({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [items, setItems] = useState(initial);
+  const [selected, setSelected] = useState<string | null>(initial[0]?.id ?? null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     key: "",
@@ -128,20 +130,36 @@ export function GraphEntityWorkspace({
           </li>
         ) : (
           items.map((item) => (
-            <li key={item.id} className="px-4 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs text-[color:var(--topo-accent)]">
-                  {item.key}
-                </span>
-                <span className="font-medium text-[color:var(--topo-ink)]">
-                  {item.title}
-                </span>
-                <StatusChip mono>{item.criticality}</StatusChip>
-              </div>
-              {item.description ? (
-                <p className="mt-1 text-sm text-[color:var(--topo-muted)]">
-                  {item.description}
-                </p>
+            <li key={item.id}>
+              <button
+                type="button"
+                className={`w-full px-4 py-3 text-left ${
+                  selected === item.id ? "bg-[color:var(--topo-chip)]/80" : ""
+                }`}
+                onClick={() => setSelected(item.id)}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs text-[color:var(--topo-accent)]">
+                    {item.key}
+                  </span>
+                  <span className="font-medium text-[color:var(--topo-ink)]">
+                    {item.title}
+                  </span>
+                  <StatusChip mono>{item.criticality}</StatusChip>
+                </div>
+                {item.description ? (
+                  <p className="mt-1 text-sm text-[color:var(--topo-muted)]">
+                    {item.description}
+                  </p>
+                ) : null}
+              </button>
+              {selected === item.id && kind === "components" ? (
+                <div className="border-t border-[color:var(--topo-line)] px-4 pb-4">
+                  <EntityCollabPanel
+                    entityType="component"
+                    entityId={item.id}
+                  />
+                </div>
               ) : null}
             </li>
           ))

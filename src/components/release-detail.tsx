@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { EntityCollabPanel } from "./entity-collab-panel";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 
@@ -198,6 +199,10 @@ export function ReleaseDetail({
           </ul>
         </section>
       ) : null}
+
+      <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+        <EntityCollabPanel entityType="release" entityId={release.id} />
+      </section>
     </div>
   );
 }

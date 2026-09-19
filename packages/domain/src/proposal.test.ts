@@ -93,11 +93,23 @@ describe("validateProposalPayload", () => {
     expect(isProposalPayload({})).toBe(false);
   });
 
-  it("rejects empty diffs", () => {
+  it("rejects empty diffs without rationale", () => {
     const result = validateProposalPayload({ diffs: [] });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.issues.some((i) => i.path === "diffs")).toBe(true);
+    }
+  });
+
+  it("accepts empty diffs when rationale explains impact", () => {
+    const result = validateProposalPayload({
+      diffs: [],
+      rationale: "AUTH-021 may be stale: auth service paths changed.",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.payload.diffs).toEqual([]);
+      expect(result.payload.rationale).toContain("AUTH-021");
     }
   });
 

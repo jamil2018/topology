@@ -181,7 +181,16 @@ export function validateProposalPayload(
   if (!Array.isArray(input.diffs)) {
     issues.push({ path: "diffs", message: "diffs must be an array" });
   } else if (input.diffs.length === 0) {
-    issues.push({ path: "diffs", message: "diffs must be non-empty" });
+    // Explanation-only proposals (e.g. change-impact text) may have rationale
+    // with no graph diffs; accept applies nothing.
+    const rationaleOk =
+      typeof input.rationale === "string" && input.rationale.trim().length > 0;
+    if (!rationaleOk) {
+      issues.push({
+        path: "diffs",
+        message: "diffs must be non-empty unless rationale is set",
+      });
+    }
   } else {
     input.diffs.forEach((diff, i) => {
       validateDiff(diff, `diffs[${i}]`, issues);

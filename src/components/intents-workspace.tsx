@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, TextArea } from "@heroui/react";
+import type { IntentViewConfig } from "@/lib/saved-views";
 import { EntityCollabPanel } from "./entity-collab-panel";
 import { IntentReliabilityCards } from "./intent-reliability-cards";
 import { IntentRepresentationPanel } from "./intent-representation";
 import { LinkAutomationPanel } from "./link-automation-panel";
 import { PageHeader } from "./page-header";
+import { SavedViewsBar, type SavedViewRow } from "./saved-views-bar";
 import { StatusChip } from "./status-chip";
 
 export type IntentListItem = {
@@ -28,9 +30,11 @@ export type IntentListItem = {
 export function IntentsWorkspace({
   initial,
   selectedId,
+  initialViews = [],
 }: {
   initial: IntentListItem[];
   selectedId?: string | null;
+  initialViews?: SavedViewRow[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -46,6 +50,35 @@ export function IntentsWorkspace({
     behavior: "",
     criticality: "P2",
   });
+  const [search, setSearch] = useState("");
+  const [criticalityFilter, setCriticalityFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sort, setSort] = useState<IntentViewConfig["sort"]>("key");
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let rows = items.filter((intent) => {
+      if (criticalityFilter !== "all" && intent.criticality !== criticalityFilter) {
+        return false;
+      }
+      if (statusFilter !== "all" && intent.status !== statusFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        intent.key.toLowerCase().includes(q) ||
+        intent.title.toLowerCase().includes(q) ||
+        intent.behavior.toLowerCase().includes(q)
+      );
+    });
+    rows = [...rows].sort((a, b) => {
+      const av = String(a[sort] ?? "");
+      const bv = String(b[sort] ?? "");
+      return av.localeCompare(bv);
+    });
+    return rows;
+  }, [items, search, criticalityFilter, statusFilter, sort]);
 
   const active = useMemo(
     () => items.find((i) => i.id === selected) ?? null,
@@ -60,6 +93,15 @@ export function IntentsWorkspace({
     if (manual?.caseId) return manual.caseId;
     return active.implementations.find((i) => i.caseId)?.caseId ?? null;
   }, [active]);
+
+  function applySavedView(view: SavedViewRow) {
+    const config = view.config as IntentViewConfig;
+    setSearch(config.search ?? "");
+    setCriticalityFilter(config.criticalityFilter ?? "all");
+    setStatusFilter(config.statusFilter ?? "all");
+    setSort(config.sort ?? "key");
+    setActiveViewId(view.id);
+  }
 
   async function createIntent() {
     if (!draft.key.trim() || !draft.title.trim()) return;
@@ -110,7 +152,9 @@ export function IntentsWorkspace({
         title="Test Intents"
         description="Behavior under test — manual cases and automation are implementations of the same intent."
         meta={
-          <StatusChip mono>{items.length} intent{items.length === 1 ? "" : "s"}</StatusChip>
+          <StatusChip mono>
+            {filtered.length} intent{filtered.length === 1 ? "" : "s"}
+          </StatusChip>
         }
       />
 
@@ -120,6 +164,75 @@ export function IntentsWorkspace({
         </p>
       ) : null}
 
+      <div className="flex flex-wrap items-end gap-3">
+        <Input
+          className="min-w-[12rem] flex-1"
+          aria-label="Search intents"
+          placeholder="Search key, title, behavior…"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setActiveViewId(null);
+          }}
+        />
+        <select
+          aria-label="Criticality filter"
+          className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm"
+          value={criticalityFilter}
+          onChange={(e) => {
+            setCriticalityFilter(e.target.value);
+            setActiveViewId(null);
+          }}
+        >
+          <option value="all">All criticality</option>
+          <option value="P0">P0</option>
+          <option value="P1">P1</option>
+          <option value="P2">P2</option>
+          <option value="P3">P3</option>
+        </select>
+        <select
+          aria-label="Status filter"
+          className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm"
+          value={statusFilter}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setActiveViewId(null);
+          }}
+        >
+          <option value="all">All status</option>
+          <option value="draft">draft</option>
+          <option value="ready">ready</option>
+          <option value="deprecated">deprecated</option>
+        </select>
+        <select
+          aria-label="Sort intents"
+          className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm"
+          value={sort}
+          onChange={(e) => {
+            setSort(e.target.value as IntentViewConfig["sort"]);
+            setActiveViewId(null);
+          }}
+        >
+          <option value="key">Sort by key</option>
+          <option value="title">Sort by title</option>
+          <option value="criticality">Sort by criticality</option>
+          <option value="status">Sort by status</option>
+        </select>
+        <SavedViewsBar
+          entity="intents"
+          initialViews={initialViews}
+          activeViewId={activeViewId}
+          onApply={applySavedView}
+          canSave
+          buildConfig={() => ({
+            search,
+            criticalityFilter,
+            statusFilter,
+            sort,
+          })}
+        />
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
           <div className="border-b border-[color:var(--topo-line)] px-4 py-3">
@@ -127,13 +240,13 @@ export function IntentsWorkspace({
               Catalog
             </h2>
           </div>
-          {items.length === 0 ? (
+          {filtered.length === 0 ? (
             <p className="px-4 py-8 text-sm text-[color:var(--topo-muted)]">
-              No intents yet. Create one or run migration/seed to backfill from cases.
+              No intents match these filters.
             </p>
           ) : (
             <ul className="divide-y divide-[color:var(--topo-line)]">
-              {items.map((intent) => {
+              {filtered.map((intent) => {
                 const types = [
                   ...new Set(intent.implementations.map((i) => i.type)),
                 ];

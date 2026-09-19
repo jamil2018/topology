@@ -384,3 +384,164 @@ export function heuristicIntentFromRequirementTitle(
     ],
   };
 }
+
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/** Exported for tests — find near-duplicate intent pairs by normalized title. */
+export function findDuplicateIntentPairs(
+  intents: Array<{ id: string; key: string; title: string }>,
+): Array<[typeof intents[number], typeof intents[number]]> {
+  const pairs: Array<[typeof intents[number], typeof intents[number]]> = [];
+  const byNorm = new Map<string, typeof intents>();
+  for (const intent of intents) {
+    const norm = normalizeTitle(intent.title);
+    if (!norm) continue;
+    const bucket = byNorm.get(norm) ?? [];
+    for (const other of bucket) {
+      pairs.push([other, intent]);
+    }
+    bucket.push(intent);
+    byNorm.set(norm, bucket);
+  }
+  return pairs;
+}
+
+export async function suggestDuplicateIntents(input: {
+  workspaceId: string;
+  createdById?: string | null;
+  config?: AiProviderConfig;
+  allowHeuristic?: boolean;
+}): Promise<DraftJobResult> {
+  const config =
+    input.config ?? (await getWorkspaceAiProviderConfig(input.workspaceId));
+  if (!isAiProviderEnabled(config) && !input.allowHeuristic) {
+    return { disabled: true };
+  }
+
+  const intents = await db.query.testIntents.findMany({
+    where: eq(testIntents.workspaceId, input.workspaceId),
+    limit: 100,
+  });
+  const pairs = findDuplicateIntentPairs(
+    intents.map((i) => ({ id: i.id, key: i.key, title: i.title })),
+  );
+
+  return runDraftWithFallback({
+    workspaceId: input.workspaceId,
+    config,
+    inputRefs: pairs.flatMap(([a, b]) => [a.id, b.id]).slice(0, 6),
+    entityType: "intent",
+    createdById: input.createdById,
+    userPrompt: `Find duplicate test intents among ${JSON.stringify(
+      intents.map((i) => ({ id: i.id, key: i.key, title: i.title })),
+    )}. Propose update diffs to deprecate or merge duplicates (do not invent new intents).`,
+    heuristic: () => {
+      const pair = pairs[0];
+      if (!pair) {
+        return {
+          rationale: "No near-duplicate intents found by title similarity.",
+          diffs: [],
+        };
+      }
+      const [keep, dup] = pair;
+      return {
+        rationale: `Possible duplicate: ${dup.key} (“${dup.title}”) matches ${keep.key}. Consider deprecating the duplicate.`,
+        diffs: [
+          {
+            entityType: "intent",
+            action: "update",
+            entityId: dup.id,
+            before: { status: "ready", key: dup.key, title: dup.title },
+            after: {
+              status: "deprecated",
+              key: dup.key,
+              title: dup.title,
+              note: `Possible duplicate of ${keep.key}`,
+            },
+          },
+        ],
+      };
+    },
+  });
+}
+
+export async function explainChangeImpact(input: {
+  workspaceId: string;
+  paths?: string[];
+  commitSha?: string;
+  pr?: number;
+  createdById?: string | null;
+  config?: AiProviderConfig;
+  allowHeuristic?: boolean;
+}): Promise<DraftJobResult> {
+  const config =
+    input.config ?? (await getWorkspaceAiProviderConfig(input.workspaceId));
+  if (!isAiProviderEnabled(config) && !input.allowHeuristic) {
+    return { disabled: true };
+  }
+
+  const { resolveAffectedPaths } = await import("@/lib/affected-resolve");
+  const { getWorkspaceImpact } = await import("@/lib/quality-graph");
+
+  const resolved = await resolveAffectedPaths(input.workspaceId, {
+    paths: input.paths,
+    commitSha: input.commitSha,
+    pr: input.pr,
+  });
+  if (!resolved.ok) {
+    throw new Error(resolved.error);
+  }
+
+  const { impact } = await getWorkspaceImpact(
+    input.workspaceId,
+    resolved.paths,
+  );
+
+  const intentKeys = impact.intents
+    .slice(0, 12)
+    .map((i) => i.key)
+    .join(", ");
+  const componentKeys = impact.components
+    .slice(0, 8)
+    .map((c) => c.key)
+    .join(", ");
+  const gapText = impact.gaps
+    .slice(0, 5)
+    .map((g) => `${g.kind}:${g.key}`)
+    .join("; ");
+  const summary = [
+    `Change impact (${resolved.pathsSource}): ${resolved.paths.length} path(s).`,
+    componentKeys
+      ? `Components: ${componentKeys}.`
+      : "No mapped components for these paths.",
+    intentKeys
+      ? `Affected intents: ${intentKeys}.`
+      : "No intents linked via quality edges.",
+    gapText
+      ? `Gaps: ${gapText}.`
+      : "No coverage gaps flagged for this change.",
+  ].join(" ");
+
+  return runDraftWithFallback({
+    workspaceId: input.workspaceId,
+    config,
+    inputRefs: [
+      ...impact.intents.slice(0, 5).map((i) => i.id),
+      ...resolved.paths.slice(0, 3),
+    ],
+    entityType: "intent",
+    createdById: input.createdById,
+    userPrompt: `Explain this deterministic change-impact report in 2-4 sentences for a human reviewer. Do not invent new graph edges. Report JSON: ${JSON.stringify({ paths: resolved.paths, impact })}`,
+    heuristic: () => ({
+      rationale: summary,
+      diffs: [],
+    }),
+  });
+}
+
