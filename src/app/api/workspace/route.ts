@@ -9,6 +9,7 @@ import {
   workspaceInvites,
   workspaceMembers,
 } from "@/db/schema";
+import { recordAuditEvent } from "@/lib/audit";
 import { findActiveRole, getSystemRole } from "@/lib/custom-roles";
 import { dbErrorResponse, readJsonBody } from "@/lib/http-errors";
 import { inferLegacyRole, roleHasAction } from "@/lib/permissions";
@@ -74,7 +75,12 @@ export async function GET(request: Request) {
   });
 
   return NextResponse.json({
-    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
+    workspace: {
+      id: workspace.id,
+      name: workspace.name,
+      slug: workspace.slug,
+      qualityGraphEnabled: workspace.qualityGraphEnabled,
+    },
     me: {
       userId: session.user.id,
       role: membership.role,
@@ -305,6 +311,20 @@ export async function PATCH(request: Request) {
   if (!updated) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
+
+  await recordAuditEvent({
+    action: "role.change",
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    workspaceId: workspace.id,
+    targetType: "workspace_member",
+    targetId: parsed.data.userId,
+    request,
+    metadata: {
+      role: legacyRole,
+      roleId: customRole.id,
+    },
+  });
 
   return NextResponse.json({
     member: {

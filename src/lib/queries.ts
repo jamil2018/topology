@@ -1,14 +1,10 @@
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   buildTriageQueue,
-  computeMilestoneReadiness,
   computeReliability,
   failureSignatureHash,
-  latestOutcomeByCase,
   computeQualityPulse,
   detectFlakeSignal,
-  readinessBadgeLabel,
-  type MilestoneCase,
   type ReliabilityHistoryPoint,
   type TriageFailure,
 } from "@topology/domain";
@@ -18,7 +14,6 @@ import {
   folders,
   implementationStats,
   linkedIssues,
-  milestones,
   runResults,
   runs,
   savedViews,
@@ -26,6 +21,8 @@ import {
   triageItems,
 } from "@/db/schema";
 import { listRetestQueue } from "@/lib/issues";
+import { getFlakeHintsForCaseIds } from "@/lib/queries/flake";
+import { isUuid } from "@/lib/queries/ids";
 import { getWorkspaceCoverage } from "@/lib/quality-graph";
 import {
   parseCaseViewConfig,
@@ -39,7 +36,10 @@ import {
   failureRowsFromResults,
 } from "@/lib/report-stats";
 
-export async function getHubPulse(workspaceId: string) {
+export async function getHubPulse(
+  workspaceId: string,
+  options: { userId?: string } = {},
+) {
   const [caseStats] = await db
     .select({
       total: count(),
@@ -89,7 +89,21 @@ export async function getHubPulse(workspaceId: string) {
     limit: 8,
   });
 
-  const recentRunIds = recentRuns.map((run) => run.id);
+  const activeRuns = await db.query.runs.findMany({
+    where: and(
+      eq(runs.workspaceId, workspaceId),
+      inArray(runs.status, ["planned", "in_progress"]),
+    ),
+    orderBy: [desc(runs.updatedAt)],
+    limit: 24,
+  });
+
+  const recentRunIds = [
+    ...new Set([
+      ...recentRuns.map((run) => run.id),
+      ...activeRuns.map((run) => run.id),
+    ]),
+  ];
   const runResultCounts =
     recentRunIds.length === 0
       ? []
@@ -98,6 +112,8 @@ export async function getHubPulse(workspaceId: string) {
             runId: runResults.runId,
             passed: sql<number>`count(*) filter (where ${runResults.status} = 'passed')`,
             failed: sql<number>`count(*) filter (where ${runResults.status} = 'failed')`,
+            skipped: sql<number>`count(*) filter (where ${runResults.status} = 'skipped')`,
+            blocked: sql<number>`count(*) filter (where ${runResults.status} = 'blocked')`,
             untested: sql<number>`count(*) filter (where ${runResults.status} = 'untested')`,
           })
           .from(runResults)
@@ -110,10 +126,31 @@ export async function getHubPulse(workspaceId: string) {
       {
         passed: Number(row.passed ?? 0),
         failed: Number(row.failed ?? 0),
+        skipped: Number(row.skipped ?? 0),
+        blocked: Number(row.blocked ?? 0),
         untested: Number(row.untested ?? 0),
       },
     ]),
   );
+
+  const failingNow = await db
+    .select({
+      id: triageItems.id,
+      title: triageItems.title,
+      priority: triageItems.priority,
+      runId: triageItems.runId,
+      caseKey: cases.key,
+    })
+    .from(triageItems)
+    .leftJoin(cases, eq(triageItems.caseId, cases.id))
+    .where(
+      and(
+        eq(triageItems.workspaceId, workspaceId),
+        eq(triageItems.status, "open"),
+      ),
+    )
+    .orderBy(desc(triageItems.lastSeenAt))
+    .limit(8);
 
   const flakeSuspects = await countFlakeSuspects(workspaceId);
   const openLinked = await db
@@ -157,19 +194,26 @@ export async function getHubPulse(workspaceId: string) {
     flakeSuspects,
   });
 
-  const recentRunsWithCounts = recentRuns.map((run) => {
+  function withResultCounts<T extends { id: string }>(run: T) {
     const counts = countsByRun.get(run.id) ?? {
       passed: 0,
       failed: 0,
+      skipped: 0,
+      blocked: 0,
       untested: 0,
     };
     return {
       ...run,
       passed: counts.passed,
       failed: counts.failed,
+      skipped: counts.skipped,
+      blocked: counts.blocked,
       untested: counts.untested,
     };
-  });
+  }
+
+  const recentRunsWithCounts = recentRuns.map(withResultCounts);
+  const activeRunsWithCounts = activeRuns.map(withResultCounts);
 
   return {
     cases: {
@@ -206,6 +250,19 @@ export async function getHubPulse(workspaceId: string) {
       caseKey: i.case?.key ?? null,
       runId: i.runId,
       resultId: i.resultId,
+    })),
+    assignedRuns: activeRunsWithCounts
+      .filter((run) => options.userId && run.assigneeId === options.userId)
+      .slice(0, 8),
+    inProgressRuns: activeRunsWithCounts
+      .filter((run) => run.status === "in_progress")
+      .slice(0, 8),
+    failingNow: failingNow.map((item) => ({
+      id: item.id,
+      title: item.title,
+      priority: item.priority,
+      runId: item.runId,
+      caseKey: item.caseKey,
     })),
   };
 }
@@ -282,26 +339,27 @@ export async function countFlakeSuspects(workspaceId: string): Promise<number> {
   return suspects;
 }
 
-export async function listCases(
-  workspaceId: string,
-  folderId?: string | null,
-) {
-  if (folderId) {
-    return db.query.cases.findMany({
-      where: and(
-        eq(cases.workspaceId, workspaceId),
-        eq(cases.folderId, folderId),
-      ),
-      with: { folder: true, intent: true },
-      orderBy: [desc(cases.updatedAt)],
-    });
-  }
-  return db.query.cases.findMany({
-    where: eq(cases.workspaceId, workspaceId),
-    with: { folder: true, intent: true },
-    orderBy: [desc(cases.updatedAt)],
-  });
-}
+export { isUuid } from "@/lib/queries/ids";
+export {
+  listCases,
+  listCasesPage,
+  type ListedCase,
+} from "@/lib/queries/list-cases";
+export {
+  listRuns,
+  listRunsPage,
+  type ListedRun,
+} from "@/lib/queries/list-runs";
+export {
+  flakeHintsFromHistoryRows,
+  getFlakeHints,
+  getFlakeHintsForCaseIds,
+} from "@/lib/queries/flake";
+export {
+  getActiveMilestoneReadiness,
+  listMilestonesWithReadiness,
+} from "@/lib/queries/milestones";
+export { getReportsDashboard } from "@/lib/queries/reports-dashboard";
 
 export async function listFolders(workspaceId: string) {
   return db.query.folders.findMany({
@@ -336,13 +394,6 @@ export async function listSavedViews(
   }));
 }
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function isUuid(id: string): boolean {
-  return UUID_RE.test(id);
-}
-
 export async function getRunWithResults(workspaceId: string, runId: string) {
   if (!isUuid(runId)) return null;
   return db.query.runs.findFirst({
@@ -355,27 +406,12 @@ export async function getRunWithResults(workspaceId: string, runId: string) {
           comments: { with: { user: true } },
           attachments: true,
           assignee: true,
+          stepResults: true,
         },
       },
       linkedIssues: true,
       assignee: true,
     },
-  });
-}
-
-export async function listRuns(
-  workspaceId: string,
-  kind?: "manual" | "automation",
-) {
-  if (kind) {
-    return db.query.runs.findMany({
-      where: and(eq(runs.workspaceId, workspaceId), eq(runs.kind, kind)),
-      orderBy: [desc(runs.updatedAt)],
-    });
-  }
-  return db.query.runs.findMany({
-    where: eq(runs.workspaceId, workspaceId),
-    orderBy: [desc(runs.updatedAt)],
   });
 }
 
@@ -388,113 +424,6 @@ export function runProgress(
     done,
     total,
     pct: total === 0 ? 0 : Math.round((done / total) * 100),
-  };
-}
-
-export async function getActiveMilestoneReadiness(workspaceId: string) {
-  const rows = await db.query.milestones.findMany({
-    where: and(
-      eq(milestones.workspaceId, workspaceId),
-      eq(milestones.status, "active"),
-    ),
-    orderBy: [desc(milestones.updatedAt)],
-  });
-
-  for (const milestone of rows) {
-    const view = await computeReadinessForMilestone(milestone);
-    if (view.readiness.status === "unknown") continue;
-    return view;
-  }
-
-  return null;
-}
-
-export async function listMilestonesWithReadiness(workspaceId: string) {
-  const rows = await db.query.milestones.findMany({
-    where: eq(milestones.workspaceId, workspaceId),
-    orderBy: [desc(milestones.updatedAt)],
-  });
-  const results = [];
-  for (const milestone of rows) {
-    results.push(await computeReadinessForMilestone(milestone));
-  }
-  return results;
-}
-
-async function computeReadinessForMilestone(
-  milestone: typeof milestones.$inferSelect,
-) {
-  const suiteCases = milestone.folderId
-    ? await db.query.cases.findMany({
-        where: and(
-          eq(cases.workspaceId, milestone.workspaceId),
-          eq(cases.folderId, milestone.folderId),
-        ),
-      })
-    : await db.query.cases.findMany({
-        where: eq(cases.workspaceId, milestone.workspaceId),
-      });
-
-  const caseIds = suiteCases.map((c) => c.id);
-  const recentResults =
-    caseIds.length === 0
-      ? []
-      : await db
-          .selectDistinctOn([runResults.caseId], {
-            caseId: runResults.caseId,
-            status: runResults.status,
-            executedAt: runResults.executedAt,
-          })
-          .from(runResults)
-          .innerJoin(runs, eq(runResults.runId, runs.id))
-          .where(
-            and(
-              eq(runs.workspaceId, milestone.workspaceId),
-              inArray(runResults.caseId, caseIds),
-            ),
-          )
-          .orderBy(
-            runResults.caseId,
-            sql`${runResults.executedAt} desc nulls last`,
-          );
-  const latestByCase = latestOutcomeByCase(recentResults);
-
-  const milestoneCases: MilestoneCase[] = suiteCases.map((c) => ({
-    key: c.key,
-    priority: c.priority,
-    status: c.status,
-    lastResult: (latestByCase.get(c.id) as MilestoneCase["lastResult"]) ?? null,
-  }));
-
-  const caseIdSet = new Set(caseIds);
-  const openBlockers = await db.query.linkedIssues.findMany({
-    where: and(
-      eq(linkedIssues.workspaceId, milestone.workspaceId),
-      eq(linkedIssues.remoteStatus, "open"),
-    ),
-  });
-  const openBlockerIssues = openBlockers.filter(
-    (i) =>
-      (i.caseId && caseIdSet.has(i.caseId)) ||
-      // Treat open issues without a case as blockers for project-wide milestones
-      (!milestone.folderId && !i.caseId),
-  ).length;
-
-  const readiness = computeMilestoneReadiness(
-    { cases: milestoneCases, openBlockerIssues },
-    {
-      minPassRate: milestone.passRateThreshold,
-      maxOpenP0Failures: milestone.maxOpenP0Failures,
-      minExecutedPct: milestone.minExecutedPct,
-      maxOpenBlockers: milestone.maxOpenBlockers,
-      requireReadyCases: true,
-    },
-  );
-
-  return {
-    milestone,
-    readiness,
-    badge: readinessBadgeLabel(readiness.status),
   };
 }
 
@@ -645,75 +574,6 @@ export async function getIntentReliabilityCards(
   }));
 
   return { windowDays, implementations: cards, byBrowser };
-}
-
-async function getFlakeHintsForCaseIds(caseIds: string[]) {
-  const map = new Map<
-    string,
-    ReturnType<typeof detectFlakeSignal>
-  >();
-  if (caseIds.length === 0) return map;
-
-  for (const caseId of caseIds) {
-    const history = await db.query.runResults.findMany({
-      where: and(
-        eq(runResults.caseId, caseId),
-        sql`${runResults.status} in ('passed', 'failed')`,
-      ),
-      orderBy: [desc(runResults.executedAt)],
-      limit: 12,
-    });
-    const signal = detectFlakeSignal(
-      history.map((h) => ({
-        status: h.status as "passed" | "failed",
-        at: h.executedAt ?? h.createdAt,
-      })),
-    );
-    map.set(caseId, signal);
-  }
-  return map;
-}
-
-export async function getFlakeHints(workspaceId: string, limit = 20) {
-  const allCases = await db.query.cases.findMany({
-    where: eq(cases.workspaceId, workspaceId),
-    limit: 200,
-  });
-  const hints: Array<{
-    caseId: string;
-    caseKey: string;
-    title: string;
-    score: number;
-    hint: string;
-  }> = [];
-
-  for (const c of allCases) {
-    const history = await db.query.runResults.findMany({
-      where: and(
-        eq(runResults.caseId, c.id),
-        sql`${runResults.status} in ('passed', 'failed')`,
-      ),
-      orderBy: [desc(runResults.executedAt)],
-      limit: 12,
-    });
-    const signal = detectFlakeSignal(
-      history.map((h) => ({
-        status: h.status as "passed" | "failed",
-        at: h.executedAt ?? h.createdAt,
-      })),
-    );
-    if (signal.isFlaky && signal.hint) {
-      hints.push({
-        caseId: c.id,
-        caseKey: c.key,
-        title: c.title,
-        score: signal.score,
-        hint: signal.hint,
-      });
-    }
-  }
-
-  return hints.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 function parseEnvironmentFields(
@@ -871,6 +731,7 @@ export async function listRunReports(workspaceId: string) {
       status: run.status,
       kind: run.kind,
       source: run.source,
+      planId: run.planId,
       environment: run.environment,
       branch: run.branch,
       commitSha: run.commitSha,

@@ -3,11 +3,12 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { cases, runResults, runs } from "@/db/schema";
+import { cases, runs } from "@/db/schema";
 import { requireWorkspaceAssignee } from "@/lib/assignee";
 import { caseWriteError } from "@/lib/pg-error";
 import { requireProjectAccess } from "@/lib/project";
-import { listRuns } from "@/lib/queries";
+import { listRunsPage } from "@/lib/queries";
+import { runListQueryFromSearchParams } from "@/lib/run-list";
 
 /** Create a manual run. `caseIds` must list at least one case. */
 const createRunSchema = z.object({
@@ -29,8 +30,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const data = await listRuns(access.ctx.project.id);
-  return NextResponse.json({ runs: data });
+  const { searchParams } = new URL(request.url);
+  const query = runListQueryFromSearchParams(searchParams);
+  if (searchParams.get("all") === "1") query.all = true;
+  const page = await listRunsPage(access.ctx.project.id, query);
+  return NextResponse.json({
+    runs: page.items,
+    total: page.total,
+    page: page.page,
+    pageSize: page.pageSize,
+    totalPages: page.totalPages,
+    nextCursor: page.nextCursor,
+  });
 }
 
 export async function POST(request: Request) {
@@ -112,13 +123,12 @@ export async function POST(request: Request) {
       })
       .returning();
 
-    await db.insert(runResults).values(
-      caseIds.map((caseId) => ({
-        runId: run.id,
-        caseId,
-        status: "untested" as const,
-      })),
-    );
+    const { seedManualRunResults } = await import("@/lib/tcm/seed-run");
+    await seedManualRunResults({
+      workspaceId,
+      runId: run.id,
+      caseIds,
+    });
 
     return NextResponse.json({ run }, { status: 201 });
   } catch (err) {

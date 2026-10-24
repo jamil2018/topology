@@ -28,12 +28,70 @@ const PRIORITY_RANK: Record<string, number> = {
   P3: 3,
 };
 
+import {
+  parseLimitParam,
+  parsePageParam,
+  type PaginatedList,
+} from "@/lib/list-pagination";
+
 export type CaseListFilters = {
   folderFilter?: string;
   search?: string;
   statusFilter?: string;
   priorityFilter?: string;
 };
+
+export type CaseListQuery = CaseListFilters & {
+  /** Alias for folderFilter when the caller still passes a folder UUID. */
+  folderId?: string | null;
+  sort?: CaseListSort;
+  dir?: CaseListSortDir;
+  page?: number;
+  limit?: number;
+  cursor?: string | null;
+  /** Return every matching row (CSV export, pickers). */
+  all?: boolean;
+};
+
+const CASE_SORTS = new Set<CaseListSort>([
+  "key",
+  "title",
+  "folder",
+  "priority",
+  "status",
+]);
+
+export function parseCaseListSort(value: string | null | undefined): CaseListSort {
+  if (value && CASE_SORTS.has(value as CaseListSort)) return value as CaseListSort;
+  return "key";
+}
+
+export function parseCaseListSortDir(
+  value: string | null | undefined,
+): CaseListSortDir {
+  return value === "desc" ? "desc" : "asc";
+}
+
+/** Map UI / API query-string params onto the server listCases query. */
+export function caseListQueryFromSearchParams(
+  params: URLSearchParams,
+): CaseListQuery {
+  const folder =
+    params.get("folder") ?? params.get("folderId") ?? "all";
+  return {
+    folderFilter: folder || "all",
+    search: params.get("q") ?? params.get("search") ?? "",
+    statusFilter: params.get("status") ?? "all",
+    priorityFilter: params.get("priority") ?? "all",
+    sort: parseCaseListSort(params.get("sort")),
+    dir: parseCaseListSortDir(params.get("dir")),
+    page: parsePageParam(params.get("page")),
+    limit: parseLimitParam(params.get("limit"), CASE_LIST_PAGE_SIZE),
+    cursor: params.get("cursor"),
+  };
+}
+
+export type CaseListPage<T> = PaginatedList<T>;
 
 export function filterCases(
   cases: CaseListItem[],
