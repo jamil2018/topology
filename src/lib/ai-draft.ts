@@ -192,7 +192,7 @@ export async function suggestNegativePaths(input: {
 
   let contextTitle = "quality behavior";
   let inputRefs: string[] = [];
-  let anchorIntentId: string | null = input.intentId ?? null;
+  const anchorIntentId: string | null = input.intentId ?? null;
 
   if (input.intentId) {
     const intent = await db.query.testIntents.findFirst({

@@ -1,5 +1,6 @@
 import { and, count, desc, eq, inArray, notInArray } from "drizzle-orm";
 import {
+  assertPersistedIssueProvider,
   buildFailureIssueBody,
   resolveIssueProvider,
   type IssueProviderId,
@@ -28,7 +29,7 @@ function toRowValues(
     remote.status === "done";
   return {
     workspaceId: meta.workspaceId,
-    provider: remote.provider,
+    provider: assertPersistedIssueProvider(remote.provider),
     remoteId: remote.id,
     remoteKey: remote.key,
     url: remote.url,
