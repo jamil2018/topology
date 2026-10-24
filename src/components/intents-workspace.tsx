@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, TextArea } from "@heroui/react";
 import type { IntentViewConfig } from "@/lib/saved-views";
+import { paginateItems } from "@/lib/list-pagination";
 import { EntityCollabPanel } from "./entity-collab-panel";
 import { IntentReliabilityCards } from "./intent-reliability-cards";
 import { IntentRepresentationPanel } from "./intent-representation";
@@ -12,6 +13,8 @@ import { LinkAutomationPanel } from "./link-automation-panel";
 import { PageHeader } from "./page-header";
 import { SavedViewsBar, type SavedViewRow } from "./saved-views-bar";
 import { StatusChip } from "./status-chip";
+
+const INTENT_LIST_PAGE_SIZE = 20;
 
 export type IntentListItem = {
   id: string;
@@ -55,6 +58,7 @@ export function IntentsWorkspace({
   const [statusFilter, setStatusFilter] = useState("all");
   const [sort, setSort] = useState<IntentViewConfig["sort"]>("key");
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -80,6 +84,27 @@ export function IntentsWorkspace({
     return rows;
   }, [items, search, criticalityFilter, statusFilter, sort]);
 
+  const pageData = useMemo(
+    () => paginateItems(filtered, page, INTENT_LIST_PAGE_SIZE),
+    [filtered, page],
+  );
+
+  const listFilterKey = `${search}|${criticalityFilter}|${statusFilter}|${sort}`;
+  const [pageFilterKey, setPageFilterKey] = useState(listFilterKey);
+  if (pageFilterKey !== listFilterKey) {
+    setPageFilterKey(listFilterKey);
+    if (page !== 1) setPage(1);
+  } else if (page !== pageData.page) {
+    setPage(pageData.page);
+  }
+
+  const rangeStart =
+    pageData.total === 0 ? 0 : (pageData.page - 1) * INTENT_LIST_PAGE_SIZE + 1;
+  const rangeEnd = Math.min(
+    pageData.page * INTENT_LIST_PAGE_SIZE,
+    pageData.total,
+  );
+
   const active = useMemo(
     () => items.find((i) => i.id === selected) ?? null,
     [items, selected],
@@ -101,6 +126,7 @@ export function IntentsWorkspace({
     setStatusFilter(config.statusFilter ?? "all");
     setSort(config.sort ?? "key");
     setActiveViewId(view.id);
+    setPage(1);
   }
 
   async function createIntent() {
@@ -240,13 +266,13 @@ export function IntentsWorkspace({
               Catalog
             </h2>
           </div>
-          {filtered.length === 0 ? (
+          {pageData.total === 0 ? (
             <p className="px-4 py-8 text-sm text-[color:var(--topo-muted)]">
               No intents match these filters.
             </p>
           ) : (
             <ul className="divide-y divide-[color:var(--topo-line)]">
-              {filtered.map((intent) => {
+              {pageData.items.map((intent) => {
                 const types = [
                   ...new Set(intent.implementations.map((i) => i.type)),
                 ];
@@ -289,6 +315,33 @@ export function IntentsWorkspace({
               })}
             </ul>
           )}
+          {pageData.total > INTENT_LIST_PAGE_SIZE ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--topo-line)] px-4 py-2">
+              <p className="text-xs text-[color:var(--topo-muted)]">
+                {rangeStart}–{rangeEnd} of {pageData.total}
+              </p>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  isDisabled={pageData.page <= 1}
+                  onPress={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  isDisabled={pageData.page >= pageData.totalPages}
+                  onPress={() =>
+                    setPage((p) => Math.min(pageData.totalPages, p + 1))
+                  }
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <section className="space-y-4">

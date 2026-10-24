@@ -17,6 +17,7 @@ import {
   ListChecksIcon,
   MagnifyingGlassIcon,
   PlayCircleIcon,
+  QuestionIcon,
   SidebarSimpleIcon,
   SignOutIcon,
   SparkleIcon,
@@ -25,82 +26,64 @@ import {
 } from "@phosphor-icons/react";
 import { BrandMark } from "./brand-mark";
 import { openCommandPalette } from "./command-palette";
+import { openCheatSheet } from "./shortcut-layer";
 import {
   ProjectSwitcher,
   type ProjectOption,
 } from "./project-switcher";
 import { NotificationsBell } from "./notifications-bell";
 import { ThemeToggle } from "./theme-toggle";
+import {
+  QualityGraphProvider,
+  useQualityGraph,
+} from "./quality-graph-provider";
+import {
+  isActivePath,
+  visibleNavGroups,
+  visibleNavItems,
+  type NavGroupDef,
+} from "@/lib/nav-diet";
 
-type NavItem = {
-  href: string;
-  label: string;
-  Icon: typeof CirclesFourIcon;
+type NavIcon = typeof CirclesFourIcon;
+
+const NAV_ICONS: Record<string, NavIcon> = {
+  "/": CirclesFourIcon,
+  "/cases": ListChecksIcon,
+  "/plans": FlagIcon,
+  "/runs": PlayCircleIcon,
+  "/automation": ChartLineIcon,
+  "/triage": BugIcon,
+  "/reports": ChartBarIcon,
+  "/settings": GearIcon,
+  "/intents": TargetIcon,
+  "/impact": ChartBarIcon,
+  "/milestones": FlagIcon,
+  "/releases": FlagIcon,
+  "/journeys": CirclesFourIcon,
+  "/requirements": ListChecksIcon,
+  "/risks": BugIcon,
+  "/components": CirclesFourIcon,
+  "/proposals": SparkleIcon,
 };
 
-type NavGroup = {
-  id: string;
-  label: string;
-  items: NavItem[];
-};
-
-const navGroups: NavGroup[] = [
-  {
-    id: "overview",
-    label: "Overview",
-    items: [{ href: "/", label: "Hub", Icon: CirclesFourIcon }],
-  },
-  {
-    id: "testing",
-    label: "Testing",
-    items: [
-      { href: "/intents", label: "Intents", Icon: TargetIcon },
-      { href: "/cases", label: "Test Cases", Icon: ListChecksIcon },
-      { href: "/runs", label: "Test Runs", Icon: PlayCircleIcon },
-      { href: "/automation", label: "Automation", Icon: ChartLineIcon },
-      { href: "/impact", label: "Impact", Icon: ChartBarIcon },
-      { href: "/milestones", label: "Milestones", Icon: FlagIcon },
-      { href: "/releases", label: "Releases", Icon: FlagIcon },
-      { href: "/journeys", label: "Journeys", Icon: CirclesFourIcon },
-    ],
-  },
-  {
-    id: "insights",
-    label: "Insights",
-    items: [
-      { href: "/requirements", label: "Requirements", Icon: ListChecksIcon },
-      { href: "/risks", label: "Risks", Icon: BugIcon },
-      { href: "/components", label: "Components", Icon: CirclesFourIcon },
-      { href: "/proposals", label: "Proposals", Icon: SparkleIcon },
-      { href: "/reports", label: "Reports", Icon: ChartBarIcon },
-      { href: "/triage", label: "Triage", Icon: BugIcon },
-    ],
-  },
-  {
-    id: "account",
-    label: "Account",
-    items: [{ href: "/settings", label: "Settings", Icon: GearIcon }],
-  },
-];
-
-const nav: NavItem[] = navGroups.flatMap((group) => group.items);
-
-function isActivePath(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+function iconFor(href: string): NavIcon {
+  return NAV_ICONS[href] ?? CirclesFourIcon;
 }
 
 function NavLinks({
   pathname,
+  groups,
   onNavigate,
   collapsed = false,
 }: {
   pathname: string;
+  groups: NavGroupDef[];
   onNavigate?: () => void;
   collapsed?: boolean;
 }) {
   return (
     <nav className="flex flex-col gap-4 px-2" aria-label="Primary">
-      {navGroups.map((group, groupIndex) => (
+      {groups.map((group, groupIndex) => (
         <div key={group.id} className="flex flex-col gap-0.5">
           {groupIndex > 0 ? (
             <div
@@ -117,7 +100,7 @@ function NavLinks({
           )}
           {group.items.map((item) => {
             const active = isActivePath(pathname, item.href);
-            const Icon = item.Icon;
+            const Icon = iconFor(item.href);
             return (
               <Link
                 key={item.href}
@@ -166,6 +149,7 @@ function NavLinks({
 function SidebarChrome({
   userEmail,
   pathname,
+  groups,
   onNavigate,
   collapsed = false,
   projects = [],
@@ -173,11 +157,13 @@ function SidebarChrome({
 }: {
   userEmail?: string | null;
   pathname: string;
+  groups: NavGroupDef[];
   onNavigate?: () => void;
   collapsed?: boolean;
   projects?: ProjectOption[];
   activeProjectId?: string | null;
 }) {
+  const { showExplainer, dismissExplainer } = useQualityGraph();
   return (
     <div className="flex h-full flex-col">
       <div
@@ -209,6 +195,7 @@ function SidebarChrome({
       <div className="flex-1 overflow-y-auto py-2">
         <NavLinks
           pathname={pathname}
+          groups={groups}
           onNavigate={onNavigate}
           collapsed={collapsed}
         />
@@ -219,6 +206,26 @@ function SidebarChrome({
           collapsed ? "flex flex-col items-center" : ""
         }`}
       >
+        {showExplainer && !collapsed ? (
+          <div
+            role="note"
+            className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/40 p-2.5"
+          >
+            <p className="text-xs leading-relaxed text-[color:var(--topo-muted)]">
+              Quality graph adds intents, journeys, requirements, risks,
+              components, impact, and proposals — the model behind coverage and
+              change analysis. Test cases, plans, and test runs stay in the
+              main nav.
+            </p>
+            <button
+              type="button"
+              className="mt-1.5 text-xs font-medium text-[color:var(--topo-accent)] hover:underline"
+              onClick={dismissExplainer}
+            >
+              Got it
+            </button>
+          </div>
+        ) : null}
         {!collapsed ? <ThemeToggle /> : <ThemeToggle compact />}
         {!collapsed && userEmail ? (
           <p
@@ -252,6 +259,35 @@ export function HubShell({
   userEmail,
   projects = [],
   activeProjectId = null,
+  qualityGraphEnabled = false,
+}: {
+  children: React.ReactNode;
+  userEmail?: string | null;
+  projects?: ProjectOption[];
+  activeProjectId?: string | null;
+  qualityGraphEnabled?: boolean;
+}) {
+  return (
+    <QualityGraphProvider
+      workspaceId={activeProjectId}
+      initialEnabled={qualityGraphEnabled}
+    >
+      <HubShellInner
+        userEmail={userEmail}
+        projects={projects}
+        activeProjectId={activeProjectId}
+      >
+        {children}
+      </HubShellInner>
+    </QualityGraphProvider>
+  );
+}
+
+function HubShellInner({
+  children,
+  userEmail,
+  projects = [],
+  activeProjectId = null,
 }: {
   children: React.ReactNode;
   userEmail?: string | null;
@@ -259,6 +295,9 @@ export function HubShell({
   activeProjectId?: string | null;
 }) {
   const pathname = usePathname();
+  const { enabled: qualityGraphEnabled } = useQualityGraph();
+  const groups = visibleNavGroups(qualityGraphEnabled, pathname);
+  const nav = visibleNavItems(qualityGraphEnabled, pathname);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [openForPath, setOpenForPath] = useState(pathname);
@@ -301,7 +340,7 @@ export function HubShell({
   }, []);
 
   const current = nav.find((item) => isActivePath(pathname, item.href));
-  const currentGroup = navGroups.find((group) =>
+  const currentGroup = groups.find((group) =>
     group.items.some((item) => isActivePath(pathname, item.href)),
   );
 
@@ -316,6 +355,7 @@ export function HubShell({
         <SidebarChrome
           userEmail={userEmail}
           pathname={pathname}
+          groups={groups}
           collapsed={desktopCollapsed}
           projects={projects}
           activeProjectId={activeProjectId}
@@ -356,6 +396,7 @@ export function HubShell({
               <SidebarChrome
                 userEmail={userEmail}
                 pathname={pathname}
+                groups={groups}
                 onNavigate={() => setMobileOpen(false)}
                 projects={projects}
                 activeProjectId={activeProjectId}
@@ -405,6 +446,17 @@ export function HubShell({
             </div>
 
             <NotificationsBell />
+            <span title="Keyboard shortcuts ?">
+              <Button
+                size="sm"
+                variant="secondary"
+                aria-label="Keyboard shortcuts"
+                className="min-w-0 px-2"
+                onPress={() => openCheatSheet()}
+              >
+                <QuestionIcon size={16} weight="bold" />
+              </Button>
+            </span>
             <span title="Search ⌘K">
               <Button
                 size="sm"

@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { pageTitle } from "@/lib/format-labels";
 import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { AutomationWorkspace } from "@/components/automation-workspace";
 import { resolveActiveProject } from "@/lib/project";
@@ -8,6 +10,11 @@ import {
   getFlakeHints,
   listRuns,
 } from "@/lib/queries";
+
+export const metadata: Metadata = {
+  title: pageTitle("Automation"),
+  description: "CI runs, flake hints, and automation reliability.",
+};
 
 export default async function AutomationPage() {
   const session = await auth();

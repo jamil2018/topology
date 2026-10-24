@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
 import {
   Button,
   Input,
@@ -19,18 +20,27 @@ import {
   filterAndSortRuns,
   paginateRuns,
   RUN_LIST_PAGE_SIZE,
+  type RunListItem,
   type RunListSort,
 } from "@/lib/run-list";
 import { parseRunViewConfig } from "@/lib/saved-views";
+import { formatStatusLabel } from "@/lib/format-labels";
+import { RunProgressBar } from "./run-progress-bar";
+import { useShortcut } from "./shortcut-layer";
 
-type RunRow = {
-  id: string;
-  name: string;
-  status: string;
-  environment: string;
-  createdAt?: string | Date;
-  updatedAt: string | Date;
-};
+type RunRow = RunListItem;
+
+function formatWhen(value: string | Date | null | undefined) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 const runListSorts: { id: RunListSort; label: string }[] = [
   { id: "updated", label: "Updated" },
@@ -46,10 +56,12 @@ export function RunsWorkspace({
   initialRuns: RunRow[];
   initialViews?: SavedViewRow[];
 }) {
+  const router = useRouter();
   const [runSearch, setRunSearch] = useState("");
   const [runSort, setRunSort] = useState<RunListSort>("updated");
   const [runPage, setRunPage] = useState(1);
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [cursor, setCursor] = useState(0);
 
   const filteredRuns = useMemo(
     () => filterAndSortRuns(initialRuns, runSearch, runSort),
@@ -62,6 +74,30 @@ export function RunsWorkspace({
   );
 
   const showRunListPagination = runPageData.total > RUN_LIST_PAGE_SIZE;
+  const cursorIndex =
+    runPageData.items.length === 0
+      ? 0
+      : Math.min(cursor, runPageData.items.length - 1);
+  const focusedRun = runPageData.items[cursorIndex] ?? null;
+
+  useShortcut(
+    "nav-next",
+    useCallback(() => {
+      setCursor((index) => Math.min(runPageData.items.length - 1, index + 1));
+    }, [runPageData.items.length]),
+  );
+  useShortcut(
+    "nav-prev",
+    useCallback(() => {
+      setCursor((index) => Math.max(0, index - 1));
+    }, []),
+  );
+  useShortcut(
+    "open",
+    useCallback(() => {
+      if (focusedRun) router.push(`/runs/${focusedRun.id}`);
+    }, [focusedRun, router]),
+  );
 
   function applyRunView(view: SavedViewRow) {
     const config = parseRunViewConfig(JSON.stringify(view.config));
@@ -86,7 +122,11 @@ export function RunsWorkspace({
         eyebrow="Manual"
         title="Test Runs"
         description="Plan a pass, attach ready cases, and record results as you execute."
-        meta={<StatusChip mono>{initialRuns.length} runs</StatusChip>}
+        meta={
+          <StatusChip mono>
+            {initialRuns.length} {initialRuns.length === 1 ? "run" : "runs"}
+          </StatusChip>
+        }
         actions={
           <Link
             href="/runs/new"
@@ -188,23 +228,47 @@ export function RunsWorkspace({
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i, 10) * 0.02 }}
+                aria-current={cursorIndex === i ? "true" : undefined}
+                className={
+                  cursorIndex === i
+                    ? "bg-[color:var(--topo-accent-soft)]"
+                    : undefined
+                }
               >
                 <Link
                   href={`/runs/${run.id}`}
-                  className="flex items-center justify-between gap-3 px-3 py-2.5 transition-colors hover:bg-[color:var(--topo-chip)]/50"
+                  className="flex flex-col gap-2 px-3 py-2.5 transition-colors hover:bg-[color:var(--topo-chip)]/50 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="truncate font-medium text-[color:var(--topo-ink)]">
                       {run.name}
                     </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[color:var(--topo-muted)]">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[color:var(--topo-muted)]">
                       <span className="font-mono">{run.id.slice(0, 8)}</span>
                       <span>{run.environment}</span>
+                      <span>{run.assigneeName ?? "Unassigned"}</span>
+                      <span>updated {formatWhen(run.updatedAt)}</span>
                     </div>
+                    <RunProgressBar
+                      className="mt-2 max-w-xs"
+                      passed={run.passed}
+                      failed={run.failed}
+                      skipped={run.skipped}
+                      blocked={run.blocked}
+                      untested={run.untested}
+                      total={run.total}
+                    />
                   </div>
-                  <StatusChip tone={statusToneForRun(run.status)} mono>
-                    {run.status.replace("_", " ")}
-                  </StatusChip>
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                    {(run.passed ?? 0) > 0 || (run.failed ?? 0) > 0 ? (
+                      <span className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+                        {run.passed ?? 0}P / {run.failed ?? 0}F
+                      </span>
+                    ) : null}
+                    <StatusChip tone={statusToneForRun(run.status)} mono>
+                      {formatStatusLabel(run.status)}
+                    </StatusChip>
+                  </div>
                 </Link>
               </motion.li>
             ))}

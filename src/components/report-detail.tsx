@@ -12,6 +12,8 @@ import {
   SuiteBars,
 } from "./report-charts";
 import { formatDuration, type ReportKpis, type SuiteBreakdownRow, type TimelinePoint } from "@/lib/report-stats";
+import { formatStatusLabel } from "@/lib/format-labels";
+import { ReportExportActions } from "./report-export-actions";
 
 export type ReportDetailModel = {
   run: {
@@ -115,7 +117,7 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
         meta={
           <>
             <StatusChip tone={statusToneForRun(run.status)}>
-              {run.status.replace("_", " ")}
+              {formatStatusLabel(run.status)}
             </StatusChip>
             <StatusChip tone={run.kind === "automation" ? "info" : "neutral"}>
               {run.kind === "automation" ? "CI / automation" : "manual"}
@@ -150,6 +152,7 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
             >
               All reports
             </Link>
+            <ReportExportActions runId={run.id} />
             {kpis.failed > 0 ? (
               <Link
                 href="/triage"

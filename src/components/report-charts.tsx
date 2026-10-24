@@ -8,6 +8,7 @@ import {
   type SuiteBreakdownRow,
   type TimelinePoint,
 } from "@/lib/report-stats";
+import type { ReportsTrendPoint } from "@/lib/report-dashboard";
 
 export function StatusDonut({ kpis }: { kpis: ReportKpis }) {
   const segments = donutSegments(kpis);
@@ -115,13 +116,13 @@ export function SuiteBars({ rows }: { rows: SuiteBreakdownRow[] }) {
                 <>
                   {row.passed > 0 ? (
                     <div
-                      className="h-full bg-emerald-500/85"
+                      className="h-full bg-[color:var(--topo-success)]"
                       style={{ flex: row.passed }}
                     />
                   ) : null}
                   {row.failed > 0 ? (
                     <div
-                      className="h-full bg-red-500/85"
+                      className="h-full bg-[color:var(--topo-danger)]"
                       style={{ flex: row.failed }}
                     />
                   ) : null}
@@ -182,10 +183,10 @@ export function CumulativeTimeline({ points }: { points: TimelinePoint[] }) {
     <div>
       <div className="mb-2 flex flex-wrap gap-3 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-0.5 w-3 bg-emerald-500" /> Pass cumulative
+          <span className="h-0.5 w-3 bg-[color:var(--topo-success)]" /> Pass cumulative
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-0.5 w-3 bg-red-500" /> Fail cumulative
+          <span className="h-0.5 w-3 bg-[color:var(--topo-danger)]" /> Fail cumulative
         </span>
       </div>
       <svg
@@ -202,21 +203,21 @@ export function CumulativeTimeline({ points }: { points: TimelinePoint[] }) {
           stroke="var(--topo-line)"
           strokeWidth={1}
         />
-        <path d={passLine} fill="none" stroke="rgb(16 185 129)" strokeWidth={2} />
-        <path d={failLine} fill="none" stroke="rgb(239 68 68)" strokeWidth={2} />
+        <path d={passLine} fill="none" stroke="var(--topo-success)" strokeWidth={2} />
+        <path d={failLine} fill="none" stroke="var(--topo-danger)" strokeWidth={2} />
         {points.map((p, i) => (
           <g key={p.at + i}>
             <circle
               cx={xAt(i)}
               cy={yAt(p.cumulativePassed)}
               r={2.5}
-              fill="rgb(16 185 129)"
+              fill="var(--topo-success)"
             />
             <circle
               cx={xAt(i)}
               cy={yAt(p.cumulativeFailed)}
               r={2.5}
-              fill="rgb(239 68 68)"
+              fill="var(--topo-danger)"
             />
           </g>
         ))}
@@ -284,13 +285,13 @@ export function PeerRunTrend({
                 <>
                   {run.passed > 0 ? (
                     <div
-                      className="w-full min-h-[2px] bg-emerald-500/85"
+                      className="w-full min-h-[2px] bg-[color:var(--topo-success)]"
                       style={{ flex: run.passed }}
                     />
                   ) : null}
                   {run.failed > 0 ? (
                     <div
-                      className="w-full min-h-[2px] bg-red-500/85"
+                      className="w-full min-h-[2px] bg-[color:var(--topo-danger)]"
                       style={{ flex: run.failed }}
                     />
                   ) : null}
@@ -309,6 +310,72 @@ export function PeerRunTrend({
           </Link>
         );
       })}
+    </div>
+  );
+}
+
+export function PassRateTrend({ points }: { points: ReportsTrendPoint[] }) {
+  if (points.length === 0) {
+    return (
+      <p className="border border-dashed border-[color:var(--topo-line)] px-3 py-6 text-center text-xs text-[color:var(--topo-muted)]">
+        No completed-run results in this range.
+      </p>
+    );
+  }
+
+  const w = 360;
+  const h = 128;
+  const pad = 16;
+  const rates = points.map((p) => p.passRate ?? 0);
+
+  function xAt(i: number) {
+    if (points.length === 1) return w / 2;
+    return pad + (i / (points.length - 1)) * (w - pad * 2);
+  }
+  function yAt(rate: number) {
+    return h - pad - (rate / 100) * (h - pad * 2);
+  }
+
+  const line = rates
+    .map((rate, i) => `${i === 0 ? "M" : "L"} ${xAt(i)} ${yAt(rate)}`)
+    .join(" ");
+
+  return (
+    <div>
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        className="h-32 w-full"
+        role="img"
+        aria-label="Pass-rate trend over time"
+      >
+        <line
+          x1={pad}
+          y1={h - pad}
+          x2={w - pad}
+          y2={h - pad}
+          stroke="var(--topo-line)"
+          strokeWidth={1}
+        />
+        <path d={line} fill="none" stroke="var(--topo-success)" strokeWidth={2} />
+        {points.map((point, i) => (
+          <circle
+            key={point.date}
+            cx={xAt(i)}
+            cy={yAt(point.passRate ?? 0)}
+            r={2.5}
+            fill="var(--topo-success)"
+          >
+            <title>
+              {point.date}:{" "}
+              {point.passRate == null ? "n/a" : `${point.passRate}%`}
+            </title>
+          </circle>
+        ))}
+      </svg>
+      <div className="mt-1 flex justify-between font-mono text-[10px] text-[color:var(--topo-muted)]">
+        <span>{points[0]?.date}</span>
+        <span>{points[points.length - 1]?.date}</span>
+      </div>
     </div>
   );
 }

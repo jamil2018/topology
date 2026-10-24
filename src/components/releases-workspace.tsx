@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button, Input } from "@heroui/react";
+import { Alert } from "./alert";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 
@@ -49,6 +50,7 @@ export function ReleasesWorkspace({
   const [pending, startTransition] = useTransition();
   const items = initial;
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     name: "",
     gitTag: "",
@@ -148,10 +150,11 @@ export function ReleasesWorkspace({
       ?.filter((d) => d.dropped)
       .map((d) => d.key);
     if (dropped?.length) {
+      setNotice(null);
       setError(`Coverage dropped: ${dropped.join(", ")}`);
     } else {
       setError(null);
-      window.alert("No coverage drops between selected snapshots.");
+      setNotice("No coverage drops between selected snapshots.");
     }
   }
 
@@ -182,11 +185,8 @@ export function ReleasesWorkspace({
         }
       />
 
-      {error ? (
-        <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
-          {error}
-        </p>
-      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
 
       <div className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
         <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">

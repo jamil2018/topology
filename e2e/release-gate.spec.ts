@@ -26,16 +26,21 @@ test("release gate: login → hub → case → run → fail → mock issue → t
 
   // Cases
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", {
-    name: /Test Cases/,
+    name: "Cases",
+    exact: true,
   }).click();
-  await expect(page.getByRole("heading", { name: "Cases" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Test Cases" })).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByText("HAR-1").first()).toBeVisible();
+  await page.getByLabel("Search cases").fill("HAR-1");
+  await expect(page.getByText("HAR-1").first()).toBeVisible({
+    timeout: 10_000,
+  });
 
   // Runs — create a dedicated release-gate run
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", {
-    name: /Test Runs/,
+    name: "Runs",
+    exact: true,
   }).click();
   await expect(page.getByRole("heading", { name: "Test Runs" })).toBeVisible({
     timeout: 15_000,
@@ -59,7 +64,7 @@ test("release gate: login → hub → case → run → fail → mock issue → t
     await expect(startBtn).toBeHidden({ timeout: 15_000 });
   }
 
-  await page.getByRole("button", { name: "failed", exact: true }).first().click();
+  await page.getByRole("button", { name: /Mark .+ as failed/ }).first().click();
   await expect(
     page.getByRole("button", { name: "Create issue" }).first(),
   ).toBeVisible({ timeout: 15_000 });

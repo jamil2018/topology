@@ -25,7 +25,7 @@ export function CiSetupPanel() {
         </div>
         <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[color:var(--topo-ink)]">
 {`export TOPOLOGY_URL=http://127.0.0.1:4317
-export TOPOLOGY_API_TOKEN=topo_demo_token_local_dev_only
+export TOPOLOGY_API_TOKEN=<token from Settings → Security>
 npx topology runs create --name "CI build" --source github --shards 2
 npx topology runs submit-thread --run-id <id> --shard 1 --file report.xml
 npx topology runs complete --run-id <id>`}
@@ -33,9 +33,15 @@ npx topology runs complete --run-id <id>`}
       </div>
 
       <p className="text-xs text-[color:var(--topo-muted)]">
-        Local demo token is seeded as{" "}
-        <code className="font-mono">topo_demo_token_local_dev_only</code> (see{" "}
-        <code className="font-mono">.env.example</code>). CI ingest endpoints under{" "}
+        Create a{" "}
+        <code className="font-mono">ci-write</code> token in{" "}
+        <Link
+          href="/settings?section=security#tokens"
+          className="font-medium text-[color:var(--topo-ink)] underline-offset-2 hover:underline"
+        >
+          Settings → Security
+        </Link>
+        . CI ingest endpoints under{" "}
         <code className="font-mono">/api/ci/*</code> stay token-authenticated.
       </p>
     </div>

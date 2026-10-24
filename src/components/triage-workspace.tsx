@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { Button, Input } from "@heroui/react";
 import { motion } from "motion/react";
 import { clusterTriageBySignature } from "@topology/domain";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
+import { useLiveUpdates } from "./use-live-updates";
+import type { LiveEvent } from "@/lib/live-event";
 
 type QueueItem = {
   id: string;
@@ -62,16 +63,48 @@ function toClusterItems(queue: QueueItem[]) {
 export function TriageWorkspace({
   initialQueue,
   flakeHints,
+  issueProvider = "mock",
+  demoMode = false,
 }: {
   initialQueue: QueueItem[];
   flakeHints: FlakeHint[];
+  issueProvider?: string;
+  demoMode?: boolean;
 }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending] = useTransition();
   const [queue, setQueue] = useState(initialQueue);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [error, setError] = useState<string | null>(null);
   const [linkKey, setLinkKey] = useState<Record<string, string>>({});
+  const mockProvider = issueProvider === "mock";
+  const showDemoIssue = mockProvider && demoMode;
+  const showIssueLink = !mockProvider || demoMode;
+
+  const onLive = useCallback(
+    async (event: LiveEvent) => {
+      if (event.topic !== "triage" && event.workspaceId !== "*") return;
+      if (event.entityId && event.status && event.status !== "open") {
+        setQueue((prev) => prev.filter((item) => item.id !== event.entityId));
+        return;
+      }
+      try {
+        const res = await fetch("/api/triage");
+        if (!res.ok) {
+          setError("Could not refresh triage queue");
+          return;
+        }
+        const data = (await res.json()) as { queue?: QueueItem[] };
+        if (Array.isArray(data.queue)) setQueue(data.queue);
+      } catch {
+        setError("Could not refresh triage queue");
+      }
+    },
+    [],
+  );
+  useLiveUpdates(onLive);
 
   const clusters = toClusterItems(queue);
 
@@ -96,7 +129,6 @@ export function TriageWorkspace({
       return;
     }
     setQueue((prev) => prev.filter((item) => item.id !== id));
-    startTransition(() => router.refresh());
   }
 
   async function fileIssue(item: QueueItem) {
@@ -111,7 +143,7 @@ export function TriageWorkspace({
       body: JSON.stringify({
         action: "create",
         resultId: item.resultId,
-        provider: "mock",
+        provider: issueProvider,
       }),
     });
     if (!res.ok) {
@@ -122,7 +154,6 @@ export function TriageWorkspace({
       return;
     }
     setQueue((prev) => prev.filter((q) => q.id !== item.id));
-    startTransition(() => router.refresh());
   }
 
   async function linkIssue(item: QueueItem) {
@@ -140,7 +171,7 @@ export function TriageWorkspace({
         action: "link",
         resultId: item.resultId,
         remoteKey,
-        provider: "mock",
+        provider: issueProvider,
       }),
     });
     if (!res.ok) {
@@ -151,7 +182,6 @@ export function TriageWorkspace({
       return;
     }
     setQueue((prev) => prev.filter((q) => q.id !== item.id));
-    startTransition(() => router.refresh());
   }
 
   function renderItem(item: QueueItem, nested = false) {
@@ -200,9 +230,31 @@ export function TriageWorkspace({
             ) : null}
           </p>
           {item.notes ? (
-            <p className="mt-2 line-clamp-3 font-mono text-[11px] text-[color:var(--topo-muted)]">
-              {item.notes}
-            </p>
+            <div className="mt-2">
+              <p
+                className={`font-mono text-[11px] text-[color:var(--topo-muted)] ${
+                  expandedNotes.has(item.id) ? "whitespace-pre-wrap" : "line-clamp-3"
+                }`}
+              >
+                {item.notes}
+              </p>
+              {item.notes.length > 160 || item.notes.split("\n").length > 3 ? (
+                <button
+                  type="button"
+                  className="mt-1 text-[11px] text-[color:var(--topo-accent)] hover:underline"
+                  onClick={() =>
+                    setExpandedNotes((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(item.id)) next.delete(item.id);
+                      else next.add(item.id);
+                      return next;
+                    })
+                  }
+                >
+                  {expandedNotes.has(item.id) ? "Show less" : "Show more"}
+                </button>
+              ) : null}
+            </div>
           ) : null}
           {item.flakeHint ? (
             <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
@@ -239,27 +291,32 @@ export function TriageWorkspace({
               Resolve
             </Button>
           </div>
-          {item.resultId ? (
-            <div className="flex flex-wrap items-center justify-end gap-1">
-              <Input
-                value={linkKey[item.id] ?? ""}
-                onChange={(e) =>
-                  setLinkKey((prev) => ({
-                    ...prev,
-                    [item.id]: e.target.value,
-                  }))
-                }
-                placeholder="Link key (MOCK-1)"
-                className="w-40"
-              />
-              <Button
-                size="sm"
-                variant="secondary"
-                isDisabled={pending || !(linkKey[item.id] ?? "").trim()}
-                onPress={() => void linkIssue(item)}
-              >
-                Link
-              </Button>
+          {item.resultId && showIssueLink ? (
+            <div className="flex flex-col items-end gap-1">
+              {showDemoIssue ? (
+                <StatusChip tone="neutral">Demo issue</StatusChip>
+              ) : null}
+              <div className="flex flex-wrap items-center justify-end gap-1">
+                <Input
+                  value={linkKey[item.id] ?? ""}
+                  onChange={(e) =>
+                    setLinkKey((prev) => ({
+                      ...prev,
+                      [item.id]: e.target.value,
+                    }))
+                  }
+                  placeholder={showDemoIssue ? "Demo issue key" : "Issue key"}
+                  className="w-40"
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  isDisabled={pending || !(linkKey[item.id] ?? "").trim()}
+                  onPress={() => void linkIssue(item)}
+                >
+                  Link
+                </Button>
+              </div>
             </div>
           ) : null}
         </div>
@@ -294,7 +351,9 @@ export function TriageWorkspace({
 
       {queue.length === 0 ? (
         <p className="border border-dashed border-[color:var(--topo-line)] px-3 py-8 text-center text-sm text-[color:var(--topo-muted)]">
-          Triage queue is clear — every failure has an issue or was resolved.
+          {flakeHints.length === 0
+            ? "Nothing to triage yet. Record a failing result or import CI. Failures without an issue land here."
+            : "Triage queue is clear — every failure has an issue or was resolved."}
         </p>
       ) : (
         <ul className="divide-y divide-[color:var(--topo-line)] overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
@@ -340,7 +399,7 @@ export function TriageWorkspace({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <StatusChip tone="danger" mono>
-                        {cluster.count} →
+                        {cluster.count} failures
                       </StatusChip>
                       <StatusChip mono>{representative.priority}</StatusChip>
                       <StatusChip tone="accent">
@@ -351,14 +410,11 @@ export function TriageWorkspace({
                       ) : null}
                     </div>
                     <h2 className="mt-1.5 text-sm font-semibold text-[color:var(--topo-ink)]">
-                      <span className="font-mono text-[color:var(--topo-muted)]">
-                        {cluster.count}
+                      {cluster.count} failure{cluster.count === 1 ? "" : "s"}{" "}
+                      <span className="text-[color:var(--topo-muted)]">·</span>{" "}
+                      <span className="font-normal text-[color:var(--topo-ink)]">
+                        {title}
                       </span>
-                      <span className="text-[color:var(--topo-muted)]">
-                        {" "}
-                        →{" "}
-                      </span>
-                      {title}
                     </h2>
                     <p className="mt-1 text-xs text-[color:var(--topo-muted)]">
                       {representative.reason}

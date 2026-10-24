@@ -1,6 +1,8 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
+import { pageTitle } from "@/lib/format-labels";
 import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import {
   getActiveMilestoneReadiness,
@@ -13,10 +15,16 @@ import { parseHubPersona } from "@/lib/hub-persona";
 import { getJourneyCoverage } from "@/lib/quality-graph";
 import { resolveActiveProject } from "@/lib/project";
 
+export const metadata: Metadata = {
+  title: pageTitle("Hub"),
+  description:
+    "QA home for in-progress runs, failures, and workspace pulse.",
+};
+
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ release?: string; persona?: string }>;
+  searchParams: Promise<{ release?: string; persona?: string; view?: string }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
@@ -28,7 +36,7 @@ export default async function HomePage({
   const params = await searchParams;
 
   const [pulse, milestone, journeyCoverage, releaseRows] = await Promise.all([
-    getHubPulse(workspaceId),
+    getHubPulse(workspaceId, { userId: session.user.id }),
     getActiveMilestoneReadiness(workspaceId),
     getJourneyCoverage(workspaceId),
     db.query.releases.findMany({
@@ -56,6 +64,7 @@ export default async function HomePage({
       releases={releaseRows}
       selectedReleaseId={selectedReleaseId}
       initialPersona={parseHubPersona(params.persona)}
+      initialView={params.view === "overview" ? "overview" : "home"}
     />
   );
 }
