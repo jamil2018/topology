@@ -3,7 +3,12 @@ import {
   compareSnapshotDimensions,
   droppedDimensionDeltas,
 } from "./coverage-snapshots";
-import { WEBHOOK_EVENTS, webhookUrlError } from "./webhooks";
+import {
+  WEBHOOK_EVENTS,
+  assertSafeWebhookDestination,
+  isBlockedIpAddress,
+  webhookUrlError,
+} from "./webhooks";
 
 describe("webhookUrlError", () => {
   it("rejects non-http schemes and local or private targets", () => {
@@ -23,6 +28,25 @@ describe("webhookUrlError", () => {
     expect(webhookUrlError("https://example.com/hooks/topology")).toBeNull();
     expect(webhookUrlError("http://172.32.0.1/hook")).toBeNull();
     expect(webhookUrlError("https://8.8.8.8/hook")).toBeNull();
+  });
+});
+
+describe("assertSafeWebhookDestination", () => {
+  it("blocks DNS answers that resolve to private or metadata IPs", async () => {
+    expect(isBlockedIpAddress("169.254.169.254")).toBe(true);
+    const blocked = await assertSafeWebhookDestination(
+      "https://hooks.example.com/topology",
+      async () => [{ address: "10.0.0.8", family: 4 }],
+    );
+    expect(blocked).toEqual({
+      ok: false,
+      error: "Webhook URL must not target a local or private address",
+    });
+    const allowed = await assertSafeWebhookDestination(
+      "https://hooks.example.com/topology",
+      async () => [{ address: "8.8.8.8", family: 4 }],
+    );
+    expect(allowed).toEqual({ ok: true });
   });
 });
 

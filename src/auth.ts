@@ -10,10 +10,20 @@ import { authConfig } from "@/auth.config";
 import { credentialStamp, jwtMatchesCredentials } from "@/auth-session";
 import { db } from "@/db";
 import { accounts, sessions, users, verificationTokens } from "@/db/schema";
+import { recordAuditEvent } from "@/lib/audit";
+import {
+  checkLoginRateLimit,
+  clearLoginRateLimit,
+  loginRateLimitIdentifier,
+  recordLoginFailure,
+} from "@/lib/login-rate-limit";
+import { oidcProviderConfigured, oidcProviderName } from "@/lib/oidc-env";
+import { passwordSchema } from "@/lib/password";
+import { clientIp } from "@/lib/request-meta";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: passwordSchema,
 });
 
 const providers = [
@@ -33,23 +43,93 @@ const providers = [
         }),
       ]
     : []),
+  ...(oidcProviderConfigured()
+    ? [
+        {
+          id: "oidc",
+          name: oidcProviderName(),
+          type: "oidc" as const,
+          issuer: process.env.AUTH_OIDC_ISSUER,
+          clientId: process.env.AUTH_OIDC_ID,
+          clientSecret: process.env.AUTH_OIDC_SECRET,
+        },
+      ]
+    : []),
   Credentials({
     name: "Email and password",
     credentials: {
       email: { label: "Email", type: "email" },
       password: { label: "Password", type: "password" },
     },
-    async authorize(raw) {
+    async authorize(raw, request) {
       const parsed = credentialsSchema.safeParse(raw);
       if (!parsed.success) return null;
 
+      const email = parsed.data.email.toLowerCase();
+      const ip = clientIp(request);
+      const rateId = loginRateLimitIdentifier(email, ip);
+
+      try {
+        const limited = await checkLoginRateLimit(rateId);
+        if (limited.blocked) {
+          await recordAuditEvent({
+            action: "login.failure",
+            actorEmail: email,
+            request,
+            metadata: { reason: "rate_limited" },
+          });
+          return null;
+        }
+      } catch (err) {
+        console.error("Login rate limit check failed", err);
+      }
+
       const user = await db.query.users.findFirst({
-        where: eq(users.email, parsed.data.email.toLowerCase()),
+        where: eq(users.email, email),
       });
-      if (!user?.passwordHash) return null;
+      if (!user?.passwordHash) {
+        try {
+          await recordLoginFailure(rateId);
+        } catch (err) {
+          console.error("Login rate limit record failed", err);
+        }
+        await recordAuditEvent({
+          action: "login.failure",
+          actorEmail: email,
+          request,
+          metadata: { reason: "unknown_user" },
+        });
+        return null;
+      }
 
       const valid = await compare(parsed.data.password, user.passwordHash);
-      if (!valid) return null;
+      if (!valid) {
+        try {
+          await recordLoginFailure(rateId);
+        } catch (err) {
+          console.error("Login rate limit record failed", err);
+        }
+        await recordAuditEvent({
+          action: "login.failure",
+          actorId: user.id,
+          actorEmail: email,
+          request,
+          metadata: { reason: "bad_password" },
+        });
+        return null;
+      }
+
+      try {
+        await clearLoginRateLimit(rateId);
+      } catch (err) {
+        console.error("Login rate limit clear failed", err);
+      }
+      await recordAuditEvent({
+        action: "login.success",
+        actorId: user.id,
+        actorEmail: email,
+        request,
+      });
 
       return {
         id: user.id,

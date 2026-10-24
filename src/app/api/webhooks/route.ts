@@ -7,6 +7,7 @@ import { webhookEndpoints } from "@/db/schema";
 import { readJsonBody } from "@/lib/http-errors";
 import { roleHasAction } from "@/lib/permissions";
 import { requireProjectAccess } from "@/lib/project";
+import { recordAuditEvent } from "@/lib/audit";
 import { dispatchWebhook, webhookUrlError } from "@/lib/webhooks";
 
 const webhookUrl = z.string().refine((value) => webhookUrlError(value) === null, {
@@ -121,6 +122,17 @@ export async function POST(request: Request) {
     })
     .returning();
 
+  await recordAuditEvent({
+    action: "webhook.create",
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    workspaceId,
+    targetType: "webhook_endpoint",
+    targetId: row.id,
+    request,
+    metadata: { url: row.url, events: row.events },
+  });
+
   return NextResponse.json({ endpoint: row });
 }
 
@@ -177,6 +189,15 @@ export async function PATCH(request: Request) {
   if (!updated) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  await recordAuditEvent({
+    action: "webhook.update",
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    workspaceId,
+    targetType: "webhook_endpoint",
+    targetId: updated.id,
+    request,
+  });
   return NextResponse.json({ endpoint: updated });
 }
 
@@ -217,6 +238,16 @@ export async function DELETE(request: Request) {
         eq(webhookEndpoints.workspaceId, workspaceId),
       ),
     );
+
+  await recordAuditEvent({
+    action: "webhook.delete",
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    workspaceId,
+    targetType: "webhook_endpoint",
+    targetId: parsed.data.id,
+    request,
+  });
 
   return NextResponse.json({ ok: true });
 }

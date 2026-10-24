@@ -21,7 +21,7 @@ export async function authorizeReleaseRead(request: Request): Promise<
     return { ok: true, workspaceId: access.ctx.project.id };
   }
 
-  const token = await authenticateCiRequest(request);
+  const token = await authenticateCiRequest(request, { requiredScope: "read" });
   if (!token.ok) {
     return { ok: false, status: 401, error: "Unauthorized" };
   }

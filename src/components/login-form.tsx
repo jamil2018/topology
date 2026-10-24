@@ -5,25 +5,79 @@ import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { Button, Input, Label, TextField } from "@heroui/react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
+import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { safeCallbackPath } from "@/lib/safe-callback-path";
 
 export function LoginForm({
   oauth,
   airGap,
+  setup = false,
+  demoHint = false,
   callbackUrl = "/",
 }: {
-  oauth: { github: boolean; google: boolean };
+  oauth: {
+    github: boolean;
+    google: boolean;
+    oidc?: boolean;
+    oidcName?: string;
+  };
   airGap: boolean;
+  setup?: boolean;
+  demoHint?: boolean;
   callbackUrl?: string;
 }) {
   const next = safeCallbackPath(callbackUrl);
-  const oauthAvailable = oauth.github || oauth.google;
-  const [showEmail, setShowEmail] = useState(!oauthAvailable);
-  const [email, setEmail] = useState("demo@topology.local");
-  const [password, setPassword] = useState("topology-demo");
+  const oauthAvailable = oauth.github || oauth.google || Boolean(oauth.oidc);
+  const [showEmail, setShowEmail] = useState(!oauthAvailable || setup);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const reduceMotion = useReducedMotion();
+
+  async function onSetup() {
+    setLoading(true);
+    setError(null);
+    if (password !== confirmPassword) {
+      setLoading(false);
+      setError("Passwords do not match");
+      return;
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setLoading(false);
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+      return;
+    }
+    const res = await fetch("/api/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), email, password }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: unknown };
+    if (!res.ok) {
+      setLoading(false);
+      setError(
+        typeof data.error === "string"
+          ? data.error
+          : "Could not create the first admin",
+      );
+      return;
+    }
+    const signed = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+      callbackUrl: next,
+    });
+    setLoading(false);
+    if (signed?.error) {
+      setError("Admin created. Sign in from the login page.");
+      return;
+    }
+    window.location.href = next;
+  }
 
   async function onCredentials() {
     setLoading(true);
@@ -42,11 +96,13 @@ export function LoginForm({
     window.location.href = next;
   }
 
-  const supportLine = airGap
-    ? "Air-gapped mode. Sign in with email and password for local operators."
-    : oauthAvailable
-      ? "Continue with GitHub or Google. Email stays available as a fallback."
-      : "Configure OAuth for GitHub or Google, or sign in with email for local operators.";
+  const supportLine = setup
+    ? "Create the first admin for this instance. Next: create a case, start a run, import CI, then file issues from triage."
+    : airGap
+      ? "Air-gapped mode. Sign in with email and password for local operators."
+      : oauthAvailable
+        ? "Continue with your identity provider. Email stays available as a fallback."
+        : "Configure OAuth or OIDC, or sign in with email for local operators.";
 
   return (
     <motion.div
@@ -75,7 +131,7 @@ export function LoginForm({
       </header>
 
       <div className="space-y-4">
-        {oauthAvailable ? (
+        {!setup && oauthAvailable ? (
           <div className="space-y-2">
             {oauth.github ? (
               <Button
@@ -95,10 +151,19 @@ export function LoginForm({
                 Continue with Google
               </Button>
             ) : null}
+            {oauth.oidc ? (
+              <Button
+                className="w-full"
+                variant="primary"
+                onPress={() => signIn("oidc", { callbackUrl: next })}
+              >
+                Continue with {oauth.oidcName || "OIDC"}
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
-        {oauthAvailable && !showEmail ? (
+        {!setup && oauthAvailable && !showEmail ? (
           <button
             type="button"
             onClick={() => setShowEmail(true)}
@@ -112,17 +177,26 @@ export function LoginForm({
           {showEmail ? (
             <motion.div
               key="email"
-              initial={
-                reduceMotion ? false : { opacity: 0, height: 0 }
-              }
+              initial={reduceMotion ? false : { opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               className="space-y-3 overflow-hidden"
             >
-              {oauthAvailable ? (
+              {!setup && oauthAvailable ? (
                 <div className="relative py-1 text-center text-xs text-[color:var(--topo-muted)]">
                   <span className="bg-transparent px-2">Email fallback</span>
                 </div>
+              ) : null}
+              {setup ? (
+                <TextField name="name" className="w-full">
+                  <Label>Name</Label>
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full"
+                    autoComplete="name"
+                  />
+                </TextField>
               ) : null}
               <TextField name="email" type="email" className="w-full">
                 <Label>Email</Label>
@@ -140,9 +214,25 @@ export function LoginForm({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full"
-                  autoComplete="current-password"
+                  autoComplete={setup ? "new-password" : "current-password"}
                 />
               </TextField>
+              {setup ? (
+                <TextField
+                  name="confirmPassword"
+                  type="password"
+                  className="w-full"
+                >
+                  <Label>Confirm password</Label>
+                  <Input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full"
+                    autoComplete="new-password"
+                  />
+                </TextField>
+              ) : null}
               {error ? (
                 <p
                   role="alert"
@@ -153,13 +243,19 @@ export function LoginForm({
               ) : null}
               <Button
                 className="w-full"
-                variant={oauthAvailable ? "secondary" : "primary"}
+                variant={oauthAvailable && !setup ? "secondary" : "primary"}
                 isDisabled={loading}
-                onPress={() => void onCredentials()}
+                onPress={() => void (setup ? onSetup() : onCredentials())}
               >
-                {loading ? "Signing in…" : "Sign in with email"}
+                {loading
+                  ? setup
+                    ? "Creating admin…"
+                    : "Signing in…"
+                  : setup
+                    ? "Create admin"
+                    : "Sign in with email"}
               </Button>
-              {oauthAvailable ? (
+              {!setup && oauthAvailable ? (
                 <button
                   type="button"
                   onClick={() => setShowEmail(false)}
@@ -172,13 +268,23 @@ export function LoginForm({
           ) : null}
         </AnimatePresence>
 
-        {!oauthAvailable ? (
+        {setup ? (
+          <div className="space-y-1.5 text-xs text-[color:var(--topo-muted)]">
+            <p>Password must be at least {MIN_PASSWORD_LENGTH} characters.</p>
+            <ol className="list-decimal space-y-0.5 pl-4">
+              <li>Create a case</li>
+              <li>Start a run</li>
+              <li>Import CI results</li>
+              <li>File an issue from triage</li>
+            </ol>
+          </div>
+        ) : demoHint && !oauthAvailable ? (
           <p className="font-mono text-[11px] text-[color:var(--topo-muted)]">
-            Demo: demo@topology.local / topology-demo
+            Local seed login: demo@topology.local / topology-demo
           </p>
-        ) : showEmail ? (
+        ) : demoHint && showEmail ? (
           <p className="font-mono text-[11px] text-[color:var(--topo-muted)]">
-            Local demo still works: demo@topology.local / topology-demo
+            Local seed login: demo@topology.local / topology-demo
           </p>
         ) : null}
       </div>

@@ -18,7 +18,9 @@ import {
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: Params) {
-  const authResult = await authenticateCiRequest(request);
+  const authResult = await authenticateCiRequest(request, {
+    requiredScope: "ci-write",
+  });
   if (!authResult.ok) {
     return NextResponse.json(
       { error: authResult.error },

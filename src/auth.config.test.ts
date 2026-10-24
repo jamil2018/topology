@@ -18,6 +18,8 @@ function authorized(
 describe("authConfig.authorized", () => {
   it("allows login and nextauth routes without a session", () => {
     expect(authorized("/login", null)).toBe(true);
+    expect(authorized("/setup", null)).toBe(true);
+    expect(authorized("/api/setup", null)).toBe(true);
     expect(authorized("/api/auth/callback/github", null)).toBe(true);
   });
 
@@ -28,6 +30,7 @@ describe("authConfig.authorized", () => {
     expect(authorized("/api/executions", null)).toBe(true);
     expect(authorized("/api/releases/analyze", null)).toBe(true);
     expect(authorized("/api/releases/compare", null)).toBe(true);
+    expect(authorized("/api/webhooks/github", null)).toBe(true);
   });
 
   it("allows Next.js internals", () => {

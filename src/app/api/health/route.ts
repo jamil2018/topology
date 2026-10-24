@@ -21,6 +21,7 @@ export async function GET() {
     {
       status: ok ? "ok" : "degraded",
       database,
+      attachmentsDriver: process.env.ATTACHMENTS_DRIVER ?? "local",
       attachmentsDir: process.env.ATTACHMENTS_DIR ?? "./data/attachments",
       uptimeHintMs: Date.now() - started,
       ...(dbError ? { error: dbError } : {}),

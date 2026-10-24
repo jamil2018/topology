@@ -44,10 +44,10 @@ export async function GET(request: Request, { params }: Params) {
 
   try {
     const buffer = await readAttachmentFile(row.storageKey);
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       headers: downloadHeaders(row.filename, row.contentType, buffer.length),
     });
   } catch {
-    return NextResponse.json({ error: "File missing on disk" }, { status: 404 });
+    return NextResponse.json({ error: "File missing" }, { status: 404 });
   }
 }

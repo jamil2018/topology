@@ -9,6 +9,7 @@ import {
   createIssueFromResult,
   getScenarioContext,
   linkExistingIssue,
+  syncIssuesOnPassingRetest,
   whatsPending,
 } from "@/lib/issues";
 import { openTriageForResult } from "@/lib/ci-ingest";
@@ -19,7 +20,7 @@ import {
 } from "@/lib/run-immutability-http";
 
 async function requireToken(request: Request) {
-  return authenticateApiToken(request);
+  return authenticateApiToken(request, { requiredScope: "agent" });
 }
 
 export async function GET(request: Request) {
@@ -465,6 +466,13 @@ export async function POST(request: Request) {
       }
       if (updated.status === "failed" || updated.status === "blocked") {
         await openTriageForResult(updated.id);
+      }
+      if (updated.status === "passed" && caseId) {
+        try {
+          await syncIssuesOnPassingRetest({ workspaceId, caseId });
+        } catch {
+          // Outbound close is best-effort; the result is already recorded.
+        }
       }
       return NextResponse.json({ result: updated });
     }

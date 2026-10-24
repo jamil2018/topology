@@ -1,4 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
+import { lookup as dnsLookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { runs, webhookEndpoints } from "@/db/schema";
@@ -58,6 +60,7 @@ function isBlockedIpv4(parts: number[]) {
   if (a === 192 && b === 168) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 169 && b === 254) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
   return false;
 }
 
@@ -77,18 +80,36 @@ function ipv4FromMapped(host: string): string | null {
 }
 
 function isBlockedIpv6(host: string) {
-  if (host === "::1" || host === "0:0:0:0:0:0:0:1") return true;
-  const mapped = ipv4FromMapped(host);
+  const normalized = host.toLowerCase();
+  if (
+    normalized === "::1" ||
+    normalized === "0:0:0:0:0:0:0:1" ||
+    normalized === "::"
+  ) {
+    return true;
+  }
+  const mapped = ipv4FromMapped(normalized);
   if (mapped) {
     const parts = ipv4ToParts(mapped);
     return parts ? isBlockedIpv4(parts) : false;
   }
-  const first = Number.parseInt(host.split(":")[0] || "0", 16);
+  const first = Number.parseInt(normalized.split(":")[0] || "0", 16);
   if (!Number.isInteger(first)) return false;
   if (first >= 0xfe80 && first <= 0xfebf) return true;
   if ((first & 0xfe00) === 0xfc00) return true;
   return false;
 }
+
+export function isBlockedIpAddress(address: string): boolean {
+  const host = address.replace(/^\[|\]$/g, "").toLowerCase();
+  const ipv4 = ipv4ToParts(host);
+  if (ipv4) return isBlockedIpv4(ipv4);
+  if (host.includes(":")) return isBlockedIpv6(host);
+  return false;
+}
+
+const PRIVATE_WEBHOOK_TARGET =
+  "Webhook URL must not target a local or private address";
 
 /** Reject non-http(s) and link-local/loopback/private webhook targets. */
 export function webhookUrlError(raw: string): string | null {
@@ -102,17 +123,61 @@ export function webhookUrlError(raw: string): string | null {
     return "Webhook URL must use http or https";
   }
   const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (!host || host === "localhost" || host.endsWith(".localhost")) {
-    return "Webhook URL must not target a local or private address";
+  if (
+    !host ||
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".internal") ||
+    host.endsWith(".local")
+  ) {
+    return PRIVATE_WEBHOOK_TARGET;
   }
-  const ipv4 = ipv4ToParts(host);
-  if (ipv4 && isBlockedIpv4(ipv4)) {
-    return "Webhook URL must not target a local or private address";
-  }
-  if (host.includes(":") && isBlockedIpv6(host)) {
-    return "Webhook URL must not target a local or private address";
+  if (isBlockedIpAddress(host)) {
+    return PRIVATE_WEBHOOK_TARGET;
   }
   return null;
+}
+
+export type WebhookDnsLookup = (
+  hostname: string,
+) => Promise<Array<{ address: string; family?: number }>>;
+
+const defaultWebhookDnsLookup: WebhookDnsLookup = async (hostname) =>
+  dnsLookup(hostname, { all: true, verbatim: true });
+
+/**
+ * Resolve DNS and reject private/link-local/metadata answers (SSRF).
+ * Call again immediately before send to reduce DNS-rebinding windows.
+ */
+export async function assertSafeWebhookDestination(
+  raw: string,
+  lookupFn: WebhookDnsLookup = defaultWebhookDnsLookup,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const staticError = webhookUrlError(raw);
+  if (staticError) return { ok: false, error: staticError };
+
+  const url = new URL(raw);
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  if (isIP(host)) {
+    return isBlockedIpAddress(host)
+      ? { ok: false, error: PRIVATE_WEBHOOK_TARGET }
+      : { ok: true };
+  }
+
+  try {
+    const records = await lookupFn(host);
+    if (!records.length) {
+      return { ok: false, error: PRIVATE_WEBHOOK_TARGET };
+    }
+    for (const record of records) {
+      if (isBlockedIpAddress(record.address)) {
+        return { ok: false, error: PRIVATE_WEBHOOK_TARGET };
+      }
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: PRIVATE_WEBHOOK_TARGET };
+  }
 }
 
 async function deliverToEndpoint(
@@ -136,11 +201,16 @@ async function deliverToEndpoint(
     headers["X-Topology-Signature"] = `sha256=${signature}`;
   }
 
-  if (webhookUrlError(endpoint.url)) {
+  const firstCheck = await assertSafeWebhookDestination(endpoint.url);
+  if (!firstCheck.ok) {
     return { ok: false, status: null };
   }
 
   try {
+    const recheck = await assertSafeWebhookDestination(endpoint.url);
+    if (!recheck.ok) {
+      return { ok: false, status: null };
+    }
     const res = await fetch(endpoint.url, {
       method: "POST",
       headers,

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { db } from "@/db";
+import { repositories } from "@/db/schema";
 import {
   ensureCommit,
   ensurePullRequest,
@@ -8,8 +11,10 @@ import {
 } from "@/lib/git-sync";
 import {
   collectGithubCommitPaths,
+  githubPayloadRemoteUrl,
   githubPullRequestStatus,
   parseTopologyChangedFilesHeader,
+  resolveGithubWebhookSecret,
   TOPOLOGY_CHANGED_FILES_HEADER,
   verifyGithubSignature,
 } from "@/lib/github-webhook";
@@ -78,19 +83,34 @@ export async function POST(request: Request) {
   }
 
   const rawBody = await request.text();
+  let payload: unknown = null;
+  try {
+    payload = JSON.parse(rawBody) as unknown;
+  } catch {
+    payload = null;
+  }
+
+  const remoteUrl = githubPayloadRemoteUrl(payload);
+  const repo = remoteUrl
+    ? await db.query.repositories.findFirst({
+        where: and(
+          eq(repositories.workspaceId, workspaceId),
+          eq(repositories.remoteUrl, remoteUrl),
+        ),
+        columns: { webhookSecret: true },
+      })
+    : null;
+
   const sig = verifyGithubSignature(
     rawBody,
     request.headers.get("x-hub-signature-256"),
-    process.env.TOPOLOGY_GITHUB_WEBHOOK_SECRET,
+    resolveGithubWebhookSecret(repo?.webhookSecret),
   );
   if (!sig.ok) {
     return NextResponse.json({ error: sig.error }, { status: sig.status });
   }
 
-  let payload: unknown;
-  try {
-    payload = JSON.parse(rawBody) as unknown;
-  } catch {
+  if (payload == null) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
