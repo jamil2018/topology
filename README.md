@@ -1,25 +1,36 @@
 # Topology
 
-Self-hosted test case management with a Linear-like operating hub, CI ingest, issue filing, and an MCP agent plugin.
+Open-source, self-hosted TestRail alternative with a Linear-grade UX and AI-native quality intelligence.
 
-## Stack
+## Screenshot
 
-- Next.js App Router + TypeScript
-- Tailwind CSS v4 + HeroUI v3
-- motion.dev
-- Postgres + Drizzle ORM
-- Auth.js (OAuth-first GitHub/Google; email/password air-gap fallback)
-- `@topology/domain` + `@topology/cli` + `@topology/issue-providers` + `@topology/mcp`
-- Vitest + Playwright
+Product screenshots are not in the repository yet. After the quickstart below, the app is at [http://127.0.0.1:4317](http://127.0.0.1:4317).
 
-## 15-minute success path
+## Why Topology vs TestRail / Qase / Kiwi
 
-1. **Set up and run** — `./scripts/setup.sh` (or `npm run setup`) installs packages, starts Postgres via Compose, writes `.env.local`, syncs the schema, applies migrations, and seeds. Then start the app:
+| | Topology | TestRail | Qase | Kiwi TCMS |
+| --- | --- | --- | --- | --- |
+| License | Apache-2.0 | Proprietary | Proprietary | Open source |
+| Deploy | Self-hosted | Cloud or paid on-prem | Cloud | Self-hosted |
+| UX | Linear-like hub and command palette | Classic TCM | Modern SaaS TCM | Django-based TCM |
+| Cases and runs | Yes, with CSV and vendor import | Full TCM | Full TCM | Full TCM |
+| Structured steps, plans | On the [roadmap](ROADMAP.md) | Yes | Yes | Yes |
+| CI | JUnit ingest + CLI | Yes | Yes | Yes |
+| Issue trackers | Jira, Linear, GitHub | Broad | Broad | Broad |
+| Agents | MCP plugin | — | — | — |
+
+Topology is pre-1.0. Use it when you want a self-hosted TCM you can read and run locally. Stay on TestRail/Qase if you need plans or structured steps today. Import from TestRail, Qase, Zephyr Scale, or Xray: [docs/import.md](docs/import.md).
+
+## Quickstart
+
+Requires Node.js 20+ and Docker (or Colima) for Postgres. Local Compose (`docker-compose.yml`) runs Postgres only. Production image, Compose, TLS, backup, and upgrades: [docs/deploy.md](docs/deploy.md). Version tags (`v*`) publish `ghcr.io/<github.repository>` — pull only tags that exist; do not assume a public image is already live.
 
 ```bash
 ./scripts/setup.sh
 npm run dev
 ```
+
+`setup.sh` installs packages, starts Postgres via `docker compose`, writes `.env.local`, applies the journaled baseline migration, and seeds a demo workspace.
 
 The same steps by hand:
 
@@ -27,25 +38,18 @@ The same steps by hand:
 docker compose up -d
 cp .env.example .env.local
 npm install
-npm run db:migrate   # or: npm run db:push
+npm run db:migrate
 npm run db:seed
 npm run dev
 ```
 
 Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Health: [http://127.0.0.1:4317/api/health](http://127.0.0.1:4317/api/health).
 
-2. **OAuth or demo login**
-   - **Preferred:** set `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` and/or Google pair in `.env.local`, restart, then **Continue with GitHub/Google**.
-   - **Air-gap / unset OAuth:** use **Use email instead** (or the email form when OAuth is off). Demo: `demo@topology.local` / `topology-demo`.
-   - Force air-gap copy with `TOPOLOGY_AIR_GAP=1`.
-
-3. **Hub** — land on the operating hub (quality pulse, pending work, milestone readiness).
-
-4. **Invite a teammate** — Settings → Members → invite by email (admin). Share the accept URL; invitee signs in with OAuth (preferred) or email matching the invite.
-
-5. **MCP snippet** — Settings → Connections: copy Cursor/Claude/Codex config with `TOPOLOGY_URL` + `TOPOLOGY_API_TOKEN` (`topo_demo_token_local_dev_only` after seed). Details: [`packages/mcp/README.md`](packages/mcp/README.md).
-
-6. **CI** — Settings → CI, or:
+- **Preferred login:** set `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` and/or the Google pair in `.env.local`, restart, then **Continue with GitHub/Google**.
+- **Air-gap / unset OAuth:** **Use email instead**. Demo: `demo@topology.local` / `topology-demo`. Force air-gap copy with `TOPOLOGY_AIR_GAP=1`.
+- **Invite a teammate:** Settings → Members (admin). Invitee signs in with OAuth or the invited email.
+- **MCP:** Settings → Connections; see [`packages/mcp/README.md`](packages/mcp/README.md). After seed, `TOPOLOGY_API_TOKEN` is `topo_demo_token_local_dev_only`.
+- **CI ingest:**
 
 ```bash
 export TOPOLOGY_URL=http://127.0.0.1:4317
@@ -53,40 +57,39 @@ export TOPOLOGY_API_TOKEN=topo_demo_token_local_dev_only
 npm run topology -- junit submit ./fixtures/junit/smoke.xml --source cli
 ```
 
-Examples: `packages/cli/examples/github-actions.yml`, `packages/cli/examples/Jenkinsfile`.
-
-7. **File an issue** — open the seeded run (or any failed result) → **Create issue** (default `TOPOLOGY_ISSUE_PROVIDER=mock`). Live Jira/Linear/GitHub: set provider + secrets in `.env.local` (see below).
+Examples: `packages/cli/examples/github-actions.yml`, `packages/cli/examples/Jenkinsfile`. File issues from a failed result (**Create issue**; default `TOPOLOGY_ISSUE_PROVIDER=mock`).
 
 ## Auth
 
 | Mode | Behavior |
 | --- | --- |
 | OAuth configured | Login leads with GitHub/Google; email is behind **Use email instead** |
-| OAuth unset or `TOPOLOGY_AIR_GAP=1` | Email/password is the primary path (air-gapped / local) |
+| OAuth unset or `TOPOLOGY_AIR_GAP=1` | Email/password is the primary path |
 
 Workspace roles: `admin` / `member` / `viewer`. Assign runs and individual results from the run executor.
 
-## Attachments
+## What you get
 
-Result attachments store under `ATTACHMENTS_DIR` (default `./data/attachments`). Compose mounts `topology_attachments` for durable local files.
+- Operating hub: quality pulse, milestone Go / At-risk / No-Go, flake and retest queues
+- Cases and folders (CRUD, CSV import/export, TestRail/Qase/Zephyr/Xray import), saved views, bulk edit, case history
+- Manual runs with assign, notes, comments, attachments, pass/fail
+- Command palette (`⌘K` / `Ctrl+K`) to create a case, start a run, file an issue, or jump
+- CI JUnit ingest and shard merge (CLI + `/api/ci/*`), automation browser with flake signals
+- Failure triage, issue create/link (Jira / Linear / GitHub), outbound webhooks
+- MCP agent plugin; `/api/health`
 
-## Env (OAuth + tracker secrets)
+Result attachments store under `ATTACHMENTS_DIR` (default `./data/attachments`) when `ATTACHMENTS_DRIVER=local`. Set `ATTACHMENTS_DRIVER=s3` plus the `ATTACHMENTS_S3_*` vars for MinIO/R2. Compose defines `topology_attachments` for durable local files.
+
+## Env
 
 See [`.env.example`](.env.example):
 
 - `AUTH_SECRET`, `AUTH_URL`
 - `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`
-- `TOPOLOGY_AIR_GAP`, `ATTACHMENTS_DIR`
-- `TOPOLOGY_ISSUE_PROVIDER` + Jira / Linear / GitHub credentials (commented)
+- `TOPOLOGY_AIR_GAP`, `ATTACHMENTS_DIR`, `ATTACHMENTS_DRIVER`
+- `TOPOLOGY_ISSUE_PROVIDER` plus Jira / Linear / GitHub credentials (commented)
 
-Tracker tokens stay server-side; never expose them to the browser or MCP process beyond Topology’s own API token.
-
-### Linear-like UX
-
-- **Command palette** — `⌘K` / `Ctrl+K` (or top-nav Search) to create a case, start a run, file an issue, or jump to pages/cases/runs/folders.
-- **Saved views** — name and reuse filter+sort presets on Cases and Runs.
-- **Bulk edit** — select cases, then change status, move folder, or add tags.
-- **Case history** — click a case key/title to open a minimal activity log (who changed what).
+Tracker tokens stay server-side. Do not put them in the browser or in the MCP process beyond Topology’s own API token.
 
 ## Scripts
 
@@ -94,46 +97,18 @@ Tracker tokens stay server-side; never expose them to the browser or MCP process
 | --- | --- |
 | `./scripts/setup.sh` | Install, start Postgres, migrate, and seed |
 | `npm run dev` | Next.js on port 4317 |
-| `npm run db:push` | Push Drizzle schema |
-| `npm run db:migrate` | Apply `drizzle/*.sql` migrations |
-| `npm run db:seed` | Seed demo user, workspace admin, cases, run, milestone, token |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run db:migrate` | Apply journaled Drizzle migrations (`0000_baseline`) |
+| `npm run db:seed` | Seed demo user, workspace, cases, run, milestone, token |
 | `npm run topology` | Topology CLI |
 | `npm run mcp` | Start `@topology/mcp` stdio server |
-| `npm run test` / `test:unit` | Vitest unit tests (domain, auth helpers, packages) |
-| `npm run test:integration` | Vitest API/DB/CLI/MCP integration (needs Postgres) |
-| `npm run test:ui` | Vitest + Testing Library component tests |
-| `npm run test:e2e` | Playwright UI paths (login → hub → run → issue → triage) |
-| `npm run test:all` | unit + integration + ui + e2e |
 
-### Testing release gate (F10)
+Production self-hosting: [docs/deploy.md](docs/deploy.md). Tests and the release gate: [CONTRIBUTING.md](CONTRIBUTING.md).
 
-```bash
-docker compose up -d   # or the documented postgres:16 container on :54329
-cp .env.example .env.local
-npm install
-npm run db:push && npm run db:seed
+## License
 
-npm run test:unit
-npm run test:integration
-npm run test:ui
-npm run test:e2e
-```
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 Hasnat Jamil and Topology contributors.
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the same suites against a Postgres service container. Issue providers stay on `TOPOLOGY_ISSUE_PROVIDER=mock`; OAuth IdPs are not contacted in CI.
-
-Contributor test instructions: [`CONTRIBUTING.md`](CONTRIBUTING.md).
-
-## v1 slice
-
-- OAuth-first auth + workspace invites/roles + result comments/attachments
-- Operating hub with quality pulse, milestone Go/At-risk/No-Go, flake + retest queues
-- Cases + folders CRUD, CSV import/export
-- Manual runs with assign, notes, comments, attachments, pass/fail
-- CI JUnit ingest + shard merge (CLI + `/api/ci/*`)
-- Automation browser with lightweight flake signals
-- Failure triage queue (file/link issue for failures without a linked issue)
-- Milestones with configurable readiness thresholds
-- Issue create/link/status + retest queue
-- Outbound webhooks on `run.completed` / `issue.created` / `intent.stale` / `coverage.dropped` / `proposal.created` (Settings → Webhooks)
-- MCP agent plugin + Settings connections/CI/webhooks
-- `/api/health` + Compose Postgres (+ attachments volume)
+[Contributing](CONTRIBUTING.md) · [Deploy](docs/deploy.md) · [Import](docs/import.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md)
