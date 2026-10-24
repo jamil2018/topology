@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "predev": "bash scripts/ensure-postgres.sh",
+    "predev": "test ! -f scripts/ensure-postgres.sh || bash scripts/ensure-postgres.sh",
     "dev": "next dev --port 4317 --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --port ${PORT:-4317} --hostname ${HOST:-127.0.0.1}",
