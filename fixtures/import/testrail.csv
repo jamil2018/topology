@@ -1,0 +1,3 @@
+ID,Title,Section Hierarchy,Preconditions,Steps (Step),Steps (Expected Result),Priority,References
+C10,Checkout with saved card,Shop / Checkout,User has a saved card,Click Pay,Order confirmed,Critical,checkout;payments
+C11,Empty cart blocks checkout,Shop / Checkout,,Open cart,Checkout is disabled,Low,cart

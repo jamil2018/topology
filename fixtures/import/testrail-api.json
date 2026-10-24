@@ -1,0 +1,29 @@
+{
+  "offset": 0,
+  "limit": 250,
+  "size": 1,
+  "cases": [
+    {
+      "id": 42,
+      "title": "Invite a teammate",
+      "section_id": 7,
+      "priority_id": 3,
+      "refs": "members",
+      "custom_preconds": "Caller is an admin",
+      "custom_steps_separated": [
+        {
+          "content": "Open Settings → Members",
+          "expected": "Invite form is shown"
+        },
+        {
+          "content": "Submit an email",
+          "expected": "Invite is pending"
+        }
+      ]
+    }
+  ],
+  "sections": [
+    { "id": 1, "name": "Admin", "parent_id": null },
+    { "id": 7, "name": "Access", "parent_id": 1 }
+  ]
+}

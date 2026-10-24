@@ -10,6 +10,7 @@ import {
   readPreferredProjectId,
   requireProjectAccess,
 } from "@/lib/project";
+import { recordAuditEvent } from "@/lib/audit";
 import { listCases } from "@/lib/queries";
 
 /**
@@ -60,6 +61,16 @@ export async function GET(request: Request) {
       tags: c.tags,
     })),
   );
+
+  await recordAuditEvent({
+    action: "export.cases",
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    workspaceId: access.ctx.project.id,
+    targetType: "cases",
+    request,
+    metadata: { count: data.length },
+  });
 
   return new NextResponse(csv, {
     headers: {

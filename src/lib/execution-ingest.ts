@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type {
   ExecutionEnvironment,
   ExecutionReport,
@@ -22,6 +22,7 @@ import {
   ciFailureResponse,
 } from "@/lib/ci-ingest";
 import { refreshImplementationStatsForRun } from "@/lib/implementation-stats";
+import { syncIssuesOnPassingRetest } from "@/lib/issues";
 import { immutableMessageFor, isRunFrozen } from "@/lib/run-immutability";
 
 type IngestTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -466,6 +467,26 @@ export async function submitExecutionReport(input: {
     await refreshImplementationStatsForRun(outcome.runId);
   } catch {
     // Rollups are best-effort; the run is already completed.
+  }
+
+  try {
+    const rows = await db.query.runResults.findMany({
+      where: inArray(runResults.id, outcome.resultIds),
+      columns: { status: true, caseId: true },
+    });
+    const seen = new Set<string>();
+    for (const row of rows) {
+      if (row.status !== "passed" || !row.caseId || seen.has(row.caseId)) {
+        continue;
+      }
+      seen.add(row.caseId);
+      await syncIssuesOnPassingRetest({
+        workspaceId: input.workspaceId,
+        caseId: row.caseId,
+      });
+    }
+  } catch {
+    // Outbound close is best-effort; the report is already ingested.
   }
 
   return outcome;

@@ -1,0 +1,3 @@
+id,title,description,preconditions,priority,status,suite,tags,steps
+1,Search products,Catalog search,Index is warm,high,actual,Catalog,search;smoke,"[{""position"":1,""action"":""Type a query"",""expected_result"":""Results list renders"",""data"":""shoes""}]"
+2,Filter by size,, ,medium,draft,Catalog,filter,"1. Open filters"

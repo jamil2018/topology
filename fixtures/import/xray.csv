@@ -1,0 +1,5 @@
+Issue Key,Summary,Description,Priority,Labels,Test Repository Path,Preconditions,Action,Data,Expected Result
+CALC-1,Add two numbers,Calculator adds integers,High,math;smoke,Calculator,App is open,Enter 2,2,Field shows 2
+CALC-1,,,,,,,Enter +,+,Operator selected
+CALC-1,,,,,,,Enter 3 and equals,3,Result is 5
+CALC-2,Divide by zero,,Medium,math,Calculator,,Enter 1 / 0,,Error is shown

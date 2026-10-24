@@ -1,0 +1,25 @@
+{
+  "values": [
+    {
+      "id": 101,
+      "key": "PROJ-T9",
+      "name": "Expire idle session",
+      "precondition": "User is signed in",
+      "objective": "Idle timeout signs the user out",
+      "priority": { "name": "Medium" },
+      "status": { "name": "Draft" },
+      "folder": { "name": "Auth / Session" },
+      "labels": ["session"],
+      "testScript": {
+        "type": "STEP_BY_STEP",
+        "steps": [
+          {
+            "description": "Wait past idle timeout",
+            "testData": "30m",
+            "expectedResult": "Login screen is shown"
+          }
+        ]
+      }
+    }
+  ]
+}

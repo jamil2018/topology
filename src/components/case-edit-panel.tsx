@@ -13,7 +13,20 @@ import {
 } from "@heroui/react";
 import { FloppyDiskIcon, XIcon } from "@phosphor-icons/react";
 import { folderPathLabel } from "@/lib/folder-tree";
+import type { OrderedStep } from "@/lib/tcm/steps";
 import { CaseHistoryPanel } from "./case-history-panel";
+import {
+  CaseStepsEditor,
+  stepsFromFallback,
+} from "./case-steps-editor";
+import {
+  CaseTcmPanel,
+  type CustomFieldDefView,
+  type DatasetDraft,
+  type ParameterDraft,
+} from "./case-tcm-panel";
+import { formatStatusLabel } from "./cases-model";
+import { useQualityGraph } from "./quality-graph-provider";
 import { Bone } from "./skeletons";
 
 const priorities = ["P0", "P1", "P2", "P3"] as const;
@@ -42,6 +55,11 @@ type CaseDetail = {
     criticality: string;
     status: string;
   } | null;
+  structuredSteps?: OrderedStep[];
+  parameters?: ParameterDraft[];
+  datasets?: DatasetDraft[];
+  customFields?: Record<string, unknown>;
+  customFieldDefs?: CustomFieldDefView[];
 };
 
 type EditForm = {
@@ -85,6 +103,7 @@ export function CaseEditPanel({
   flatFolders,
   onClose,
   onSaved,
+  onDirtyChange,
 }: {
   caseId: string;
   caseKey: string;
@@ -101,7 +120,9 @@ export function CaseEditPanel({
     tags: string[];
     folder: { id: string; name: string } | null;
   }) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const { enabled: qualityGraphEnabled } = useQualityGraph();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -111,6 +132,13 @@ export function CaseEditPanel({
   const [form, setForm] = useState<EditForm | null>(null);
   const [historyKey, setHistoryKey] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
+  const [useStructured, setUseStructured] = useState(false);
+  const [structuredSteps, setStructuredSteps] = useState<OrderedStep[]>([]);
+  const [parameters, setParameters] = useState<ParameterDraft[]>([]);
+  const [datasets, setDatasets] = useState<DatasetDraft[]>([]);
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
+  const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDefView[]>([]);
+  const [sharedSteps, setSharedSteps] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,6 +159,29 @@ export function CaseEditPanel({
         const next = data.case as CaseDetail;
         setDetail(next);
         setForm(toForm(next));
+        const stored = next.structuredSteps ?? [];
+        setUseStructured(stored.length > 0);
+        setStructuredSteps(stored);
+        setParameters(next.parameters ?? []);
+        setDatasets(next.datasets ?? []);
+        setCustomFields(next.customFields ?? {});
+        setCustomFieldDefs(next.customFieldDefs ?? []);
+        if (stored.length > 0) {
+          void fetch("/api/shared-steps")
+            .then((res) => res.json())
+            .then((shared) => {
+              if (cancelled) return;
+              setSharedSteps(
+                (shared.sharedSteps ?? []).map(
+                  (s: { id: string; name: string }) => ({
+                    id: s.id,
+                    name: s.name,
+                  }),
+                ),
+              );
+            })
+            .catch(() => undefined);
+        }
         setLoading(false);
       })
       .catch((err: unknown) => {
@@ -155,9 +206,35 @@ export function CaseEditPanel({
       form.status !== detail.status ||
       form.folderId !== (detail.folderId ?? "") ||
       JSON.stringify(parseTags(form.tags)) !==
-        JSON.stringify(detail.tags ?? [])
+        JSON.stringify(detail.tags ?? []) ||
+      JSON.stringify(structuredSteps) !==
+        JSON.stringify(detail.structuredSteps ?? []) ||
+      JSON.stringify(parameters) !== JSON.stringify(detail.parameters ?? []) ||
+      JSON.stringify(datasets) !== JSON.stringify(detail.datasets ?? []) ||
+      JSON.stringify(customFields) !==
+        JSON.stringify(detail.customFields ?? {})
     );
-  }, [detail, form]);
+  }, [detail, form, structuredSteps, parameters, datasets, customFields]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
+  const saveDisabledReason = !form?.title.trim()
+    ? "Title required"
+    : !dirty
+      ? "No changes"
+      : null;
 
   async function save() {
     if (!form || !detail) return;
@@ -177,6 +254,16 @@ export function CaseEditPanel({
           status: form.status,
           folderId: form.folderId || null,
           tags: parseTags(form.tags),
+          ...(useStructured
+            ? {
+                structuredSteps,
+                parameters,
+                datasets,
+                customFields,
+              }
+            : customFieldDefs.length > 0
+              ? { customFields }
+              : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -210,6 +297,15 @@ export function CaseEditPanel({
         status: saved.status,
         tags: saved.tags ?? [],
         folderId: saved.folderId ?? null,
+        intentId: saved.intentId ?? detail.intentId,
+        intent: saved.intent ?? detail.intent,
+        structuredSteps: useStructured
+          ? structuredSteps
+          : (saved.structuredSteps ?? []),
+        parameters,
+        datasets,
+        customFields,
+        customFieldDefs,
       };
       setDetail(nextDetail);
       setForm(toForm(nextDetail));
@@ -255,7 +351,7 @@ export function CaseEditPanel({
           <p className="truncate text-sm font-medium text-[color:var(--topo-ink)]">
             {headerTitle}
           </p>
-          {detail?.intent ? (
+          {qualityGraphEnabled && detail?.intent ? (
             <p className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
               Intent{" "}
               <Link
@@ -265,7 +361,7 @@ export function CaseEditPanel({
                 {detail.intent.key}
               </Link>
             </p>
-          ) : detail?.intentId ? (
+          ) : qualityGraphEnabled && detail?.intentId ? (
             <p className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
               Linked intent
             </p>
@@ -336,30 +432,80 @@ export function CaseEditPanel({
                 className="w-full min-h-14"
               />
             </TextField>
-            <TextField name="edit-steps" className="w-full">
-              <Label>Steps</Label>
-              <TextArea
-                value={form.steps}
-                disabled={readOnly || saving}
-                onChange={(e) =>
-                  setForm((f) => (f ? { ...f, steps: e.target.value } : f))
-                }
-                className="w-full min-h-20"
-              />
-            </TextField>
-            <TextField name="edit-expected" className="w-full">
-              <Label>Expected result</Label>
-              <TextArea
-                value={form.expectedResult}
-                disabled={readOnly || saving}
-                onChange={(e) =>
-                  setForm((f) =>
-                    f ? { ...f, expectedResult: e.target.value } : f,
-                  )
-                }
-                className="w-full min-h-14"
-              />
-            </TextField>
+            {useStructured ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label>Structured steps</Label>
+                  <Button
+                    size="sm"
+                    variant="tertiary"
+                    isDisabled={readOnly || saving}
+                    onPress={() => setUseStructured(false)}
+                  >
+                    Use text steps
+                  </Button>
+                </div>
+                <CaseStepsEditor
+                  steps={structuredSteps}
+                  onChange={setStructuredSteps}
+                  disabled={readOnly || saving}
+                  sharedSteps={sharedSteps}
+                />
+              </div>
+            ) : (
+              <>
+                <TextField name="edit-steps" className="w-full">
+                  <Label>Steps</Label>
+                  <TextArea
+                    value={form.steps}
+                    disabled={readOnly || saving}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, steps: e.target.value } : f))
+                    }
+                    className="w-full min-h-20"
+                  />
+                </TextField>
+                <TextField name="edit-expected" className="w-full">
+                  <Label>Expected result</Label>
+                  <TextArea
+                    value={form.expectedResult}
+                    disabled={readOnly || saving}
+                    onChange={(e) =>
+                      setForm((f) =>
+                        f ? { ...f, expectedResult: e.target.value } : f,
+                      )
+                    }
+                    className="w-full min-h-14"
+                  />
+                </TextField>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  isDisabled={readOnly || saving}
+                  onPress={() => {
+                    setStructuredSteps(
+                      stepsFromFallback(form.steps, form.expectedResult),
+                    );
+                    setUseStructured(true);
+                    void fetch("/api/shared-steps")
+                      .then((res) => res.json())
+                      .then((data) => {
+                        setSharedSteps(
+                          (data.sharedSteps ?? []).map(
+                            (s: { id: string; name: string }) => ({
+                              id: s.id,
+                              name: s.name,
+                            }),
+                          ),
+                        );
+                      })
+                      .catch(() => undefined);
+                  }}
+                >
+                  Use structured steps
+                </Button>
+              </>
+            )}
             <div className="grid gap-3">
               <Select
                 className="w-full"
@@ -409,8 +555,12 @@ export function CaseEditPanel({
                 <Select.Popover>
                   <ListBox>
                     {statuses.map((s) => (
-                      <ListBox.Item key={s} id={s} textValue={s}>
-                        {s}
+                      <ListBox.Item
+                        key={s}
+                        id={s}
+                        textValue={formatStatusLabel(s)}
+                      >
+                        {formatStatusLabel(s)}
                         <ListBox.ItemIndicator />
                       </ListBox.Item>
                     ))}
@@ -474,11 +624,11 @@ export function CaseEditPanel({
             {saveError ? (
               <p className="text-sm text-red-600 dark:text-red-300">{saveError}</p>
             ) : null}
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="primary"
                 size="sm"
-                isDisabled={readOnly || saving || !dirty || !form.title.trim()}
+                isDisabled={readOnly || saving || Boolean(saveDisabledReason)}
                 onPress={() => void save()}
               >
                 <FloppyDiskIcon size={14} weight="bold" />
@@ -492,7 +642,43 @@ export function CaseEditPanel({
               >
                 Close
               </Button>
+              {saveDisabledReason && !readOnly ? (
+                <p className="text-[11px] text-[color:var(--topo-muted)]">
+                  {saveDisabledReason}
+                </p>
+              ) : dirty && !readOnly ? (
+                <p className="text-[11px] text-[color:var(--topo-muted)]">
+                  Unsaved changes
+                </p>
+              ) : null}
             </div>
+            <CaseTcmPanel
+              caseId={caseId}
+              parameters={parameters}
+              datasets={datasets}
+              customFields={customFields}
+              customFieldDefs={customFieldDefs}
+              onParametersChange={setParameters}
+              onDatasetsChange={setDatasets}
+              onCustomFieldsChange={setCustomFields}
+              disabled={readOnly || saving}
+              onRestored={() => {
+                setHistoryKey((k) => k + 1);
+                void fetch(`/api/cases/${caseId}`)
+                  .then((res) => res.json())
+                  .then((data) => {
+                    const next = data.case as CaseDetail;
+                    setDetail(next);
+                    setForm(toForm(next));
+                    setStructuredSteps(next.structuredSteps ?? []);
+                    setUseStructured((next.structuredSteps ?? []).length > 0);
+                    setParameters(next.parameters ?? []);
+                    setDatasets(next.datasets ?? []);
+                    setCustomFields(next.customFields ?? {});
+                  })
+                  .catch(() => undefined);
+              }}
+            />
             <div className="border-t border-[color:var(--topo-line)] pt-3">
               <Button
                 size="sm"

@@ -106,6 +106,109 @@ describe("CaseEditPanel", () => {
     });
   });
 
+  it("explains a disabled Save and reports dirty state", async () => {
+    const user = userEvent.setup();
+    const onDirtyChange = vi.fn();
+    const detail = {
+      id: caseId,
+      key: "K-1",
+      title: "Original title",
+      description: "",
+      preconditions: "",
+      steps: "1. open",
+      expectedResult: "",
+      priority: "P2",
+      status: "draft",
+      tags: [],
+      folderId: null,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/activity")) {
+          return { ok: true, status: 200, json: async () => ({ activities: [] }) };
+        }
+        if (!init || !init.method || init.method === "GET") {
+          return { ok: true, status: 200, json: async () => ({ case: detail }) };
+        }
+        return { ok: false, status: 404, json: async () => ({ error: "missing" }) };
+      }),
+    );
+
+    render(
+      <CaseEditPanel
+        caseId={caseId}
+        caseKey="K-1"
+        caseTitle="Original title"
+        folders={[]}
+        flatFolders={[]}
+        onClose={() => undefined}
+        onSaved={() => undefined}
+        onDirtyChange={onDirtyChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("No changes")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: /^Save$/i })).toBeDisabled();
+
+    await user.clear(screen.getByLabelText("Title"));
+    expect(screen.getByText("Title required")).toBeTruthy();
+
+    await user.type(screen.getByLabelText("Title"), "Changed");
+    await waitFor(() => {
+      expect(onDirtyChange).toHaveBeenCalledWith(true);
+    });
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Save$/i })).toBeEnabled();
+  });
+
+  it("hides the Intent link when the quality graph is off", async () => {
+    const detail = {
+      id: caseId,
+      key: "K-1",
+      title: "Linked",
+      description: "",
+      preconditions: "",
+      steps: "",
+      expectedResult: "",
+      priority: "P2",
+      status: "draft",
+      tags: [],
+      folderId: null,
+      intentId: "intent-1",
+      intent: { id: "intent-1", key: "AUTH", title: "Auth", criticality: "high", status: "active" },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes("/activity")) {
+          return { ok: true, status: 200, json: async () => ({ activities: [] }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ case: detail }) };
+      }),
+    );
+
+    render(
+      <CaseEditPanel
+        caseId={caseId}
+        caseKey="K-1"
+        caseTitle="Linked"
+        folders={[]}
+        flatFolders={[]}
+        onClose={() => undefined}
+        onSaved={() => undefined}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Linked")).toBeTruthy();
+    });
+    expect(screen.queryByText(/Intent/)).toBeNull();
+  });
+
   it("surfaces permission errors as read-only", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

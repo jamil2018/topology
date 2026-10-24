@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export const structuredStepInputSchema = z.object({
+  id: z.string().uuid().optional(),
+  action: z.string(),
+  expected: z.string().optional().default(""),
+  data: z.string().optional().default(""),
+  sharedStepId: z.string().uuid().nullable().optional(),
+});
+
 export const updateCaseSchema = z
   .object({
     title: z.string().trim().min(1).max(240).optional(),
@@ -13,6 +21,19 @@ export const updateCaseSchema = z
       .optional(),
     folderId: z.string().uuid().nullable().optional(),
     tags: z.array(z.string().trim().min(1)).optional(),
+    structuredSteps: z.array(structuredStepInputSchema).optional(),
+    parameters: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1).max(64),
+          defaultValue: z.string().optional().default(""),
+        }),
+      )
+      .optional(),
+    datasets: z
+      .array(z.object({ values: z.record(z.string(), z.string()) }))
+      .optional(),
+    customFields: z.record(z.string(), z.unknown()).optional(),
   })
   .refine(
     (v) =>
@@ -24,7 +45,11 @@ export const updateCaseSchema = z
       v.priority !== undefined ||
       v.status !== undefined ||
       v.folderId !== undefined ||
-      v.tags !== undefined,
+      v.tags !== undefined ||
+      v.structuredSteps !== undefined ||
+      v.parameters !== undefined ||
+      v.datasets !== undefined ||
+      v.customFields !== undefined,
     { message: "Provide at least one field to update" },
   );
 
