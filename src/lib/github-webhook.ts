@@ -2,12 +2,38 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const TOPOLOGY_CHANGED_FILES_HEADER = "x-topology-changed-files";
 
+/** Prefer a per-repository secret; fall back to the process-wide env secret. */
+export function resolveGithubWebhookSecret(
+  repoSecret: string | null | undefined,
+  envSecret: string | null | undefined = process.env.TOPOLOGY_GITHUB_WEBHOOK_SECRET,
+): string | undefined {
+  const fromRepo = repoSecret?.trim();
+  if (fromRepo) return fromRepo;
+  const fromEnv = envSecret?.trim();
+  return fromEnv || undefined;
+}
+
+export function githubPayloadRemoteUrl(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const repository = (payload as { repository?: unknown }).repository;
+  if (!repository || typeof repository !== "object") return null;
+  const cloneUrl = (repository as { clone_url?: unknown }).clone_url;
+  const htmlUrl = (repository as { html_url?: unknown }).html_url;
+  const raw =
+    (typeof cloneUrl === "string" && cloneUrl.trim()) ||
+    (typeof htmlUrl === "string" && htmlUrl.trim()) ||
+    "";
+  return raw ? raw.replace(/\/+$/, "") : null;
+}
+
 export function verifyGithubSignature(
   rawBody: string,
   signatureHeader: string | null,
   secret: string | undefined,
 ): { ok: true } | { ok: false; status: number; error: string } {
-  if (!secret?.trim()) return { ok: true };
+  if (!secret?.trim()) {
+    return { ok: false, status: 401, error: "Webhook secret is not configured" };
+  }
   if (!signatureHeader?.startsWith("sha256=")) {
     return { ok: false, status: 401, error: "Missing X-Hub-Signature-256" };
   }

@@ -36,7 +36,9 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const authResult = await authenticateCiRequest(request);
+  const authResult = await authenticateCiRequest(request, {
+    requiredScope: "ci-write",
+  });
   if (!authResult.ok) {
     return NextResponse.json(
       { error: authResult.error },

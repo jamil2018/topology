@@ -33,9 +33,23 @@ describe("LoginForm", () => {
 
   it("shows mocked OAuth buttons when configured (no real IdP)", () => {
     render(
-      <LoginForm oauth={{ github: true, google: true }} airGap={false} />,
+      <LoginForm
+        oauth={{ github: true, google: true, oidc: true, oidcName: "Authentik" }}
+        airGap={false}
+      />,
     );
     expect(screen.getByText("Continue with GitHub")).toBeTruthy();
     expect(screen.getByText("Continue with Google")).toBeTruthy();
+    expect(screen.getByText("Continue with Authentik")).toBeTruthy();
+  });
+
+  it("renders first-run admin setup instead of demo credentials", () => {
+    render(
+      <LoginForm oauth={{ github: false, google: false }} airGap setup />,
+    );
+    expect(screen.getByLabelText("Name")).toBeTruthy();
+    expect(screen.getByLabelText("Confirm password")).toBeTruthy();
+    expect(screen.getByText("Create admin")).toBeTruthy();
+    expect(screen.queryByText(/demo@topology.local/)).toBeNull();
   });
 });

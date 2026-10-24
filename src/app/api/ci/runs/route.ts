@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     }
     workspaceId = access.ctx.project.id;
   } else {
-    const ci = await authenticateCiRequest(request);
+    const ci = await authenticateCiRequest(request, { requiredScope: "read" });
     if (!ci.ok) {
       return NextResponse.json({ error: ci.error }, { status: ci.status });
     }
@@ -49,7 +49,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authResult = await authenticateCiRequest(request);
+  const authResult = await authenticateCiRequest(request, {
+    requiredScope: "ci-write",
+  });
   if (!authResult.ok) {
     return NextResponse.json(
       { error: authResult.error },

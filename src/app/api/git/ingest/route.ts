@@ -37,7 +37,7 @@ const bodySchema = z
   });
 
 export async function POST(request: Request) {
-  const ci = await authenticateCiRequest(request);
+  const ci = await authenticateCiRequest(request, { requiredScope: "ci-write" });
   if (!ci.ok) {
     return NextResponse.json({ error: ci.error }, { status: ci.status });
   }

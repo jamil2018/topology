@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ coverage });
   }
 
-  const token = await authenticateCiRequest(request);
+  const token = await authenticateCiRequest(request, { requiredScope: "read" });
   if (!token.ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

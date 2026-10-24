@@ -10,7 +10,10 @@ export const authConfig = {
       const { pathname } = request.nextUrl;
       const isLoggedIn = Boolean(auth?.user);
       const isAuthRoute =
-        pathname.startsWith("/login") || pathname.startsWith("/api/auth");
+        pathname.startsWith("/login") ||
+        pathname.startsWith("/setup") ||
+        pathname.startsWith("/api/setup") ||
+        pathname.startsWith("/api/auth");
       const isCiApi = pathname.startsWith("/api/ci");
       const isAgentApi = pathname.startsWith("/api/agent");
       const isExecutionsApi = pathname.startsWith("/api/executions");
@@ -18,6 +21,7 @@ export const authConfig = {
       const isHealth = pathname === "/api/health" || pathname === "/health";
       const isInviteApi = pathname.startsWith("/api/invites/");
       const isInvitePage = pathname.startsWith("/invite/");
+      const isGithubWebhook = pathname.startsWith("/api/webhooks/github");
 
       if (
         isAuthRoute ||
@@ -27,7 +31,8 @@ export const authConfig = {
         isReleasesApi ||
         isHealth ||
         isInviteApi ||
-        isInvitePage
+        isInvitePage ||
+        isGithubWebhook
       ) {
         return true;
       }

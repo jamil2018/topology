@@ -10,7 +10,7 @@ export async function authorizeCoverageSnapshotAccess(
 > {
   const bearer = request.headers.get("authorization");
   if (bearer?.startsWith("Bearer ")) {
-    const ci = await authenticateCiRequest(request);
+    const ci = await authenticateCiRequest(request, { requiredScope: "read" });
     if (ci.ok) {
       return { ok: true, workspaceId: ci.workspaceId };
     }

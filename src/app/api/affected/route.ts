@@ -47,7 +47,7 @@ async function resolveWorkspaceId(
     return { ok: true, workspaceId: access.ctx.project.id };
   }
 
-  const ci = await authenticateCiRequest(request);
+  const ci = await authenticateCiRequest(request, { requiredScope: "read" });
   if (!ci.ok) {
     return { ok: false, status: ci.status, error: ci.error };
   }
