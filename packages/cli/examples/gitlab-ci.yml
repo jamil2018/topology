@@ -1,34 +1,55 @@
-# Topology — GitLab CI JSON execution protocol (Phase 2)
+# Topology — GitLab CI
+#
+# Prefer the CLI (JUnit) or a reporter (Playwright / Jest / Cypress / pytest)
+# that POSTs the JSON execution protocol to /api/executions.
+# CI variables: TOPOLOGY_URL, TOPOLOGY_API_TOKEN, optional TOPOLOGY_PROJECT_ID.
 
 stages:
   - test
 
-topology-e2e:
+variables:
+  TOPOLOGY_URL: "https://topology.example.com"
+
+# Option A — JUnit via Topology CLI (mirrors packages/cli/examples/github-actions.yml)
+topology-junit:
   stage: test
   image: node:22
-  variables:
-    TOPOLOGY_URL: "https://topology.example.com"
+  script:
+    - npm ci
+    - npm run test -- --reporter=junit --outputFile=reports/junit.xml || true
+    - npx --yes @topology/cli junit submit ./reports/junit.xml --name "GL $CI_PIPELINE_ID" --source gitlab
+  rules:
+    - if: $TOPOLOGY_UPLOAD == "junit"
+
+# Option B — JSON execution protocol (reporter output or fixture fallback)
+topology-executions:
+  stage: test
+  image: node:22
   script:
     - npm ci
     - npm run test:e2e || true
     - |
       REPORT="${CI_PROJECT_DIR}/topology-report.json"
       if [ ! -f "$REPORT" ]; then
-        echo "Building report from fixtures/execution/sample-report.json"
+        echo "No reporter output; using fixtures/execution/sample-report.json"
         cp fixtures/execution/sample-report.json "$REPORT"
         node -e "
           const fs = require('fs');
           const p = process.argv[1];
           const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+          j.run = j.run || {};
           j.run.externalId = 'gitlab-' + process.env.CI_PIPELINE_ID;
           j.run.commitSha = process.env.CI_COMMIT_SHA || j.run.commitSha;
           j.run.branch = process.env.CI_COMMIT_REF_NAME || j.run.branch;
           fs.writeFileSync(p, JSON.stringify(j, null, 2));
         " "$REPORT"
       fi
-    - |
-      curl -sfS -X POST "${TOPOLOGY_URL}/api/executions" \
-        -H "Authorization: Bearer ${TOPOLOGY_API_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -H "x-topology-project-id: ${TOPOLOGY_PROJECT_ID}" \
-        --data-binary @"${REPORT}"
+    - npx --yes @topology/cli run upload "$REPORT"
+    # Equivalent curl if the CLI is not installed:
+    # curl -sfS -X POST "${TOPOLOGY_URL}/api/executions" \
+    #   -H "Authorization: Bearer ${TOPOLOGY_API_TOKEN}" \
+    #   -H "Content-Type: application/json" \
+    #   -H "x-topology-project-id: ${TOPOLOGY_PROJECT_ID}" \
+    #   --data-binary @"${REPORT}"
+  rules:
+    - if: $TOPOLOGY_UPLOAD != "junit"

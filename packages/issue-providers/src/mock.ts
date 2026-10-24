@@ -4,6 +4,8 @@ import type {
   IssueProviderConfig,
   RemoteIssue,
   RemoteIssueStatus,
+  TransitionIssueInput,
+  UpdateIssueInput,
 } from "./types";
 
 type MockStore = Map<string, RemoteIssue>;
@@ -26,6 +28,14 @@ export function createMockIssueProvider(
     "",
   );
 
+  function requireStored(idOrKey: string): RemoteIssue {
+    const found = [...store.values()].find(
+      (i) => i.key === idOrKey || i.id === idOrKey,
+    );
+    if (!found) throw new Error(`Mock issue not found: ${idOrKey}`);
+    return found;
+  }
+
   async function getIssue(idOrKey: string): Promise<RemoteIssue> {
     const byKey = [...store.values()].find(
       (i) => i.key === idOrKey || i.id === idOrKey,
@@ -43,6 +53,37 @@ export function createMockIssueProvider(
     };
     store.set(issue.id, issue);
     return { ...issue };
+  }
+
+  async function updateIssue(
+    idOrKey: string,
+    input: UpdateIssueInput,
+  ): Promise<RemoteIssue> {
+    if (config.fetch) {
+      const res = await config.fetch(`${baseUrl}/issues/${idOrKey}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        throw new Error(`Mock HTTP update failed: ${res.status}`);
+      }
+      const data = (await res.json()) as RemoteIssue;
+      store.set(data.id, data);
+      return data;
+    }
+
+    const stored = requireStored(idOrKey);
+    if (input.title) stored.title = input.title;
+    if (input.status) stored.status = input.status;
+    return { ...stored };
+  }
+
+  async function transition(
+    idOrKey: string,
+    input: TransitionIssueInput,
+  ): Promise<RemoteIssue> {
+    return updateIssue(idOrKey, { status: input.status });
   }
 
   return {
@@ -79,6 +120,8 @@ export function createMockIssueProvider(
     },
     getIssue,
     linkExisting: getIssue,
+    updateIssue,
+    transition,
   };
 }
 

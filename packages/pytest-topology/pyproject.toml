@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pytest-topology"
+version = "0.1.0"
+description = "Pytest plugin that uploads Topology execution reports"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+authors = [{ name = "Topology contributors" }]
+keywords = ["pytest", "topology", "qa", "reporter"]
+classifiers = [
+  "Framework :: Pytest",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = ["pytest>=7"]
+
+[project.entry-points.pytest11]
+topology = "pytest_topology.plugin"
+
+[project.urls]
+Homepage = "https://github.com/jamil2018/topology"
+Repository = "https://github.com/jamil2018/topology"
+
+[tool.setuptools.packages.find]
+where = ["src"]

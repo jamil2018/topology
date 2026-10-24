@@ -21,6 +21,12 @@ export async function providerFetch(
   return res;
 }
 
+export async function assertOk(res: Response): Promise<void> {
+  if (res.ok) return;
+  const text = await res.text();
+  throw new IssueHttpError(`HTTP ${res.status}`, res.status, text);
+}
+
 export async function readJson<T>(res: Response): Promise<T> {
   const text = await res.text();
   if (!res.ok) {

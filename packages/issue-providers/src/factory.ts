@@ -1,12 +1,14 @@
-import { registerPlugin } from "@topology/plugin-sdk";
+import { getPlugin, registerPlugin } from "@topology/plugin-sdk";
 import { createGithubIssuesProvider } from "./github";
+import { createGitlabIssuesProvider } from "./gitlab";
 import { createJiraProvider } from "./jira";
 import { createLinearProvider } from "./linear";
 import { createMockIssueProvider } from "./mock";
-import type {
-  IssueProvider,
-  IssueProviderConfig,
-  IssueProviderId,
+import {
+  builtInIssueProviders,
+  type IssueProvider,
+  type IssueProviderConfig,
+  type IssueProviderId,
 } from "./types";
 
 export type ResolvedProviderOptions = IssueProviderConfig & {
@@ -17,7 +19,7 @@ export function resolveIssueProvider(
   options: ResolvedProviderOptions = {},
 ): IssueProvider {
   const fromEnv = (process.env.TOPOLOGY_ISSUE_PROVIDER ?? "mock").toLowerCase();
-  const id = (options.provider ?? fromEnv) as IssueProviderId;
+  const id = (options.provider ?? fromEnv).toLowerCase();
 
   const config: IssueProviderConfig = {
     fetch: options.fetch,
@@ -26,19 +28,24 @@ export function resolveIssueProvider(
       process.env.TOPOLOGY_ISSUE_BASE_URL ??
       process.env.JIRA_BASE_URL ??
       process.env.LINEAR_API_URL ??
-      process.env.GITHUB_API_URL,
+      process.env.GITHUB_API_URL ??
+      process.env.GITLAB_URL,
     token:
       options.token ??
       process.env.TOPOLOGY_ISSUE_TOKEN ??
       process.env.JIRA_API_TOKEN ??
       process.env.LINEAR_API_KEY ??
-      process.env.GITHUB_TOKEN,
+      process.env.GITHUB_TOKEN ??
+      process.env.GITLAB_TOKEN,
     email: options.email ?? process.env.JIRA_EMAIL,
     defaultProjectKey:
       options.defaultProjectKey ?? process.env.JIRA_PROJECT_KEY,
     defaultTeamId: options.defaultTeamId ?? process.env.LINEAR_TEAM_ID,
     defaultRepo:
-      options.defaultRepo ?? process.env.GITHUB_REPO ?? process.env.TOPOLOGY_GITHUB_REPO,
+      options.defaultRepo ??
+      process.env.GITHUB_REPO ??
+      process.env.GITLAB_PROJECT ??
+      process.env.TOPOLOGY_GITHUB_REPO,
   };
 
   switch (id) {
@@ -48,14 +55,22 @@ export function resolveIssueProvider(
       return createLinearProvider(config);
     case "github":
       return createGithubIssuesProvider(config);
+    case "gitlab":
+      return createGitlabIssuesProvider(config);
     case "mock":
-    default:
       return createMockIssueProvider(config);
+    default: {
+      const plugin = getPlugin(id);
+      if (plugin?.kind === "issue") {
+        return plugin.create(config) as IssueProvider;
+      }
+      return createMockIssueProvider(config);
+    }
   }
 }
 
 export function listIssueProviders(): IssueProviderId[] {
-  return ["mock", "jira", "linear", "github"];
+  return [...builtInIssueProviders];
 }
 
 /** Register a custom issue provider plugin (same pattern as @topology/plugin-sdk). */
@@ -64,7 +79,7 @@ export function registerIssueProvider(
   factory: (config: IssueProviderConfig) => IssueProvider,
 ) {
   return registerPlugin({
-    id,
+    id: String(id).toLowerCase(),
     kind: "issue",
     label: String(id),
     create: (config: IssueProviderConfig) => factory(config),

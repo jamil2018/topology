@@ -50,6 +50,10 @@ next-env.d.ts
 # local attachment uploads
 /data/attachments/
 
+# Python
+**/__pycache__/
+*.py[cod]
+
 # Playwright
 /test-results/
 /playwright-report/

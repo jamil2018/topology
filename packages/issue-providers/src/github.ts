@@ -5,6 +5,8 @@ import {
   type IssueProvider,
   type IssueProviderConfig,
   type RemoteIssue,
+  type TransitionIssueInput,
+  type UpdateIssueInput,
 } from "./types";
 
 type GhIssue = {
@@ -27,6 +29,27 @@ function mapGhStatus(issue: GhIssue) {
   return mapGenericStatus(issue.state);
 }
 
+function toRemote(data: GhIssue): RemoteIssue {
+  return {
+    provider: "github",
+    id: String(data.id),
+    key: `#${data.number}`,
+    url: data.html_url,
+    title: data.title,
+    status: mapGhStatus(data),
+  };
+}
+
+function issueNumber(idOrKey: string): string {
+  return idOrKey.replace(/^#/, "");
+}
+
+function githubState(status: UpdateIssueInput["status"]): "open" | "closed" | undefined {
+  if (status === "done") return "closed";
+  if (status === "open" || status === "in_progress") return "open";
+  return undefined;
+}
+
 export function createGithubIssuesProvider(
   config: IssueProviderConfig,
 ): IssueProvider {
@@ -42,33 +65,59 @@ export function createGithubIssuesProvider(
     };
   }
 
-  async function getIssue(idOrKey: string): Promise<RemoteIssue> {
-    const repo = config.defaultRepo;
+  function repoParts(override?: string): { owner: string; name: string } {
+    const repo = override ?? config.defaultRepo;
     if (!repo) throw new Error("GitHub get requires defaultRepo");
-    const { owner, name } = parseRepo(repo);
-    const number = idOrKey.replace(/^#/, "");
+    return parseRepo(repo);
+  }
+
+  async function getIssue(idOrKey: string): Promise<RemoteIssue> {
+    const { owner, name } = repoParts();
+    const number = issueNumber(idOrKey);
     const res = await providerFetch(
       config,
       `${apiBase}/repos/${owner}/${name}/issues/${encodeURIComponent(number)}`,
       { headers: headers() },
     );
     const data = await readJson<GhIssue>(res);
-    return {
-      provider: "github",
-      id: String(data.id),
-      key: `#${data.number}`,
-      url: data.html_url,
-      title: data.title,
-      status: mapGhStatus(data),
-    };
+    return toRemote(data);
+  }
+
+  async function updateIssue(
+    idOrKey: string,
+    input: UpdateIssueInput,
+  ): Promise<RemoteIssue> {
+    const { owner, name } = repoParts();
+    const number = issueNumber(idOrKey);
+    const body: Record<string, unknown> = {};
+    if (input.title) body.title = input.title;
+    if (input.description) body.body = input.description;
+    const state = githubState(input.status);
+    if (state) body.state = state;
+    const res = await providerFetch(
+      config,
+      `${apiBase}/repos/${owner}/${name}/issues/${encodeURIComponent(number)}`,
+      {
+        method: "PATCH",
+        headers: headers(),
+        body: JSON.stringify(body),
+      },
+    );
+    const data = await readJson<GhIssue>(res);
+    return toRemote(data);
+  }
+
+  async function transition(
+    idOrKey: string,
+    input: TransitionIssueInput,
+  ): Promise<RemoteIssue> {
+    return updateIssue(idOrKey, { status: input.status });
   }
 
   return {
     id: "github",
     async createIssue(input: CreateIssueInput): Promise<RemoteIssue> {
-      const repo = input.repo ?? config.defaultRepo;
-      if (!repo) throw new Error("GitHub create requires repo");
-      const { owner, name } = parseRepo(repo);
+      const { owner, name } = repoParts(input.repo);
       const res = await providerFetch(
         config,
         `${apiBase}/repos/${owner}/${name}/issues`,
@@ -83,16 +132,11 @@ export function createGithubIssuesProvider(
         },
       );
       const data = await readJson<GhIssue>(res);
-      return {
-        provider: "github",
-        id: String(data.id),
-        key: `#${data.number}`,
-        url: data.html_url,
-        title: data.title,
-        status: mapGhStatus(data),
-      };
+      return toRemote(data);
     },
     getIssue,
     linkExisting: getIssue,
+    updateIssue,
+    transition,
   };
 }
