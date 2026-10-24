@@ -1,0 +1,68 @@
+# Production Topology stack: app + Postgres + durable volumes.
+#
+#   cp .env.example .env.prod
+#   # set AUTH_SECRET, AUTH_URL, and a strong POSTGRES_PASSWORD
+#   docker compose -f docker-compose.prod.yml up --build -d
+#
+# The app image is built from ./Dockerfile. After a version tag (v*), GitHub
+# Actions publishes ghcr.io/<github.repository> (see docs/deploy.md). To run a
+# published tag instead of a local build:
+#
+#   TOPOLOGY_IMAGE=ghcr.io/<owner>/topology:<tag> \
+#     docker compose -f docker-compose.prod.yml up -d --no-build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-topology}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-topology}
+      POSTGRES_DB: ${POSTGRES_DB:-topology}
+    volumes:
+      - topology_prod_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-topology} -d ${POSTGRES_DB:-topology}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${TOPOLOGY_IMAGE:-topology:local}
+    restart: unless-stopped
+    ports:
+      - "${PORT:-4317}:4317"
+    env_file:
+      - path: .env.prod
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-topology}:${POSTGRES_PASSWORD:-topology}@postgres:5432/${POSTGRES_DB:-topology}
+      HOST: 0.0.0.0
+      HOSTNAME: 0.0.0.0
+      PORT: "4317"
+      ATTACHMENTS_DIR: /data/attachments
+      ATTACHMENTS_DRIVER: ${ATTACHMENTS_DRIVER:-local}
+    volumes:
+      - topology_prod_attachments:/data/attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4317/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+volumes:
+  topology_prod_pgdata:
+  topology_prod_attachments:

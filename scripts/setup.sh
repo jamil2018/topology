@@ -15,16 +15,6 @@ die() {
   exit 1
 }
 
-compose() {
-  if docker compose version >/dev/null 2>&1; then
-    docker compose "$@"
-  elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose "$@"
-  else
-    die "Docker Compose is required. Install Docker Desktop or the Compose plugin."
-  fi
-}
-
 require_node() {
   command -v node >/dev/null 2>&1 || die "Node.js 20+ is required."
   command -v npm >/dev/null 2>&1 || die "npm is required."
@@ -34,13 +24,6 @@ require_node() {
   if (( major < 20 )); then
     die "Node.js 20+ is required (found $(node -v))."
   fi
-}
-
-require_docker() {
-  command -v docker >/dev/null 2>&1 || die "Docker is required to run Postgres. Install Docker Desktop or Colima."
-  docker info >/dev/null 2>&1 || die "Docker is installed but not running. Start Docker Desktop or Colima, then re-run."
-  # Resolve compose now so a missing plugin fails before we install packages.
-  compose version >/dev/null
 }
 
 ensure_env() {
@@ -79,28 +62,8 @@ attachments_dir() {
   printf '%s' "$dir"
 }
 
-# A leftover topology-postgres container (for example after Docker restarts)
-# blocks `compose up` because docker-compose.yml pins that container name.
-# Removing a stopped container keeps the named data volume.
-prepare_postgres_container() {
-  local name="topology-postgres"
-  if ! docker container inspect "$name" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  local status
-  status="$(docker inspect -f '{{.State.Status}}' "$name")"
-  if [[ "$status" == "running" ]]; then
-    printf 'Postgres container %s is already running\n' "$name"
-    return 0
-  fi
-
-  printf 'Removing stopped container %s so Compose can recreate it (data volume is kept)\n' "$name"
-  docker rm "$name" >/dev/null
-}
-
-# drizzle-kit reads DATABASE_URL from the environment; npm db:* scripts that
-# use tsx --env-file already load .env.local themselves.
+# db:migrate loads .env.local via dotenv; other db:* scripts that use
+# tsx --env-file already load it themselves.
 load_env() {
   local line key value
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -116,46 +79,23 @@ load_env() {
   done < .env.local
 }
 
-wait_for_postgres() {
-  local attempt
-  for attempt in $(seq 1 30); do
-    if docker exec topology-postgres pg_isready -U topology -d topology >/dev/null 2>&1; then
-      printf 'Postgres is ready\n'
-      return 0
-    fi
-    sleep 2
-  done
-  die "Postgres did not become ready. Check 'docker compose ps' and 'docker compose logs postgres'."
-}
-
 require_node
-require_docker
 ensure_env
 
 step "Installing npm packages"
 npm install
 
 step "Starting local services"
-prepare_postgres_container
-if ! docker container inspect topology-postgres >/dev/null 2>&1 \
-  || [[ "$(docker inspect -f '{{.State.Status}}' topology-postgres)" != "running" ]]; then
-  compose up -d
-fi
-wait_for_postgres
+bash "$ROOT/scripts/ensure-postgres.sh"
 
 step "Preparing local directories"
 mkdir -p "$(attachments_dir)"
 
 load_env
 
-# Push creates the base tables on an empty database. Checked-in SQL assumes
-# those tables already exist. On an existing database, push can prompt to
-# truncate, so only push when the schema is missing.
-if [[ "$(docker exec topology-postgres psql -U topology -d topology -tAc "select to_regclass('public.users') is not null")" != "t" ]]; then
-  step "Syncing database schema"
-  npx drizzle-kit push
-fi
-
+# Journaled migrator (drizzle/meta/_journal.json). Fresh DBs get 0000_baseline.
+# If this fails on a database created with drizzle-kit push, reset the volume:
+#   docker compose down -v && ./scripts/setup.sh
 step "Applying database migrations"
 npm run db:migrate
 
