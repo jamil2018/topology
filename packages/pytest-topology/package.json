@@ -1,0 +1,6 @@
+{
+  "name": "pytest-topology",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Python package — install with pip from pyproject.toml, not npm."
+}

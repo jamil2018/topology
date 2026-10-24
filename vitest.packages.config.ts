@@ -37,6 +37,14 @@ export default defineConfig({
         __dirname,
         "./packages/playwright-reporter/src/index.ts",
       ),
+      "@topology/jest": path.resolve(
+        __dirname,
+        "./packages/jest-reporter/src/index.ts",
+      ),
+      "@topology/cypress": path.resolve(
+        __dirname,
+        "./packages/cypress-reporter/src/index.ts",
+      ),
     },
   },
 });

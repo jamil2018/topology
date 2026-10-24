@@ -5,6 +5,9 @@ import {
   type IssueProvider,
   type IssueProviderConfig,
   type RemoteIssue,
+  type RemoteIssueStatus,
+  type TransitionIssueInput,
+  type UpdateIssueInput,
 } from "./types";
 
 type LinearIssueNode = {
@@ -14,6 +17,8 @@ type LinearIssueNode = {
   url: string;
   state?: { name?: string; type?: string };
 };
+
+type LinearStateNode = { id: string; name: string; type?: string };
 
 type LinearGraphqlResponse<T> = {
   data?: T;
@@ -50,6 +55,33 @@ function mapLinearState(state?: { name?: string; type?: string }) {
   return mapGenericStatus(state?.name);
 }
 
+function toRemote(node: LinearIssueNode): RemoteIssue {
+  return {
+    provider: "linear",
+    id: node.id,
+    key: node.identifier,
+    url: node.url,
+    title: node.title,
+    status: mapLinearState(node.state),
+  };
+}
+
+export function pickLinearStateId(
+  states: LinearStateNode[],
+  target: RemoteIssueStatus,
+): string | undefined {
+  const typeFor: Record<RemoteIssueStatus, string[]> = {
+    done: ["completed"],
+    in_progress: ["started"],
+    open: ["unstarted", "backlog"],
+    unknown: [],
+  };
+  const wanted = typeFor[target] ?? [];
+  const match = states.find((s) => s.type && wanted.includes(s.type));
+  if (match) return match.id;
+  return states.find((s) => mapGenericStatus(s.name) === target)?.id;
+}
+
 export function createLinearProvider(config: IssueProviderConfig): IssueProvider {
   async function getIssue(idOrKey: string): Promise<RemoteIssue> {
     const data = await linearGraphql<{ issue: LinearIssueNode | null }>(
@@ -63,7 +95,6 @@ export function createLinearProvider(config: IssueProviderConfig): IssueProvider
       { id: idOrKey },
     );
     if (!data.issue) {
-      // Fall back to searching by identifier
       const search = await linearGraphql<{
         issues: { nodes: LinearIssueNode[] };
       }>(
@@ -77,23 +108,83 @@ export function createLinearProvider(config: IssueProviderConfig): IssueProvider
       );
       const node = search.issues.nodes[0];
       if (!node) throw new Error(`Linear issue not found: ${idOrKey}`);
-      return {
-        provider: "linear",
-        id: node.id,
-        key: node.identifier,
-        url: node.url,
-        title: node.title,
-        status: mapLinearState(node.state),
-      };
+      return toRemote(node);
     }
-    return {
-      provider: "linear",
-      id: data.issue.id,
-      key: data.issue.identifier,
-      url: data.issue.url,
-      title: data.issue.title,
-      status: mapLinearState(data.issue.state),
-    };
+    return toRemote(data.issue);
+  }
+
+  async function transition(
+    idOrKey: string,
+    input: TransitionIssueInput,
+  ): Promise<RemoteIssue> {
+    const current = await getIssue(idOrKey);
+    const data = await linearGraphql<{
+      issue: {
+        id: string;
+        team?: { states?: { nodes: LinearStateNode[] } };
+      } | null;
+    }>(
+      config,
+      `query ($id: String!) {
+        issue(id: $id) {
+          id
+          team { states { nodes { id name type } } }
+        }
+      }`,
+      { id: current.id },
+    );
+    const states = data.issue?.team?.states?.nodes ?? [];
+    const stateId = pickLinearStateId(states, input.status);
+    if (!stateId) {
+      throw new Error(`Linear has no state for ${input.status} on ${idOrKey}`);
+    }
+    const updated = await linearGraphql<{
+      issueUpdate: { success: boolean; issue: LinearIssueNode };
+    }>(
+      config,
+      `mutation ($id: String!, $input: IssueUpdateInput!) {
+        issueUpdate(id: $id, input: $input) {
+          success
+          issue { id identifier title url state { name type } }
+        }
+      }`,
+      { id: current.id, input: { stateId } },
+    );
+    if (!updated.issueUpdate.success) {
+      throw new Error("Linear issueUpdate failed");
+    }
+    return toRemote(updated.issueUpdate.issue);
+  }
+
+  async function updateIssue(
+    idOrKey: string,
+    input: UpdateIssueInput,
+  ): Promise<RemoteIssue> {
+    const current = await getIssue(idOrKey);
+    const patch: Record<string, unknown> = {};
+    if (input.title) patch.title = input.title;
+    if (input.description) patch.description = input.description;
+    if (Object.keys(patch).length > 0) {
+      const updated = await linearGraphql<{
+        issueUpdate: { success: boolean; issue: LinearIssueNode };
+      }>(
+        config,
+        `mutation ($id: String!, $input: IssueUpdateInput!) {
+          issueUpdate(id: $id, input: $input) {
+            success
+            issue { id identifier title url state { name type } }
+          }
+        }`,
+        { id: current.id, input: patch },
+      );
+      if (!updated.issueUpdate.success) {
+        throw new Error("Linear issueUpdate failed");
+      }
+    }
+    if (input.status) {
+      return transition(idOrKey, { status: input.status });
+    }
+    return getIssue(current.id);
   }
 
   return {
@@ -123,17 +214,11 @@ export function createLinearProvider(config: IssueProviderConfig): IssueProvider
       if (!data.issueCreate.success) {
         throw new Error("Linear issueCreate failed");
       }
-      const issue = data.issueCreate.issue;
-      return {
-        provider: "linear",
-        id: issue.id,
-        key: issue.identifier,
-        url: issue.url,
-        title: issue.title,
-        status: mapLinearState(issue.state),
-      };
+      return toRemote(data.issueCreate.issue);
     },
     getIssue,
     linkExisting: getIssue,
+    updateIssue,
+    transition,
   };
 }

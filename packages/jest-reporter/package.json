@@ -1,0 +1,46 @@
+{
+  "name": "@topology/jest",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "description": "Jest reporter that uploads Topology execution reports",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "!src/**/*.test.ts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jamil2018/topology.git",
+    "directory": "packages/jest-reporter"
+  },
+  "homepage": "https://github.com/jamil2018/topology/tree/main/packages/jest-reporter",
+  "bugs": {
+    "url": "https://github.com/jamil2018/topology/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run --config ../../vitest.packages.config.ts"
+  },
+  "dependencies": {
+    "@topology/domain": "0.1.0"
+  },
+  "peerDependencies": {
+    "jest": ">=29"
+  },
+  "peerDependenciesMeta": {
+    "jest": {
+      "optional": true
+    }
+  }
+}

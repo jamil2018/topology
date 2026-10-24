@@ -1,18 +1,39 @@
 {
   "name": "@topology/cli",
   "version": "0.1.0",
-  "private": true,
+  "license": "Apache-2.0",
+  "description": "CLI for Topology CI ingest, execution uploads, and quality queries",
   "type": "module",
   "bin": {
     "topology": "./bin/topology.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "examples",
+    "README.md",
+    "!src/**/*.test.ts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jamil2018/topology.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/jamil2018/topology/tree/main/packages/cli",
+  "bugs": {
+    "url": "https://github.com/jamil2018/topology/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "scripts": {
     "start": "tsx src/index.ts"
   },
   "dependencies": {
-    "@topology/domain": "0.1.0"
-  },
-  "devDependencies": {
+    "@topology/domain": "0.1.0",
     "tsx": "^4.23.13"
   }
 }

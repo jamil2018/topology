@@ -1,4 +1,22 @@
-export type IssueProviderId = "jira" | "linear" | "github" | "mock";
+export const persistedIssueProviders = [
+  "mock",
+  "jira",
+  "linear",
+  "github",
+  "gitlab",
+] as const;
+
+export type PersistedIssueProviderId =
+  (typeof persistedIssueProviders)[number];
+
+export const builtInIssueProviders = [
+  ...persistedIssueProviders,
+] as const;
+
+export type BuiltInIssueProviderId = (typeof builtInIssueProviders)[number];
+
+/** Built-ins plus custom IDs registered via `registerIssueProvider`. */
+export type IssueProviderId = BuiltInIssueProviderId | (string & {});
 
 export type RemoteIssueStatus = "open" | "in_progress" | "done" | "unknown";
 
@@ -10,8 +28,18 @@ export type CreateIssueInput = {
   projectKey?: string;
   /** Linear team id */
   teamId?: string;
-  /** GitHub `owner/repo` */
+  /** GitHub `owner/repo` or GitLab `group/project` */
   repo?: string;
+};
+
+export type UpdateIssueInput = {
+  title?: string;
+  description?: string;
+  status?: RemoteIssueStatus;
+};
+
+export type TransitionIssueInput = {
+  status: RemoteIssueStatus;
 };
 
 export type RemoteIssue = {
@@ -39,6 +67,26 @@ export interface IssueProvider {
   createIssue(input: CreateIssueInput): Promise<RemoteIssue>;
   getIssue(idOrKey: string): Promise<RemoteIssue>;
   linkExisting(idOrKey: string): Promise<RemoteIssue>;
+  updateIssue(idOrKey: string, input: UpdateIssueInput): Promise<RemoteIssue>;
+  transition(
+    idOrKey: string,
+    input: TransitionIssueInput,
+  ): Promise<RemoteIssue>;
+}
+
+export function isPersistedIssueProvider(
+  id: string,
+): id is PersistedIssueProviderId {
+  return (persistedIssueProviders as readonly string[]).includes(id);
+}
+
+export function assertPersistedIssueProvider(
+  id: string,
+): PersistedIssueProviderId {
+  if (isPersistedIssueProvider(id)) return id;
+  throw new Error(
+    `Issue provider "${id}" cannot be stored on linked issues. Custom providers need a hub schema value.`,
+  );
 }
 
 export function buildFailureIssueBody(ctx: {

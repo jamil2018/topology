@@ -24,7 +24,10 @@
       "@topology/domain/*": ["./packages/domain/src/*"],
       "@topology/issue-providers": ["./packages/issue-providers/src/index.ts"],
       "@topology/mcp": ["./packages/mcp/src/index.ts"],
-      "@topology/plugin-sdk": ["./packages/plugin-sdk/src/index.ts"]
+      "@topology/plugin-sdk": ["./packages/plugin-sdk/src/index.ts"],
+      "@topology/playwright": ["./packages/playwright-reporter/src/index.ts"],
+      "@topology/jest": ["./packages/jest-reporter/src/index.ts"],
+      "@topology/cypress": ["./packages/cypress-reporter/src/index.ts"]
     }
   },
   "include": [
