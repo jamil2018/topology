@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 export const RUN_CASE_ROW_HEIGHT = 56;
 
@@ -11,31 +11,30 @@ export function useVirtualWindow({
   rowHeight?: number;
   overscan?: number;
 }) {
-  const parentRef = useRef<HTMLDivElement>(null);
+  const [parent, setParent] = useState<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(0);
 
   useEffect(() => {
-    const el = parentRef.current;
-    if (!el) return;
+    if (!parent) return;
 
-    const updateHeight = () => setHeight(el.clientHeight);
+    const updateHeight = () => setHeight(parent.clientHeight);
     updateHeight();
 
-    const onScroll = () => setScrollTop(el.scrollTop);
-    el.addEventListener("scroll", onScroll, { passive: true });
+    const onScroll = () => setScrollTop(parent.scrollTop);
+    parent.addEventListener("scroll", onScroll, { passive: true });
 
     const observer =
       typeof ResizeObserver === "undefined"
         ? null
         : new ResizeObserver(updateHeight);
-    observer?.observe(el);
+    observer?.observe(parent);
 
     return () => {
-      el.removeEventListener("scroll", onScroll);
+      parent.removeEventListener("scroll", onScroll);
       observer?.disconnect();
     };
-  }, []);
+  }, [parent]);
 
   const viewport =
     height > 0 ? height : Math.min(Math.max(count, 1), 16) * rowHeight;
@@ -44,7 +43,8 @@ export function useVirtualWindow({
   const end = Math.min(count, start + visible);
 
   return {
-    parentRef,
+    setParent,
+    parent,
     start,
     end,
     rowHeight,
