@@ -37,6 +37,15 @@ describe("StatusChip hydration", () => {
     expect(serverHtml).toContain("Passed");
   });
 
+  it("formats stored enums and uses semantic tone tokens", () => {
+    const html = renderToString(
+      <StatusChip tone="success">in_progress</StatusChip>,
+    );
+    expect(html).toContain("In progress");
+    expect(html).toContain("--topo-success");
+    expect(html).not.toContain("bg-emerald");
+  });
+
   it("does not start a spin when reduced motion is preferred", () => {
     reduceMotion.mockReturnValue(true);
     const { container } = render(<StatusChip>Running</StatusChip>);

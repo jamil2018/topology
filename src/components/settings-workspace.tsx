@@ -10,11 +10,16 @@ import { CiSetupPanel } from "./ci-setup-panel";
 import { RepositoriesPanel } from "./repositories-panel";
 import { WebhooksPanel } from "./webhooks-panel";
 import { useTheme, type ThemePreference } from "./theme-provider";
+import { useQualityGraph } from "./quality-graph-provider";
 import { StatusChip } from "./status-chip";
 import { WorkspaceMembersPanel } from "./workspace-members-panel";
 import { CustomRolesPanel } from "./custom-roles-panel";
 import { ProjectsPanel } from "./projects-panel";
 import { AiSettingsPanel } from "./ai-settings-panel";
+import { ApiTokensPanel } from "./api-tokens-panel";
+import { AuditLogPanel } from "./audit-log-panel";
+import { CustomFieldsPanel } from "./custom-fields-panel";
+import { SharedStepsPanel } from "./shared-steps-panel";
 import {
   SETTINGS_NAV,
   isLegacySettingsSection,
@@ -44,6 +49,10 @@ export function SettingsWorkspace({
   const page: SettingsPageId = resolved.page;
 
   const { preference, setPreference } = useTheme();
+  const {
+    enabled: qualityGraphEnabled,
+    setEnabled: setQualityGraphEnabled,
+  } = useQualityGraph();
   const [profile, setProfile] = useState<ProfileState | null>(null);
   const [name, setName] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -261,15 +270,15 @@ export function SettingsWorkspace({
                   ) : null}
                 </div>
 
-                {profile?.hasPassword ? (
+                {profile == null ? null : profile.hasPassword ? (
                   <div className="space-y-3 border-t border-[color:var(--topo-line)] pt-4">
                     <div>
                       <h3 className="text-sm font-semibold text-[color:var(--topo-ink)]">
                         Change password
                       </h3>
                       <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
-                        Credential accounts only. Demo login still works after a
-                        change if you update the password you use.
+                        Credential accounts only. New passwords must be at least
+                        12 characters.
                       </p>
                     </div>
                     <label className="block space-y-1 text-sm">
@@ -341,11 +350,8 @@ export function SettingsWorkspace({
                     Preferences
                   </h2>
                   <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
-                    Theme syncs with the sidebar toggle. Logged-in preference is
-                    stored server-side;{" "}
-                    <code className="font-mono">localStorage</code> key{" "}
-                    <code className="font-mono">topology-theme</code> remains the
-                    fast client fallback (and for signed-out views).
+                    Theme follows the sidebar toggle. Your signed-in choice is
+                    saved to this account and applies on every device.
                   </p>
                 </div>
 
@@ -378,14 +384,55 @@ export function SettingsWorkspace({
                     {prefsMsg}
                   </p>
                 ) : null}
+
+                <div className="border-t border-[color:var(--topo-line)] pt-4">
+                  <h3 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+                    Quality graph
+                  </h3>
+                  <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
+                    Show intents, journeys, requirements, risks, components,
+                    impact, and proposals in the sidebar for everyone in this
+                    workspace. Test cases, plans, and test runs stay in the main
+                    nav either way.
+                  </p>
+                  <button
+                    type="button"
+                    aria-pressed={qualityGraphEnabled}
+                    onClick={() => {
+                      setQualityGraphEnabled(!qualityGraphEnabled);
+                      setPrefsMsg(
+                        qualityGraphEnabled
+                          ? "Quality graph hidden from the sidebar"
+                          : "Quality graph shown in the sidebar",
+                      );
+                    }}
+                    className={`mt-3 rounded-md px-3 py-1.5 text-xs font-medium ${
+                      qualityGraphEnabled
+                        ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                        : "border border-[color:var(--topo-line)] text-[color:var(--topo-muted)]"
+                    }`}
+                  >
+                    {qualityGraphEnabled
+                      ? "Quality graph on"
+                      : "Quality graph off"}
+                  </button>
+                </div>
               </section>
             </>
           ) : null}
 
           {page === "projects" ? (
-            <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-              <ProjectsPanel />
-            </section>
+            <>
+              <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <ProjectsPanel />
+              </section>
+              <section className="scroll-mt-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <CustomFieldsPanel />
+              </section>
+              <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <SharedStepsPanel />
+              </section>
+            </>
           ) : null}
 
           {page === "access" ? (
@@ -475,6 +522,23 @@ export function SettingsWorkspace({
                 className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
               >
                 <WebhooksPanel />
+              </section>
+            </>
+          ) : null}
+
+          {page === "security" ? (
+            <>
+              <section
+                id="tokens"
+                className="scroll-mt-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
+              >
+                <ApiTokensPanel />
+              </section>
+              <section
+                id="audit"
+                className="scroll-mt-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
+              >
+                <AuditLogPanel />
               </section>
             </>
           ) : null}

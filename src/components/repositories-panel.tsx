@@ -9,6 +9,7 @@ type RepositoryRow = {
   remoteUrl: string;
   provider: "github" | "gitlab" | "other";
   defaultBranch: string;
+  hasWebhookSecret?: boolean;
 };
 
 type PathRuleRow = {
@@ -27,6 +28,7 @@ export function RepositoriesPanel() {
     "github",
   );
   const [defaultBranch, setDefaultBranch] = useState("main");
+  const [webhookSecret, setWebhookSecret] = useState("");
   const [rulePattern, setRulePattern] = useState("");
   const [ruleComponentKey, setRuleComponentKey] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -62,17 +64,19 @@ export function RepositoriesPanel() {
     const res = await fetch("/api/repositories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        remoteUrl: remoteUrl.trim(),
-        provider,
-        defaultBranch: defaultBranch.trim() || "main",
-      }),
+        body: JSON.stringify({
+          remoteUrl: remoteUrl.trim(),
+          provider,
+          defaultBranch: defaultBranch.trim() || "main",
+          webhookSecret: webhookSecret.trim() || undefined,
+        }),
     });
     if (!res.ok) {
       setError("Could not add repository");
       return;
     }
     setRemoteUrl("");
+    setWebhookSecret("");
     setMsg("Repository connected");
     startTransition(() => {
       void load();
@@ -135,7 +139,10 @@ export function RepositoriesPanel() {
           Append{" "}
           <code className="font-mono">?workspaceId=&lt;project-uuid&gt;</code> or
           send header{" "}
-          <code className="font-mono">x-topology-project-id</code>. Optional{" "}
+          <code className="font-mono">x-topology-project-id</code>. A webhook
+          secret is required (per-repository below, or{" "}
+          <code className="font-mono">TOPOLOGY_GITHUB_WEBHOOK_SECRET</code>).
+          Optional{" "}
           <code className="font-mono">x-topology-changed-files</code> on PR
           events (JSON array or comma-separated paths).
         </p>
@@ -158,6 +165,37 @@ export function RepositoriesPanel() {
               <span className="text-xs text-[color:var(--topo-muted)]">
                 default {r.defaultBranch}
               </span>
+              {r.hasWebhookSecret ? (
+                <StatusChip>webhook secret</StatusChip>
+              ) : (
+                <button
+                  type="button"
+                  className="text-[11px] text-[color:var(--topo-muted)] underline-offset-2 hover:underline"
+                  onClick={() => {
+                    const secret = window.prompt(
+                      "GitHub webhook secret for this repository",
+                    );
+                    if (!secret?.trim()) return;
+                    void fetch("/api/repositories", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        id: r.id,
+                        webhookSecret: secret.trim(),
+                      }),
+                    }).then((res) => {
+                      if (!res.ok) {
+                        setError("Could not save webhook secret");
+                        return;
+                      }
+                      setMsg("Webhook secret saved");
+                      void load();
+                    });
+                  }}
+                >
+                  Set webhook secret
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -185,6 +223,17 @@ export function RepositoriesPanel() {
           <Input
             value={defaultBranch}
             onChange={(e) => setDefaultBranch(e.target.value)}
+          />
+        </label>
+        <label className="space-y-1 sm:col-span-2">
+          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+            Webhook secret (optional)
+          </span>
+          <Input
+            type="password"
+            placeholder="Per-repository HMAC secret"
+            value={webhookSecret}
+            onChange={(e) => setWebhookSecret(e.target.value)}
           />
         </label>
       </div>

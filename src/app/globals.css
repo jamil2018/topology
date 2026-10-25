@@ -16,6 +16,18 @@
   --topo-accent: #0d9488;
   --topo-accent-soft: #ccfbf1;
   --topo-signal: #ea580c;
+  --topo-success: #047857;
+  --topo-success-fg: #ffffff;
+  --topo-success-border: #065f46;
+  --topo-warning: #d97706;
+  --topo-warning-fg: #451a03;
+  --topo-warning-border: #b45309;
+  --topo-danger: #b91c1c;
+  --topo-danger-fg: #ffffff;
+  --topo-danger-border: #991b1b;
+  --topo-info: #0369a1;
+  --topo-info-fg: #ffffff;
+  --topo-info-border: #075985;
   --background: var(--topo-paper);
   --foreground: var(--topo-ink);
 
@@ -63,6 +75,18 @@
   --topo-accent: #2dd4bf;
   --topo-accent-soft: rgba(45, 212, 191, 0.12);
   --topo-signal: #fb923c;
+  --topo-success: #34d399;
+  --topo-success-fg: #022c22;
+  --topo-success-border: #059669;
+  --topo-warning: #fbbf24;
+  --topo-warning-fg: #422006;
+  --topo-warning-border: #d97706;
+  --topo-danger: #f87171;
+  --topo-danger-fg: #450a0a;
+  --topo-danger-border: #dc2626;
+  --topo-info: #38bdf8;
+  --topo-info-fg: #082f49;
+  --topo-info-border: #0284c7;
   --background: var(--topo-paper);
   --foreground: var(--topo-ink);
 

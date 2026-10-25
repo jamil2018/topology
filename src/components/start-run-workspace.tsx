@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { Selection } from "@heroui/react";
 import { Button, Input, Label, TextArea, TextField } from "@heroui/react";
 import { CaretLeftIcon } from "@phosphor-icons/react";
 import { PageHeader } from "./page-header";
+import { GuidedFirstRun } from "./guided-first-run";
 import { RunCasePickerTable } from "./run-case-picker-table";
 import { StatusChip } from "./status-chip";
 import {
@@ -27,6 +28,7 @@ export function StartRunWorkspace({
   folders: Folder[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -38,9 +40,14 @@ export function StartRunWorkspace({
   const [folderId, setFolderId] = useState<string>("all");
   const [tag, setTag] = useState<string>("all");
   const [sort, setSort] = useState<CasePickerSort>("updated");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    () => new Set(defaultReadySelection(cases)),
-  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
+    const fromQuery = (searchParams.get("cases") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => cases.some((row) => row.id === id));
+    if (fromQuery.length > 0) return new Set(fromQuery);
+    return new Set(defaultReadySelection(cases));
+  });
 
   const tags = useMemo(() => collectCaseTags(cases), [cases]);
   const visible = useMemo(
@@ -143,6 +150,13 @@ export function StartRunWorkspace({
         <span aria-hidden>/</span>
         <span className="text-[color:var(--topo-ink)]">Start a run</span>
       </nav>
+
+      {cases.length === 0 ? (
+        <GuidedFirstRun
+          title="Create a case first"
+          description="A run needs at least one case. Author a case, then come back here to execute it."
+        />
+      ) : null}
 
       <div className="space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3">
         <p className="text-xs text-[color:var(--topo-muted)]">

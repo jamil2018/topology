@@ -25,6 +25,18 @@ type FlakeHint = {
   hint: string;
 };
 
+const STALE_CI_MS = 2 * 60 * 60 * 1000;
+
+export function isStaleAutomationRun(
+  run: Pick<RunRow, "status" | "updatedAt">,
+  now = Date.now(),
+): boolean {
+  if (run.status !== "in_progress") return false;
+  const updated = new Date(run.updatedAt).getTime();
+  if (!Number.isFinite(updated)) return false;
+  return now - updated >= STALE_CI_MS;
+}
+
 type ReliabilityHint = {
   overallPassRate: number | null;
   sampleCount: number;
@@ -72,7 +84,7 @@ export function AutomationWorkspace({
         <p className="font-medium text-[color:var(--topo-ink)]">CLI quick path</p>
         <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[color:var(--topo-ink)]">
 {`export TOPOLOGY_URL=http://127.0.0.1:4317
-export TOPOLOGY_API_TOKEN=topo_demo_token_local_dev_only
+export TOPOLOGY_API_TOKEN=<token from Settings → Security>
 npx topology runs create --name "CI build" --source github --shards 2
 npx topology runs submit-thread --run-id <id> --shard 1 --file report.xml
 npx topology runs complete --run-id <id>`}
@@ -165,9 +177,19 @@ npx topology runs complete --run-id <id>`}
                     <StatusChip tone="neutral" mono>
                       shards {run.shardsReceived}/{run.shardTotal}
                     </StatusChip>
-                    <StatusChip tone={statusToneForRun(run.status)} mono>
-                      {run.status.replace("_", " ")}
-                    </StatusChip>
+                    {isStaleAutomationRun(run) ? (
+                      <StatusChip
+                        tone="warning"
+                        mono
+                        title="No shard activity for 2+ hours"
+                      >
+                        Stale
+                      </StatusChip>
+                    ) : (
+                      <StatusChip tone={statusToneForRun(run.status)} mono>
+                        {run.status.replace("_", " ")}
+                      </StatusChip>
+                    )}
                   </div>
                 </Link>
               </motion.li>

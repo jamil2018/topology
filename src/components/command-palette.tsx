@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import {
   BugIcon,
+  ChartBarIcon,
   ChartLineIcon,
   CirclesFourIcon,
   FlagIcon,
@@ -15,8 +16,22 @@ import {
   PlusIcon,
   PlayCircleIcon,
   PlugsIcon,
+  SparkleIcon,
+  TargetIcon,
+  UserIcon,
   type Icon,
 } from "@phosphor-icons/react";
+import { visiblePalettePages } from "@/lib/nav-diet";
+import { formatStatusLabel } from "@/lib/format-labels";
+import {
+  dispatchShortcut,
+  isRunExecutorPath,
+} from "@/lib/shortcuts";
+import {
+  CASE_PRIORITIES,
+  CASE_STATUSES,
+} from "./cases-model";
+import { useQualityGraph } from "./quality-graph-provider";
 
 type SearchHit = {
   cases: Array<{ id: string; key: string; title: string }>;
@@ -33,33 +48,65 @@ type CommandItem = {
   run: () => void;
 };
 
-const PAGES: Array<{
-  href: string;
-  label: string;
-  hint: string;
-  Icon: CommandItem["Icon"];
-}> = [
-  { href: "/", label: "Hub", hint: "Pulse", Icon: CirclesFourIcon },
-  { href: "/intents", label: "Intents", hint: "Behavior", Icon: ListChecksIcon },
-  { href: "/cases", label: "Test Cases", hint: "Suites", Icon: ListChecksIcon },
-  { href: "/requirements", label: "Requirements", hint: "Graph", Icon: FolderIcon },
-  { href: "/journeys", label: "Journeys", hint: "Paths", Icon: FolderIcon },
-  { href: "/releases", label: "Releases", hint: "Control", Icon: FlagIcon },
-  { href: "/proposals", label: "Proposals", hint: "Review", Icon: ListChecksIcon },
-  { href: "/runs", label: "Test Runs", hint: "Manual", Icon: PlayCircleIcon },
-  { href: "/reports", label: "Reports", hint: "Charts", Icon: ChartLineIcon },
-  { href: "/triage", label: "Triage", hint: "Failures", Icon: BugIcon },
-  { href: "/settings", label: "Settings", hint: "Account", Icon: GearIcon },
-  { href: "/connect", label: "Connect", hint: "Agent", Icon: PlugsIcon },
-  {
-    href: "/automation",
-    label: "Automation",
-    hint: "CI",
-    Icon: PlayCircleIcon,
-  },
-];
+const PAGE_ICONS: Record<string, CommandItem["Icon"]> = {
+  "/": CirclesFourIcon,
+  "/cases": ListChecksIcon,
+  "/plans": FlagIcon,
+  "/runs": PlayCircleIcon,
+  "/automation": ChartLineIcon,
+  "/triage": BugIcon,
+  "/reports": ChartLineIcon,
+  "/settings": GearIcon,
+  "/intents": TargetIcon,
+  "/impact": ChartBarIcon,
+  "/milestones": FlagIcon,
+  "/releases": FlagIcon,
+  "/journeys": FolderIcon,
+  "/requirements": FolderIcon,
+  "/risks": BugIcon,
+  "/components": CirclesFourIcon,
+  "/proposals": SparkleIcon,
+  "/connect": PlugsIcon,
+};
 
 export const TOPOLOGY_OPEN_PALETTE = "topology:open-palette";
+export const TOPOLOGY_PALETTE_FOCUS = "topology:palette-focus";
+export const TOPOLOGY_CASE_COMMAND = "topology:case-command";
+
+export type PaletteEntityFocus =
+  | {
+      kind: "case";
+      id: string;
+      key: string;
+      title: string;
+      status: string;
+      priority: string;
+      selectedIds: string[];
+    }
+  | { kind: "none" };
+
+export type CaseCommandDetail =
+  | { type: "status"; id: string; value: string }
+  | { type: "priority"; id: string; value: string };
+
+let paletteFocus: PaletteEntityFocus = { kind: "none" };
+
+export function publishPaletteFocus(next: PaletteEntityFocus) {
+  paletteFocus = next;
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(TOPOLOGY_PALETTE_FOCUS));
+}
+
+export function getPaletteFocus(): PaletteEntityFocus {
+  return paletteFocus;
+}
+
+export function dispatchCaseCommand(detail: CaseCommandDetail) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<CaseCommandDetail>(TOPOLOGY_CASE_COMMAND, { detail }),
+  );
+}
 
 export function openCommandPalette() {
   window.dispatchEvent(new Event(TOPOLOGY_OPEN_PALETTE));
@@ -67,6 +114,9 @@ export function openCommandPalette() {
 
 export function CommandPalette() {
   const router = useRouter();
+  const pathname = usePathname() ?? "/";
+  const { enabled: qualityGraphEnabled } = useQualityGraph();
+  const [focus, setFocus] = useState<PaletteEntityFocus>(paletteFocus);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -102,11 +152,16 @@ export function CommandPalette() {
     function onOpenEvent() {
       setOpen(true);
     }
+    function onFocusChange() {
+      setFocus(paletteFocus);
+    }
     window.addEventListener("keydown", onKey);
     window.addEventListener(TOPOLOGY_OPEN_PALETTE, onOpenEvent);
+    window.addEventListener(TOPOLOGY_PALETTE_FOCUS, onFocusChange);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener(TOPOLOGY_OPEN_PALETTE, onOpenEvent);
+      window.removeEventListener(TOPOLOGY_PALETTE_FOCUS, onFocusChange);
     };
   }, [close, open]);
 
@@ -151,6 +206,82 @@ export function CommandPalette() {
       ? hits
       : { cases: [] as SearchHit["cases"], runs: [] as SearchHit["runs"], folders: [] as SearchHit["folders"] };
 
+    const contextual: CommandItem[] = [];
+    if (focus.kind === "case") {
+      const caseId = focus.id;
+      const caseKey = focus.key;
+      for (const status of CASE_STATUSES) {
+        contextual.push({
+          id: `ctx-status-${status}`,
+          label: `Set ${caseKey} status to ${formatStatusLabel(status)}`,
+          hint: "Status",
+          group: "Focused",
+          Icon: ListChecksIcon,
+          run: () => {
+            dispatchCaseCommand({ type: "status", id: caseId, value: status });
+            close();
+          },
+        });
+      }
+      for (const priority of CASE_PRIORITIES) {
+        contextual.push({
+          id: `ctx-priority-${priority}`,
+          label: `Set ${caseKey} priority to ${priority}`,
+          hint: "Priority",
+          group: "Focused",
+          Icon: FlagIcon,
+          run: () => {
+            dispatchCaseCommand({
+              type: "priority",
+              id: caseId,
+              value: priority,
+            });
+            close();
+          },
+        });
+      }
+      const runIds =
+        focus.selectedIds.length > 0 ? focus.selectedIds : [focus.id];
+      const runLabel =
+        focus.selectedIds.length > 1
+          ? `Start run from ${focus.selectedIds.length} selected`
+          : `Start run with ${caseKey}`;
+      contextual.push({
+        id: "ctx-start-run",
+        label: runLabel,
+        hint: "Selection",
+        group: "Focused",
+        Icon: PlayCircleIcon,
+        run: () => {
+          router.push(`/runs/new?cases=${runIds.join(",")}`);
+          close();
+        },
+      });
+    }
+    if (isRunExecutorPath(pathname)) {
+      contextual.push({
+        id: "ctx-assign",
+        label: "Assign focused result",
+        hint: "A",
+        group: "Focused",
+        Icon: UserIcon,
+        run: () => {
+          dispatchShortcut("assign");
+          close();
+        },
+      });
+    }
+
+    for (const action of contextual) {
+      if (
+        !q ||
+        action.label.toLowerCase().includes(q) ||
+        (action.hint ?? "").toLowerCase().includes(q)
+      ) {
+        list.push(action);
+      }
+    }
+
     const actions: CommandItem[] = [
       {
         id: "action-new-case",
@@ -175,6 +306,17 @@ export function CommandPalette() {
         },
       },
       {
+        id: "action-import-cases",
+        label: "Import cases",
+        hint: "TestRail / Qase / Zephyr / Xray",
+        group: "Actions",
+        Icon: ListChecksIcon,
+        run: () => {
+          router.push("/cases/import");
+          close();
+        },
+      },
+      {
         id: "action-file-issue",
         label: "File issue",
         hint: "Triage",
@@ -182,6 +324,17 @@ export function CommandPalette() {
         Icon: BugIcon,
         run: () => {
           router.push("/triage");
+          close();
+        },
+      },
+      {
+        id: "action-connect-ci",
+        label: "Import CI",
+        hint: "JUnit / reporters",
+        group: "Actions",
+        Icon: ChartLineIcon,
+        run: () => {
+          router.push("/settings?section=integrations#ci");
           close();
         },
       },
@@ -197,7 +350,13 @@ export function CommandPalette() {
       }
     }
 
-    for (const page of PAGES) {
+    const pages = visiblePalettePages(qualityGraphEnabled).map((page) => ({
+      ...page,
+      hint: page.hint ?? "",
+      Icon: PAGE_ICONS[page.href] ?? ListChecksIcon,
+    }));
+
+    for (const page of pages) {
       if (
         !q ||
         page.label.toLowerCase().includes(q) ||
@@ -234,7 +393,7 @@ export function CommandPalette() {
       list.push({
         id: `run-${r.id}`,
         label: r.name,
-        hint: r.status,
+        hint: formatStatusLabel(r.status),
         group: "Jump",
         Icon: PlayCircleIcon,
         run: () => {
@@ -258,7 +417,7 @@ export function CommandPalette() {
     }
 
     return list;
-  }, [close, hits, query, router, trimmedQuery]);
+  }, [close, focus, hits, pathname, qualityGraphEnabled, query, router, trimmedQuery]);
 
   const safeActive =
     items.length === 0 ? 0 : Math.min(active, items.length - 1);
@@ -321,7 +480,14 @@ export function CommandPalette() {
                 esc
               </kbd>
             </div>
-            <ul className="max-h-[min(22rem,50vh)] overflow-y-auto py-1.5" role="listbox">
+            <ul
+              className="max-h-[min(22rem,50vh)] overflow-y-auto py-1.5"
+              role="listbox"
+              aria-label="Commands"
+              aria-activedescendant={
+                items[safeActive] ? `cmd-${items[safeActive].id}` : undefined
+              }
+            >
               {items.length === 0 ? (
                 <li className="px-3 py-8 text-center text-sm text-[color:var(--topo-muted)]">
                   No matching commands
@@ -341,6 +507,7 @@ export function CommandPalette() {
                       ) : null}
                       <button
                         type="button"
+                        id={`cmd-${item.id}`}
                         role="option"
                         aria-selected={selected}
                         className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${

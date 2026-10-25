@@ -64,14 +64,14 @@ const queue = buildTriageQueue([
 }));
 
 describe("TriageWorkspace signature clusters", () => {
-  it("shows N → title groups and expands to member failures", async () => {
+  it("shows N failures · excerpt groups and expands to member failures", async () => {
     const user = userEvent.setup();
     render(<TriageWorkspace initialQueue={queue} flakeHints={[]} />);
 
     expect(screen.getByText(/2 signatures/i)).toBeInTheDocument();
     expect(
       screen.getByRole("heading", {
-        name: /2\s*→\s*payment iframe timeout after 1000ms/i,
+        name: /2 failures · payment iframe timeout after 1000ms/i,
       }),
     ).toBeInTheDocument();
 
@@ -80,7 +80,7 @@ describe("TriageWorkspace signature clusters", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: /2\s*→\s*payment iframe timeout after 1000ms/i,
+        name: /2 failures · payment iframe timeout after 1000ms/i,
       }),
     );
 
@@ -88,5 +88,55 @@ describe("TriageWorkspace signature clusters", () => {
     expect(screen.getByText("TOP-2")).toBeInTheDocument();
     // Singleton remains visible without a cluster chrome row
     expect(screen.getByText("TOP-3")).toBeInTheDocument();
+  });
+
+  it("clamps long failure text until expanded", async () => {
+    const user = userEvent.setup();
+    const longNotes = `${"timeout after iframe ".repeat(12)}end`;
+    render(
+      <TriageWorkspace
+        initialQueue={[
+          {
+            ...queue[2],
+            notes: longNotes,
+          },
+        ]}
+        flakeHints={[]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Show more" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+    expect(screen.getByRole("button", { name: "Show less" })).toBeInTheDocument();
+  });
+
+  it("hides the mock issue placeholder outside demo mode", () => {
+    render(
+      <TriageWorkspace
+        initialQueue={[{ ...queue[2], resultId: "result-1" }]}
+        flakeHints={[]}
+        issueProvider="mock"
+        demoMode={false}
+      />,
+    );
+
+    expect(screen.queryByPlaceholderText(/MOCK-1/i)).toBeNull();
+    expect(screen.queryByPlaceholderText(/issue key/i)).toBeNull();
+    expect(screen.queryByText("Demo issue")).toBeNull();
+  });
+
+  it("labels the mock provider as a demo issue in demo mode", () => {
+    render(
+      <TriageWorkspace
+        initialQueue={[{ ...queue[2], resultId: "result-1" }]}
+        flakeHints={[]}
+        issueProvider="mock"
+        demoMode
+      />,
+    );
+
+    expect(screen.getByText("Demo issue")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Demo issue key")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/MOCK-1/i)).toBeNull();
   });
 });

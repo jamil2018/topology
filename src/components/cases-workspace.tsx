@@ -1,22 +1,27 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   Button,
-  Input,
-  TextArea,
-  Chip,
-  Label,
-  TextField,
-  ListBox,
-  Select,
-  Modal,
   Dropdown,
+  Input,
+  Label,
+  ListBox,
+  Modal,
+  Select,
+  TextField,
   useOverlayState,
 } from "@heroui/react";
-import { motion, AnimatePresence } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import {
   CaretDownIcon,
   FileArrowDownIcon,
@@ -24,10 +29,8 @@ import {
   FileCsvIcon,
   FolderPlusIcon,
   PlusIcon,
-  TrashIcon,
 } from "@phosphor-icons/react";
 import {
-  CASE_LIST_PAGE_SIZE,
   filterAndSortCases,
   paginateCases,
   type CaseListSort,
@@ -36,50 +39,53 @@ import {
 import {
   buildFolderTree,
   flattenFolderTree,
-  folderPathLabel,
 } from "@/lib/folder-tree";
 import { parseCaseViewConfig } from "@/lib/saved-views";
+import { CaseCreateDialog } from "./case-create-dialog";
 import { CaseEditPanel } from "./case-edit-panel";
+import { CasesBulkBar } from "./cases-bulk-bar";
+import {
+  applyBulkPatch,
+  CASE_PRIORITIES,
+  CASE_STATUSES,
+  CASE_WORKSPACE_PAGE_SIZE,
+  caseFieldShortcutSelector,
+  caseHref,
+  formatStatusLabel,
+  nextCaseKey,
+  selectionRangeIds,
+  type BulkPatch,
+  type CaseInlinePatch,
+  type CaseRow,
+  type Folder,
+} from "./cases-model";
+import { CasesTable } from "./cases-table";
 import {
   FolderTreePane,
   type FolderTreeSelection,
 } from "./folder-tree-pane";
 import { PageHeader } from "./page-header";
 import { SavedViewsBar, type SavedViewRow } from "./saved-views-bar";
-import { StatusChip, statusToneForRun } from "./status-chip";
-
-type Folder = { id: string; name: string; parentId: string | null };
-type CaseRow = {
-  id: string;
-  key: string;
-  title: string;
-  priority: string;
-  status: string;
-  tags: string[];
-  folder: { id: string; name: string } | null;
-  intentId?: string | null;
-  intent?: { id: string; key: string; title: string } | null;
-};
-
-const priorities = ["P0", "P1", "P2", "P3"] as const;
-const statuses = ["draft", "ready", "blocked", "deprecated"] as const;
-
-const sortColumns: { id: CaseListSort; label: string }[] = [
-  { id: "key", label: "Key" },
-  { id: "title", label: "Title" },
-  { id: "folder", label: "Folder" },
-  { id: "priority", label: "Priority" },
-  { id: "status", label: "Status" },
-];
+import { StatusChip } from "./status-chip";
+import { useShortcut } from "./shortcut-layer";
+import {
+  publishPaletteFocus,
+  TOPOLOGY_CASE_COMMAND,
+  type CaseCommandDetail,
+} from "./command-palette";
 
 export function CasesWorkspace({
   initialCases,
   folders,
   initialViews = [],
+  projectPrefix = "CASE",
+  selectedCaseKey = null,
 }: {
   initialCases: CaseRow[];
   folders: Folder[];
   initialViews?: SavedViewRow[];
+  projectPrefix?: string;
+  selectedCaseKey?: string | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -101,16 +107,24 @@ export function CasesWorkspace({
   const [showCreate, setShowCreate] = useState(
     () => searchParams.get("new") === "1",
   );
+  const [createKey, setCreateKey] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPending, setBulkPending] = useState(false);
   const [bulkTags, setBulkTags] = useState("");
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [historyCase, setHistoryCase] = useState<CaseRow | null>(() => {
+    if (selectedCaseKey) {
+      return initialCases.find((row) => row.key === selectedCaseKey) ?? null;
+    }
     const caseParam = searchParams.get("case");
     if (!caseParam) return null;
-    return initialCases.find((c) => c.id === caseParam) ?? null;
+    return (
+      initialCases.find((row) => row.id === caseParam || row.key === caseParam) ??
+      null
+    );
   });
-  /** Local overlays for list rows updated via create/edit before refresh. */
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [pendingCase, setPendingCase] = useState<CaseRow | null>(null);
   const [caseOverrides, setCaseOverrides] = useState<Record<string, CaseRow>>(
     {},
   );
@@ -118,15 +132,20 @@ export function CasesWorkspace({
     () => new Set(),
   );
   const displayCases = useMemo(() => {
-    const known = new Set(initialCases.map((c) => c.id));
-    const merged = initialCases.map((c) => {
-      const over = caseOverrides[c.id];
-      return over ? { ...c, ...over } : c;
+    const known = new Set(initialCases.map((row) => row.id));
+    const merged = initialCases.map((row) => {
+      const over = caseOverrides[row.id];
+      return over ? { ...row, ...over } : row;
     });
-    const extras = Object.values(caseOverrides).filter((c) => !known.has(c.id));
+    const extras = Object.values(caseOverrides).filter((row) => !known.has(row.id));
     const combined = extras.length > 0 ? [...extras, ...merged] : merged;
-    return combined.filter((c) => !removedCaseIds.has(c.id));
+    return combined.filter((row) => !removedCaseIds.has(row.id));
   }, [initialCases, caseOverrides, removedCaseIds]);
+  const [optimisticCases, addOptimisticCases] = useOptimistic(
+    displayCases,
+    (current, patch: BulkPatch & { ids: string[] }) =>
+      applyBulkPatch(current, patch.ids, patch, folders),
+  );
   const [appliedParams, setAppliedParams] = useState(paramsKey);
   if (appliedParams !== paramsKey) {
     setAppliedParams(paramsKey);
@@ -135,7 +154,9 @@ export function CasesWorkspace({
     if (folderParam) setFolderFilter(folderParam);
     const caseParam = searchParams.get("case");
     if (caseParam) {
-      const found = initialCases.find((c) => c.id === caseParam);
+      const found = initialCases.find(
+        (row) => row.id === caseParam || row.key === caseParam,
+      );
       if (found) setHistoryCase(found);
     }
   }
@@ -155,34 +176,26 @@ export function CasesWorkspace({
   });
   const deleteModal = useOverlayState();
   const caseDeleteModal = useOverlayState();
+  const unsavedModal = useOverlayState();
   const [caseToDelete, setCaseToDelete] = useState<CaseRow | null>(null);
   const [caseDeletePending, setCaseDeletePending] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
   const [folderPending, setFolderPending] = useState(false);
   const csvFileInputRef = useRef<HTMLInputElement>(null);
-  const [form, setForm] = useState({
-    key: "",
-    title: "",
-    description: "",
-    priority: "P2",
-    status: "draft",
-    folderId: "",
-    tags: "",
-  });
 
   const folderCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const c of displayCases) {
-      if (!c.folder?.id) continue;
-      counts.set(c.folder.id, (counts.get(c.folder.id) ?? 0) + 1);
+    for (const row of optimisticCases) {
+      if (!row.folder?.id) continue;
+      counts.set(row.folder.id, (counts.get(row.folder.id) ?? 0) + 1);
     }
     return counts;
-  }, [displayCases]);
+  }, [optimisticCases]);
 
   const unfiledCount = useMemo(
-    () => displayCases.filter((c) => !c.folder).length,
-    [displayCases],
+    () => optimisticCases.filter((row) => !row.folder).length,
+    [optimisticCases],
   );
 
   const flatFolders = useMemo(
@@ -193,11 +206,11 @@ export function CasesWorkspace({
   const selectedFolder =
     folderFilter === "all" || folderFilter === "unfiled"
       ? null
-      : (folders.find((f) => f.id === folderFilter) ?? null);
+      : (folders.find((folder) => folder.id === folderFilter) ?? null);
 
   const actionFolder =
     (folderActionId
-      ? folders.find((f) => f.id === folderActionId)
+      ? folders.find((folder) => folder.id === folderActionId)
       : null) ?? selectedFolder;
 
   const activeFolderFilter: FolderTreeSelection =
@@ -212,13 +225,13 @@ export function CasesWorkspace({
     : 0;
 
   const childFolderCount = actionFolder
-    ? folders.filter((f) => f.parentId === actionFolder.id).length
+    ? folders.filter((folder) => folder.parentId === actionFolder.id).length
     : 0;
 
   const filteredSorted = useMemo(
     () =>
       filterAndSortCases(
-        displayCases,
+        optimisticCases,
         activeFolderFilter,
         search,
         sort,
@@ -227,7 +240,7 @@ export function CasesWorkspace({
         priorityFilter,
       ),
     [
-      displayCases,
+      optimisticCases,
       activeFolderFilter,
       search,
       sort,
@@ -238,12 +251,128 @@ export function CasesWorkspace({
   );
 
   const pageData = useMemo(
-    () => paginateCases(filteredSorted, page, CASE_LIST_PAGE_SIZE),
+    () => paginateCases(filteredSorted, page, CASE_WORKSPACE_PAGE_SIZE),
     [filteredSorted, page],
   );
 
   const hasSearch = search.trim().length > 0;
-  const pageIds = pageData.items.map((c) => c.id);
+  const pageIds = pageData.items.map((row) => row.id);
+  const [cursor, setCursor] = useState(0);
+  const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
+  const cursorIndex =
+    pageData.items.length === 0
+      ? 0
+      : Math.min(cursor, pageData.items.length - 1);
+  const focusedRow = pageData.items[cursorIndex] ?? null;
+
+  const generatedKey = useMemo(
+    () => nextCaseKey(projectPrefix, displayCases.map((row) => row.key)),
+    [projectPrefix, displayCases],
+  );
+
+  const openCreate = useCallback(() => {
+    setCreateKey(generatedKey);
+    setShowCreate(true);
+    folderModal.close();
+  }, [folderModal, generatedKey]);
+
+  const openFocused = useCallback(() => {
+    if (focusedRow) requestOpen(focusedRow);
+  }, [editorDirty, focusedRow, historyCase]);
+
+  function openFocusedField(field: "status" | "priority") {
+    if (!focusedRow) return;
+    const node = document.querySelector<HTMLElement>(
+      caseFieldShortcutSelector(focusedRow.id, field),
+    );
+    node?.click();
+  }
+
+  function extendSelection(delta: number) {
+    const items = pageData.items;
+    if (items.length === 0) return;
+    const from = selectionAnchor ?? cursorIndex;
+    const next = Math.min(items.length - 1, Math.max(0, cursorIndex + delta));
+    if (selectionAnchor == null) setSelectionAnchor(cursorIndex);
+    const ids = selectionRangeIds(
+      items.map((row) => row.id),
+      from,
+      next,
+    );
+    setSelectedIds((prev) => {
+      const copy = new Set(prev);
+      for (const id of ids) copy.add(id);
+      return copy;
+    });
+    setCursor(next);
+  }
+
+  useShortcut("create", openCreate);
+  useShortcut(
+    "nav-next",
+    useCallback(() => {
+      setCursor((index) => Math.min(pageData.items.length - 1, index + 1));
+    }, [pageData.items.length]),
+  );
+  useShortcut(
+    "nav-prev",
+    useCallback(() => {
+      setCursor((index) => Math.max(0, index - 1));
+    }, []),
+  );
+  useShortcut("open", openFocused);
+  useShortcut("edit", openFocused);
+  useShortcut(
+    "select",
+    useCallback(() => {
+      if (!focusedRow) return;
+      setSelectionAnchor(cursorIndex);
+      toggleSelect(focusedRow.id);
+    }, [cursorIndex, focusedRow]),
+  );
+  useShortcut(
+    "nav-next-extend",
+    useCallback(() => extendSelection(1), [cursorIndex, pageData.items, selectionAnchor]),
+  );
+  useShortcut(
+    "nav-prev-extend",
+    useCallback(() => extendSelection(-1), [cursorIndex, pageData.items, selectionAnchor]),
+  );
+  useShortcut(
+    "status",
+    useCallback(() => openFocusedField("status"), [focusedRow]),
+  );
+  useShortcut(
+    "priority",
+    useCallback(() => openFocusedField("priority"), [focusedRow]),
+  );
+  useShortcut(
+    "escape",
+    useCallback(() => {
+      if (
+        folderModal.isOpen ||
+        deleteModal.isOpen ||
+        caseDeleteModal.isOpen ||
+        unsavedModal.isOpen
+      ) {
+        return;
+      }
+      if (document.querySelector('[aria-expanded="true"]')) return;
+      if (showCreate) {
+        setShowCreate(false);
+        return;
+      }
+      if (historyCase) requestClosePeek();
+    }, [
+      caseDeleteModal.isOpen,
+      deleteModal.isOpen,
+      editorDirty,
+      folderModal.isOpen,
+      historyCase,
+      showCreate,
+      unsavedModal.isOpen,
+    ]),
+  );
   const allPageSelected =
     pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
   const someSelected = selectedIds.size > 0;
@@ -258,13 +387,18 @@ export function CasesWorkspace({
   }
 
   const rangeStart =
-    pageData.total === 0 ? 0 : (pageData.page - 1) * CASE_LIST_PAGE_SIZE + 1;
-  const rangeEnd = Math.min(pageData.page * CASE_LIST_PAGE_SIZE, pageData.total);
+    pageData.total === 0
+      ? 0
+      : (pageData.page - 1) * CASE_WORKSPACE_PAGE_SIZE + 1;
+  const rangeEnd = Math.min(
+    pageData.page * CASE_WORKSPACE_PAGE_SIZE,
+    pageData.total,
+  );
 
   function toggleSort(next: CaseListSort) {
     setActiveViewId(null);
     if (sort === next) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
     } else {
       setSort(next);
       setSortDir("asc");
@@ -303,104 +437,136 @@ export function CasesWorkspace({
     setActiveViewId(view.id);
   }
 
-  async function bulkUpdate(patch: {
-    status?: string;
-    priority?: string;
-    folderId?: string | null;
-    tags?: string[];
-    tagMode?: "replace" | "add";
-  }) {
+  function mergeCase(row: CaseRow) {
+    setCaseOverrides((prev) => ({ ...prev, [row.id]: row }));
+  }
+
+  function commitOpen(row: CaseRow | null) {
+    setHistoryCase(row);
+    setEditorDirty(false);
+    setPendingCase(null);
+    if (row) {
+      startTransition(() => router.push(caseHref(row.key)));
+    } else {
+      startTransition(() => router.push("/cases"));
+    }
+  }
+
+  function requestOpen(row: CaseRow) {
+    if (historyCase && editorDirty && historyCase.id !== row.id) {
+      setPendingCase(row);
+      unsavedModal.open();
+      return;
+    }
+    commitOpen(row);
+  }
+
+  function requestClosePeek() {
+    if (historyCase && editorDirty) {
+      setPendingCase(null);
+      unsavedModal.open();
+      return;
+    }
+    commitOpen(null);
+  }
+
+  async function bulkUpdate(patch: BulkPatch) {
     if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
     setBulkPending(true);
     setError(null);
-    try {
-      const res = await fetch("/api/cases", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          caseIds: Array.from(selectedIds),
-          ...patch,
-        }),
-      });
+    const resPromise = fetch("/api/cases", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        caseIds: ids,
+        ...patch,
+      }),
+    });
+    startTransition(async () => {
+      addOptimisticCases({ ...patch, ids });
+      const res = await resPromise;
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(
           typeof data.error === "string" ? data.error : "Bulk update failed",
         );
+        setBulkPending(false);
         return;
       }
+      setCaseOverrides((prev) => {
+        const source = [...displayCases, ...Object.values(prev)];
+        const applied = applyBulkPatch(source, ids, patch, folders);
+        const next = { ...prev };
+        for (const row of applied) {
+          if (ids.includes(row.id)) next[row.id] = row;
+        }
+        return next;
+      });
       setSelectedIds(new Set());
       setBulkTags("");
-      startTransition(() => router.refresh());
-    } finally {
       setBulkPending(false);
-    }
+    });
   }
 
-  async function createCase() {
+  async function inlinePatch(id: string, patch: CaseInlinePatch) {
     setError(null);
-    const res = await fetch("/api/cases", {
-      method: "POST",
+    const ids = [id];
+    startTransition(() => {
+      addOptimisticCases({ ...patch, ids });
+    });
+    setCaseOverrides((prev) => {
+      const source = displayCases;
+      const applied = applyBulkPatch(source, ids, patch, folders);
+      const next = { ...prev };
+      const row = applied.find((item) => item.id === id);
+      if (row) next[id] = row;
+      return next;
+    });
+    const res = await fetch(`/api/cases/${id}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        key: form.key,
-        title: form.title,
-        description: form.description,
-        priority: form.priority,
-        status: form.status,
-        folderId: form.folderId || null,
-        tags: form.tags
-          .split(/[;,]/)
-          .map((t) => t.trim())
-          .filter(Boolean),
-      }),
+      body: JSON.stringify(patch),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setError(
-        typeof data.error === "string" ? data.error : "Failed to create case",
+        typeof data.error === "string" ? data.error : "Failed to update case",
       );
+      startTransition(() => router.refresh());
+    }
+  }
+
+  useEffect(() => {
+    if (!focusedRow) {
+      publishPaletteFocus({ kind: "none" });
       return;
     }
-    const created = data.case as {
-      id: string;
-      key: string;
-      title: string;
-      priority: string;
-      status: string;
-      tags?: string[];
-      folderId?: string | null;
-    };
-    const folder =
-      created.folderId != null
-        ? (() => {
-            const match = folders.find((f) => f.id === created.folderId);
-            return match ? { id: match.id, name: match.name } : null;
-          })()
-        : null;
-    const row: CaseRow = {
-      id: created.id,
-      key: created.key,
-      title: created.title,
-      priority: created.priority,
-      status: created.status,
-      tags: created.tags ?? [],
-      folder,
-    };
-    setCaseOverrides((prev) => ({ ...prev, [row.id]: row }));
-    setHistoryCase(row);
-    setShowCreate(false);
-    setForm({
-      key: "",
-      title: "",
-      description: "",
-      priority: "P2",
-      status: "draft",
-      folderId: "",
-      tags: "",
+    publishPaletteFocus({
+      kind: "case",
+      id: focusedRow.id,
+      key: focusedRow.key,
+      title: focusedRow.title,
+      status: focusedRow.status,
+      priority: focusedRow.priority,
+      selectedIds: Array.from(selectedIds),
     });
-    startTransition(() => router.refresh());
-  }
+    return () => publishPaletteFocus({ kind: "none" });
+  }, [focusedRow, selectedIds]);
+
+  useEffect(() => {
+    function onCommand(event: Event) {
+      const detail = (event as CustomEvent<CaseCommandDetail>).detail;
+      if (!detail?.id) return;
+      if (detail.type === "status") {
+        void inlinePatch(detail.id, { status: detail.value });
+      } else if (detail.type === "priority") {
+        void inlinePatch(detail.id, { priority: detail.value });
+      }
+    }
+    window.addEventListener(TOPOLOGY_CASE_COMMAND, onCommand);
+    return () => window.removeEventListener(TOPOLOGY_CASE_COMMAND, onCommand);
+  });
 
   async function submitFolder() {
     const name = folderName.trim();
@@ -424,11 +590,11 @@ export function CasesWorkspace({
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const message =
+          setFolderError(
             typeof data.error === "string"
               ? data.error
-              : "Failed to rename folder";
-          setFolderError(message);
+              : "Failed to rename folder",
+          );
           return;
         }
         setFolderName("");
@@ -448,11 +614,11 @@ export function CasesWorkspace({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const message =
+        setFolderError(
           typeof data.error === "string"
             ? data.error
-            : "Failed to create folder";
-        setFolderError(message);
+            : "Failed to create folder",
+        );
         return;
       }
       setFolderName("");
@@ -513,7 +679,7 @@ export function CasesWorkspace({
 
   function openRenameFolder(folderId?: string) {
     const target =
-      (folderId ? folders.find((f) => f.id === folderId) : null) ??
+      (folderId ? folders.find((folder) => folder.id === folderId) : null) ??
       selectedFolder;
     if (!target) return;
     setShowCreate(false);
@@ -527,7 +693,7 @@ export function CasesWorkspace({
 
   function openDeleteFolder(folderId?: string) {
     const target =
-      (folderId ? folders.find((f) => f.id === folderId) : null) ??
+      (folderId ? folders.find((folder) => folder.id === folderId) : null) ??
       selectedFolder;
     if (!target) return;
     setFolderActionId(target.id);
@@ -571,7 +737,7 @@ export function CasesWorkspace({
         delete next[target.id];
         return next;
       });
-      setHistoryCase((prev) => (prev?.id === target.id ? null : prev));
+      if (historyCase?.id === target.id) commitOpen(null);
       setCaseToDelete(null);
       caseDeleteModal.close();
       startTransition(() => router.refresh());
@@ -600,7 +766,7 @@ export function CasesWorkspace({
       <PageHeader
         eyebrow="Suites"
         title="Test Cases"
-        description="Organize suites in folders, author cases, and import or export CSV."
+        description="Organize suites in folders, author cases, and import from CSV or other TCM tools."
         meta={
           <StatusChip mono>
             {initialCases.length} cases · {folders.length} folders
@@ -612,16 +778,7 @@ export function CasesWorkspace({
               size="sm"
               variant="primary"
               className="gap-1.5"
-              onPress={() => {
-                setShowCreate((v) => {
-                  const next = !v;
-                  if (next && selectedFolder) {
-                    setForm((f) => ({ ...f, folderId: selectedFolder.id }));
-                  }
-                  return next;
-                });
-                folderModal.close();
-              }}
+              onPress={openCreate}
             >
               <PlusIcon size={14} weight="bold" />
               New case
@@ -651,6 +808,8 @@ export function CasesWorkspace({
                       window.open("/api/import/csv", "_blank");
                     } else if (key === "import") {
                       csvFileInputRef.current?.click();
+                    } else if (key === "vendors") {
+                      router.push("/cases/import");
                     }
                   }}
                 >
@@ -677,6 +836,14 @@ export function CasesWorkspace({
                   >
                     <FileArrowUpIcon size={14} weight="bold" />
                     Import CSV
+                  </Dropdown.Item>
+                  <Dropdown.Item
+                    id="vendors"
+                    textValue="Import from TestRail, Qase, Zephyr, Xray"
+                    className="gap-2"
+                  >
+                    <FileArrowUpIcon size={14} weight="bold" />
+                    Import TestRail / Qase / Zephyr / Xray
                   </Dropdown.Item>
                 </Dropdown.Menu>
               </Dropdown.Popover>
@@ -721,8 +888,8 @@ export function CasesWorkspace({
                     ? "Update the suite folder name."
                     : createParentId
                       ? `Create inside “${
-                          folders.find((f) => f.id === createParentId)?.name ??
-                          "folder"
+                          folders.find((folder) => folder.id === createParentId)
+                            ?.name ?? "folder"
                         }”.`
                       : "Name a suite folder to organize cases. Nest subfolders from the tree."}
                 </p>
@@ -870,6 +1037,43 @@ export function CasesWorkspace({
         </Modal.Backdrop>
       </Modal.Root>
 
+      <Modal.Root state={unsavedModal}>
+        <Modal.Backdrop>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog className="outline-none">
+              <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+                <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                  Discard unsaved changes?
+                </Modal.Heading>
+                <p className="text-sm text-[color:var(--topo-muted)]">
+                  This case has edits that have not been saved.
+                </p>
+              </Modal.Header>
+              <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
+                <Button
+                  variant="tertiary"
+                  onPress={() => {
+                    setPendingCase(null);
+                    unsavedModal.close();
+                  }}
+                >
+                  Keep editing
+                </Button>
+                <Button
+                  variant="danger"
+                  onPress={() => {
+                    unsavedModal.close();
+                    commitOpen(pendingCase);
+                  }}
+                >
+                  Discard
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal.Root>
+
       <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
         <div className="flex flex-wrap items-end gap-2">
           <Select
@@ -895,9 +1099,13 @@ export function CasesWorkspace({
                   All
                   <ListBox.ItemIndicator />
                 </ListBox.Item>
-                {statuses.map((s) => (
-                  <ListBox.Item key={s} id={s} textValue={s}>
-                    {s}
+                {CASE_STATUSES.map((status) => (
+                  <ListBox.Item
+                    key={status}
+                    id={status}
+                    textValue={formatStatusLabel(status)}
+                  >
+                    {formatStatusLabel(status)}
                     <ListBox.ItemIndicator />
                   </ListBox.Item>
                 ))}
@@ -928,9 +1136,9 @@ export function CasesWorkspace({
                   All
                   <ListBox.ItemIndicator />
                 </ListBox.Item>
-                {priorities.map((p) => (
-                  <ListBox.Item key={p} id={p} textValue={p}>
-                    {p}
+                {CASE_PRIORITIES.map((priority) => (
+                  <ListBox.Item key={priority} id={priority} textValue={priority}>
+                    {priority}
                     <ListBox.ItemIndicator />
                   </ListBox.Item>
                 ))}
@@ -960,266 +1168,36 @@ export function CasesWorkspace({
 
       <AnimatePresence>
         {someSelected ? (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-accent-soft)] px-3 py-2"
-          >
-            <span className="text-xs font-medium text-[color:var(--topo-ink)]">
-              {selectedIds.size} selected
-            </span>
-            <Select
-              className="w-[8.5rem]"
-              variant="secondary"
-              placeholder="Status"
-              onChange={(value) => {
-                if (value == null) return;
-                void bulkUpdate({ status: String(value) });
-              }}
-            >
-              <Label className="sr-only">Bulk status</Label>
-              <Select.Trigger>
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {statuses.map((s) => (
-                    <ListBox.Item key={s} id={s} textValue={s}>
-                      {s}
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
-            <Select
-              className="w-[12rem]"
-              variant="secondary"
-              placeholder="Move folder"
-              onChange={(value) => {
-                if (value == null) return;
-                const next = String(value);
-                void bulkUpdate({
-                  folderId: next === "none" ? null : next,
-                });
-              }}
-            >
-              <Label className="sr-only">Bulk folder</Label>
-              <Select.Trigger>
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  <ListBox.Item id="none" textValue="Unfiled">
-                    Unfiled
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                  {flatFolders.map((f) => {
-                    const label = folderPathLabel(folders, f.id);
-                    return (
-                      <ListBox.Item key={f.id} id={f.id} textValue={label}>
-                        <span style={{ paddingLeft: f.depth * 10 }}>{label}</span>
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    );
-                  })}
-                </ListBox>
-              </Select.Popover>
-            </Select>
-            <TextField name="bulk-tags" className="w-40">
-              <Label className="sr-only">Add tags</Label>
-              <Input
-                placeholder="Add tags…"
-                value={bulkTags}
-                onChange={(e) => setBulkTags(e.target.value)}
-              />
-            </TextField>
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={bulkPending || !bulkTags.trim()}
-              onPress={() =>
-                void bulkUpdate({
-                  tags: bulkTags
-                    .split(/[;,]/)
-                    .map((t) => t.trim())
-                    .filter(Boolean),
-                  tagMode: "add",
-                })
-              }
-            >
-              Add tags
-            </Button>
-            <Button
-              size="sm"
-              variant="tertiary"
-              isDisabled={bulkPending}
-              onPress={() => setSelectedIds(new Set())}
-            >
-              Clear
-            </Button>
-          </motion.div>
+          <CasesBulkBar
+            selectedCount={selectedIds.size}
+            bulkPending={bulkPending}
+            bulkTags={bulkTags}
+            folders={folders}
+            flatFolders={flatFolders}
+            onBulkTags={setBulkTags}
+            onBulkUpdate={(patch) => void bulkUpdate(patch)}
+            onClear={() => setSelectedIds(new Set())}
+          />
         ) : null}
       </AnimatePresence>
 
       <AnimatePresence>
         {showCreate ? (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="space-y-3 rounded-xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
-          >
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextField name="key" className="w-full">
-                <Label>Key</Label>
-                <Input
-                  placeholder="TOP-12"
-                  value={form.key}
-                  onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
-                  className="w-full"
-                />
-              </TextField>
-              <TextField name="title" className="w-full">
-                <Label>Title</Label>
-                <Input
-                  placeholder="Case title"
-                  value={form.title}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, title: e.target.value }))
-                  }
-                  className="w-full"
-                />
-              </TextField>
-            </div>
-            <TextField name="description" className="w-full">
-              <Label>Description</Label>
-              <TextArea
-                value={form.description}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, description: e.target.value }))
-                }
-                className="w-full"
-              />
-            </TextField>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Select
-                className="w-full"
-                variant="secondary"
-                placeholder="Priority"
-                value={form.priority}
-                onChange={(value) => {
-                  if (value == null) return;
-                  setForm((f) => ({ ...f, priority: String(value) }));
-                }}
-              >
-                <Label>Priority</Label>
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {priorities.map((p) => (
-                      <ListBox.Item key={p} id={p} textValue={p}>
-                        {p}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-              <Select
-                className="w-full"
-                variant="secondary"
-                placeholder="Status"
-                value={form.status}
-                onChange={(value) => {
-                  if (value == null) return;
-                  setForm((f) => ({ ...f, status: String(value) }));
-                }}
-              >
-                <Label>Status</Label>
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {statuses.map((s) => (
-                      <ListBox.Item key={s} id={s} textValue={s}>
-                        {s}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-              <Select
-                className="w-full"
-                variant="secondary"
-                placeholder="Folder"
-                value={form.folderId || "none"}
-                onChange={(value) => {
-                  if (value == null) return;
-                  const next = String(value);
-                  setForm((f) => ({
-                    ...f,
-                    folderId: next === "none" ? "" : next,
-                  }));
-                }}
-              >
-                <Label>Folder</Label>
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    <ListBox.Item id="none" textValue="None">
-                      None
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                    {flatFolders.map((f) => {
-                      const label = folderPathLabel(folders, f.id);
-                      return (
-                        <ListBox.Item key={f.id} id={f.id} textValue={label}>
-                          <span style={{ paddingLeft: f.depth * 10 }}>
-                            {label}
-                          </span>
-                          <ListBox.ItemIndicator />
-                        </ListBox.Item>
-                      );
-                    })}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-            </div>
-            <TextField name="tags" className="w-full">
-              <Label>Tags</Label>
-              <Input
-                placeholder="smoke; ui"
-                value={form.tags}
-                onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
-                className="w-full"
-              />
-            </TextField>
-            <div className="flex gap-2">
-              <Button
-                variant="primary"
-                isDisabled={pending || !form.key || !form.title}
-                onPress={() => void createCase()}
-              >
-                Save case
-              </Button>
-              <Button variant="tertiary" onPress={() => setShowCreate(false)}>
-                Cancel
-              </Button>
-            </div>
-          </motion.div>
+          <CaseCreateDialog
+            folders={folders}
+            flatFolders={flatFolders}
+            initialKey={createKey || generatedKey}
+            initialFolderId={selectedFolder?.id ?? ""}
+            pending={pending}
+            onError={(message) => setError(message || null)}
+            onCancel={() => setShowCreate(false)}
+            onCreated={(row) => {
+              mergeCase(row);
+              setShowCreate(false);
+              commitOpen(row);
+              startTransition(() => router.refresh());
+            }}
+          />
         ) : null}
       </AnimatePresence>
 
@@ -1230,244 +1208,71 @@ export function CasesWorkspace({
             : "lg:grid-cols-[15rem_minmax(0,1fr)]"
         }`}
       >
-      <div className="lg:sticky lg:top-3 lg:self-start">
-        <FolderTreePane
-          folders={folders}
-          folderCounts={folderCounts}
-          unfiledCount={unfiledCount}
-          totalCount={displayCases.length}
-          selected={activeFolderFilter}
-          collapsed={treeCollapsed}
-          onToggleCollapsed={() => setTreeCollapsed((v) => !v)}
-          onSelect={(id) => {
-            setActiveViewId(null);
-            setFolderFilter(id);
-            setTreeCollapsed(true);
-          }}
-          onCreateRoot={() => openCreateFolder(null)}
-          onCreateSubfolder={(parentId) => openCreateFolder(parentId)}
-          onRename={(folderId) => openRenameFolder(folderId)}
-          onDelete={(folderId) => openDeleteFolder(folderId)}
-        />
-      </div>
-      <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
-        <div className="flex flex-col gap-2 border-b border-[color:var(--topo-line)] p-2.5 sm:flex-row sm:items-center sm:gap-3">
-          <TextField name="case-list-search" className="min-w-0 flex-1">
-            <Label className="sr-only">Search cases</Label>
-            <Input
-              aria-label="Search cases"
-              placeholder="Search title, key, tags, or folder"
-              value={search}
-              onChange={(e) => {
-                setActiveViewId(null);
-                setSearch(e.target.value);
-              }}
-              className="w-full"
-            />
-          </TextField>
-          {hasSearch ? (
-            <p className="shrink-0 text-xs text-[color:var(--topo-muted)]">
-              {pageData.total} match
-              {pageData.total === 1 ? "" : "es"}
-            </p>
-          ) : null}
+        <div className="lg:sticky lg:top-3 lg:self-start">
+          <FolderTreePane
+            folders={folders}
+            folderCounts={folderCounts}
+            unfiledCount={unfiledCount}
+            totalCount={optimisticCases.length}
+            selected={activeFolderFilter}
+            collapsed={treeCollapsed}
+            onToggleCollapsed={() => setTreeCollapsed((value) => !value)}
+            onSelect={(id) => {
+              setActiveViewId(null);
+              setFolderFilter(id);
+              setTreeCollapsed(true);
+            }}
+            onCreateRoot={() => openCreateFolder(null)}
+            onCreateSubfolder={(parentId) => openCreateFolder(parentId)}
+            onRename={(folderId) => openRenameFolder(folderId)}
+            onDelete={(folderId) => openDeleteFolder(folderId)}
+          />
         </div>
-
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-[color:var(--topo-line)] font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
-            <tr>
-              <th className="w-10 px-2 py-2">
-                <input
-                  type="checkbox"
-                  aria-label="Select page"
-                  checked={allPageSelected}
-                  onChange={toggleSelectPage}
-                  className="accent-[color:var(--topo-accent)]"
-                />
-              </th>
-              {sortColumns.map((col) => {
-                const active = sort === col.id;
-                return (
-                  <th key={col.id} className="px-3 py-2 font-medium">
-                    <button
-                      type="button"
-                      onClick={() => toggleSort(col.id)}
-                      className={`inline-flex items-center gap-1 uppercase tracking-[0.12em] transition-colors ${
-                        active
-                          ? "text-[color:var(--topo-ink)]"
-                          : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-                      }`}
-                      aria-sort={
-                        active
-                          ? sortDir === "asc"
-                            ? "ascending"
-                            : "descending"
-                          : "none"
-                      }
-                    >
-                      {col.label}
-                      <span aria-hidden className="font-sans text-[9px]">
-                        {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
-                      </span>
-                    </button>
-                  </th>
-                );
-              })}
-              <th className="w-10 px-2 py-2">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {displayCases.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-3 py-10 text-center text-[color:var(--topo-muted)]"
-                >
-                  No cases yet. Create one or import a CSV.
-                </td>
-              </tr>
-            ) : pageData.items.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-3 py-10 text-center text-[color:var(--topo-muted)]"
-                >
-                  No cases match this search or folder.
-                </td>
-              </tr>
-            ) : (
-              pageData.items.map((c, i) => (
-                <motion.tr
-                  key={c.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(i, 12) * 0.02 }}
-                  className={`group border-b border-[color:var(--topo-line)] last:border-0 ${
-                    historyCase?.id === c.id
-                      ? "bg-[color:var(--topo-accent-soft)]"
-                      : ""
-                  }`}
-                >
-                  <td className="px-2 py-2">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${c.key}`}
-                      checked={selectedIds.has(c.id)}
-                      onChange={() => toggleSelect(c.id)}
-                      className="accent-[color:var(--topo-accent)]"
-                    />
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs text-[color:var(--topo-accent)]">
-                    <button
-                      type="button"
-                      className="hover:underline"
-                      onClick={() => setHistoryCase(c)}
-                    >
-                      {c.key}
-                    </button>
-                    {c.intent ? (
-                      <div className="mt-0.5">
-                        <Link
-                          href={`/intents?intent=${c.intent.id}`}
-                          className="text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)] hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Intent {c.intent.key}
-                        </Link>
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      className="text-left"
-                      onClick={() => setHistoryCase(c)}
-                    >
-                      <div className="font-medium text-[color:var(--topo-ink)]">
-                        {c.title}
-                      </div>
-                      {c.tags.length > 0 ? (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {c.tags.map((t) => (
-                            <Chip key={t} size="sm" variant="soft">
-                              {t}
-                            </Chip>
-                          ))}
-                        </div>
-                      ) : null}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 text-xs text-[color:var(--topo-muted)]">
-                    {c.folder?.name ?? "unfiled"}
-                  </td>
-                  <td className="px-3 py-2">
-                    <StatusChip mono>{c.priority}</StatusChip>
-                  </td>
-                  <td className="px-3 py-2">
-                    <StatusChip tone={statusToneForRun(c.status)}>
-                      {c.status}
-                    </StatusChip>
-                  </td>
-                  <td className="px-2 py-2 text-right">
-                    <button
-                      type="button"
-                      aria-label={`Delete ${c.key}`}
-                      className="rounded p-1 text-[color:var(--topo-muted)] opacity-100 hover:bg-[color:var(--topo-chip)] hover:text-red-600 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100 dark:hover:text-red-400"
-                      onClick={() => openDeleteCase(c)}
-                    >
-                      <TrashIcon size={12} weight="bold" />
-                    </button>
-                  </td>
-                </motion.tr>
-              ))
-            )}
-          </tbody>
-        </table>
-
-        {pageData.total > CASE_LIST_PAGE_SIZE ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--topo-line)] px-2.5 py-2">
-            <p className="text-xs text-[color:var(--topo-muted)]">
-              {rangeStart}–{rangeEnd} of {pageData.total}
-            </p>
-            <div className="flex items-center gap-1.5">
-              <Button
-                size="sm"
-                variant="secondary"
-                isDisabled={pageData.page <= 1}
-                onPress={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                Previous
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                isDisabled={pageData.page >= pageData.totalPages}
-                onPress={() =>
-                  setPage((p) => Math.min(pageData.totalPages, p + 1))
-                }
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </div>
-
-      {historyCase ? (
-        <CaseEditPanel
-          key={historyCase.id}
-          caseId={historyCase.id}
-          caseKey={historyCase.key}
-          caseTitle={historyCase.title}
+        <CasesTable
+          cases={pageData.items}
+          totalCases={optimisticCases.length}
           folders={folders}
           flatFolders={flatFolders}
-          onClose={() => setHistoryCase(null)}
-          onSaved={(next) => {
-            setCaseOverrides((prev) => ({
-              ...prev,
-              [next.id]: {
+          search={search}
+          hasSearch={hasSearch}
+          matchCount={pageData.total}
+          sort={sort}
+          sortDir={sortDir}
+          selectedIds={selectedIds}
+          allPageSelected={allPageSelected}
+          activeId={historyCase?.id ?? null}
+          cursorIndex={cursorIndex}
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          total={pageData.total}
+          page={pageData.page}
+          totalPages={pageData.totalPages}
+          showPagination={pageData.total > CASE_WORKSPACE_PAGE_SIZE}
+          onSearch={(value) => {
+            setActiveViewId(null);
+            setSearch(value);
+          }}
+          onToggleSort={toggleSort}
+          onToggleSelect={toggleSelect}
+          onToggleSelectPage={toggleSelectPage}
+          onOpen={requestOpen}
+          onDelete={openDeleteCase}
+          onInlinePatch={(id, patch) => void inlinePatch(id, patch)}
+          onPageChange={setPage}
+        />
+
+        {historyCase ? (
+          <CaseEditPanel
+            key={historyCase.id}
+            caseId={historyCase.id}
+            caseKey={historyCase.key}
+            caseTitle={historyCase.title}
+            folders={folders}
+            flatFolders={flatFolders}
+            onClose={requestClosePeek}
+            onDirtyChange={setEditorDirty}
+            onSaved={(next) => {
+              mergeCase({
                 id: next.id,
                 key: next.key,
                 title: next.title,
@@ -1475,15 +1280,13 @@ export function CasesWorkspace({
                 status: next.status,
                 tags: next.tags,
                 folder: next.folder,
-              },
-            }));
-            setHistoryCase((prev) =>
-              prev && prev.id === next.id ? { ...prev, ...next } : prev,
-            );
-            startTransition(() => router.refresh());
-          }}
-        />
-      ) : null}
+              });
+              setHistoryCase((prev) =>
+                prev && prev.id === next.id ? { ...prev, ...next } : prev,
+              );
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

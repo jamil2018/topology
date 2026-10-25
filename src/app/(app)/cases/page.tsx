@@ -6,8 +6,8 @@ import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { CasesWorkspace } from "@/components/cases-workspace";
 import { CasesPageSkeleton } from "@/components/skeletons";
 import { resolveActiveProject } from "@/lib/project";
-import { listCases, listFolders, listSavedViews } from "@/lib/queries";
 import { ensureMembership } from "@/lib/workspace";
+import { loadCasesWorkspaceData } from "./cases-page-data";
 
 export const metadata: Metadata = {
   title: "Test Cases · Topology",
@@ -15,7 +15,11 @@ export const metadata: Metadata = {
     "Organize suites in nested folders, author cases, and import or export CSV.",
 };
 
-export default async function CasesPage() {
+type Props = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function CasesPage({ searchParams }: Props) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
@@ -23,34 +27,26 @@ export default async function CasesPage() {
   const ctx = await resolveActiveProject(session.user.id);
   if (!ctx) return <NoProjectEmptyState />;
 
-  const workspaceId = ctx.project.id;
-  const [cases, folders, views] = await Promise.all([
-    listCases(workspaceId),
-    listFolders(workspaceId),
-    listSavedViews(workspaceId, "cases", session.user.id),
-  ]);
+  const raw = await searchParams;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string") params.set(key, value);
+  }
+  const data = await loadCasesWorkspaceData(
+    ctx.project.id,
+    session.user.id,
+    ctx.project.slug,
+    params,
+  );
 
   return (
     <Suspense fallback={<CasesPageSkeleton />}>
       <CasesWorkspace
-          initialCases={cases.map((c) => ({
-            id: c.id,
-            key: c.key,
-            title: c.title,
-            priority: c.priority,
-            status: c.status,
-            tags: c.tags,
-            folder: c.folder
-              ? { id: c.folder.id, name: c.folder.name }
-              : null,
-          }))}
-          folders={folders.map((f) => ({
-            id: f.id,
-            name: f.name,
-            parentId: f.parentId ?? null,
-          }))}
-          initialViews={views}
-        />
+        initialCases={data.cases}
+        folders={data.folders}
+        initialViews={data.views}
+        projectPrefix={data.projectPrefix}
+      />
     </Suspense>
   );
 }

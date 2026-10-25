@@ -21,16 +21,20 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect } from "react";
 import { motion, useAnimation, useReducedMotion } from "motion/react";
+import { formatChipLabel } from "@/lib/format-labels";
 
 const toneClass = {
   neutral:
     "bg-[color:var(--topo-chip)] text-[color:var(--topo-muted)] border-[color:var(--topo-line)]",
   accent:
     "bg-[color-mix(in_srgb,var(--topo-accent)_78%,black)] text-white border-[color-mix(in_srgb,var(--topo-accent)_55%,black)] dark:bg-[color:var(--topo-accent)] dark:text-[color:var(--topo-paper)] dark:border-[color-mix(in_srgb,var(--topo-accent)_40%,white)]",
-  success: "bg-emerald-700 text-white border-emerald-800",
-  warning: "bg-amber-500 text-amber-950 border-amber-600",
-  danger: "bg-red-700 text-white border-red-800",
-  info: "bg-sky-700 text-white border-sky-800",
+  success:
+    "bg-[color:var(--topo-success)] text-[color:var(--topo-success-fg)] border-[color:var(--topo-success-border)]",
+  warning:
+    "bg-[color:var(--topo-warning)] text-[color:var(--topo-warning-fg)] border-[color:var(--topo-warning-border)]",
+  danger:
+    "bg-[color:var(--topo-danger)] text-[color:var(--topo-danger-fg)] border-[color:var(--topo-danger-border)]",
+  info: "bg-[color:var(--topo-info)] text-[color:var(--topo-info-fg)] border-[color:var(--topo-info-border)]",
 } as const;
 
 const neutralStatusClass =
@@ -148,6 +152,7 @@ export function StatusChip({
 }) {
   const label = chipLabel(children);
   const visual = label ? visualForLabel(label) : null;
+  const display = label ? formatChipLabel(label) : children;
   const toneClasses =
     visual && tone === "neutral" ? neutralStatusClass : toneClass[tone];
 
@@ -159,7 +164,7 @@ export function StatusChip({
       }`}
     >
       {visual ? <StatusGlyph visual={visual} /> : null}
-      <span className="truncate">{children}</span>
+      <span className="truncate">{display}</span>
     </span>
   );
 }

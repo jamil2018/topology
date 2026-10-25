@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@heroui/react";
+import { Button, useOverlayState } from "@heroui/react";
 import { Bone } from "./skeletons";
+import { ConfirmDialog } from "./confirm-dialog";
 
 type ProjectRow = {
   id: string;
@@ -24,6 +25,8 @@ export function ProjectsPanel() {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ProjectRow | null>(null);
+  const deleteDialog = useOverlayState();
 
   async function load() {
     setLoading(true);
@@ -126,18 +129,16 @@ export function ProjectsPanel() {
     }
   }
 
-  async function remove(project: ProjectRow) {
+  function requestRemove(project: ProjectRow) {
     if (project.slug === "default") {
       setError("Cannot delete the default project");
       return;
     }
-    if (
-      !window.confirm(
-        `Delete project “${project.name}”? All project data will be removed.`,
-      )
-    ) {
-      return;
-    }
+    setPendingDelete(project);
+    deleteDialog.open();
+  }
+
+  async function remove(project: ProjectRow) {
     setBusyId(project.id);
     setError(null);
     try {
@@ -157,6 +158,8 @@ export function ProjectsPanel() {
       setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setBusyId(null);
+      setPendingDelete(null);
+      deleteDialog.close();
     }
   }
 
@@ -272,7 +275,7 @@ export function ProjectsPanel() {
                         size="sm"
                         variant="secondary"
                         isDisabled={busyId === project.id}
-                        onPress={() => void remove(project)}
+                        onPress={() => requestRemove(project)}
                       >
                         Delete
                       </Button>
@@ -284,6 +287,23 @@ export function ProjectsPanel() {
           })
         )}
       </ul>
+
+      <ConfirmDialog
+        state={deleteDialog}
+        title="Delete project"
+        description={
+          pendingDelete
+            ? `Delete project “${pendingDelete.name}”? All project data will be removed.`
+            : undefined
+        }
+        confirmLabel="Delete"
+        tone="danger"
+        pending={Boolean(pendingDelete && busyId === pendingDelete.id)}
+        onConfirm={() => {
+          if (pendingDelete) void remove(pendingDelete);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

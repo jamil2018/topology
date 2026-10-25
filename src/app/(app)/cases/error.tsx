@@ -1,0 +1,39 @@
+"use client";
+
+import Link from "next/link";
+
+export default function CasesError({
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="space-y-3 rounded-md border border-red-500/30 bg-red-500/10 p-4"
+    >
+      <h2 className="text-sm font-semibold text-red-700 dark:text-red-300">
+        Test cases couldn’t load
+      </h2>
+      <p className="text-xs text-[color:var(--topo-muted)]">
+        Unexpected error while loading this suite.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={reset}
+          className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)]"
+        >
+          Try again
+        </button>
+        <Link
+          href="/cases"
+          className="rounded-md border border-[color:var(--topo-line)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)]"
+        >
+          Back to test cases
+        </Link>
+      </div>
+    </div>
+  );
+}

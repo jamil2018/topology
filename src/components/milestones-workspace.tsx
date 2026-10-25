@@ -109,6 +109,19 @@ export function MilestonesWorkspace({
             {items.filter((i) => i.milestone.status === "active").length} active
           </StatusChip>
         }
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {(["csv", "xlsx", "pdf"] as const).map((format) => (
+              <a
+                key={format}
+                href={`/api/milestones/export?format=${format}`}
+                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium uppercase text-[color:var(--topo-ink)]"
+              >
+                {format}
+              </a>
+            ))}
+          </div>
+        }
       />
 
       {error ? (
