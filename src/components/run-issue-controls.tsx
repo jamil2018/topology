@@ -109,20 +109,20 @@ export function RunIssueControls({
       ))}
       {(status === "failed" || status === "blocked") && !frozen ? (
         <>
-          <Button
-            size="sm"
-            variant="secondary"
-            isDisabled={issueBusy}
-            onPress={() =>
+          <button
+            type="button"
+            disabled={issueBusy}
+            onClick={() =>
               void onIssueAction({
                 action: "create",
                 resultId,
                 provider: "mock",
               })
             }
+            className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-2 py-1 text-xs font-medium text-[color:var(--topo-ink)] disabled:opacity-50"
           >
             Create issue
-          </Button>
+          </button>
           <div className="flex items-center gap-1">
             <input
               value={linkKey}
