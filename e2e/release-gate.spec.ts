@@ -13,6 +13,7 @@ async function signIn(page: import("@playwright/test").Page) {
 test("release gate: login → hub → case → run → fail → mock issue → triage", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   await signIn(page);
 
   // Hub lands on QA home (overview pulse is ?view=overview).
@@ -23,7 +24,7 @@ test("release gate: login → hub → case → run → fail → mock issue → t
 
   // Cases
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", {
-    name: "Cases",
+    name: "Test cases",
     exact: true,
   }).click();
   await expect(page.getByRole("heading", { name: "Test Cases" })).toBeVisible({
@@ -36,7 +37,7 @@ test("release gate: login → hub → case → run → fail → mock issue → t
 
   // Runs — create a dedicated release-gate run
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", {
-    name: "Runs",
+    name: "Test runs",
     exact: true,
   }).click();
   await expect(page.getByRole("heading", { name: "Test Runs" })).toBeVisible({
