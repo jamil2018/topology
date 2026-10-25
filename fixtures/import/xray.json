@@ -1,0 +1,17 @@
+{
+  "tests": [
+    {
+      "key": "CALC-9",
+      "summary": "Clear the tape",
+      "description": "History can be wiped",
+      "priority": "Low",
+      "labels": ["calculator"],
+      "testRepositoryPath": "Calculator / History",
+      "preconditions": [{ "key": "CALC-100", "definition": "Tape has entries" }],
+      "steps": [
+        { "action": "Open history", "data": "", "result": "Entries are listed" },
+        { "action": "Click Clear", "data": "", "result": "Tape is empty" }
+      ]
+    }
+  ]
+}

@@ -67,6 +67,27 @@ function parseCsvRecords(raw: string): string[][] {
   return records;
 }
 
+/** Header + row objects with original column names (vendor CSV mapping). */
+export function parseCsvTable(raw: string): {
+  headers: string[];
+  rows: Record<string, string>[];
+} {
+  const records = parseCsvRecords(raw);
+  if (records.length === 0) return { headers: [], rows: [] };
+  const headers = records[0].map((header) => header.trim());
+  const rows: Record<string, string>[] = [];
+  for (let i = 1; i < records.length; i += 1) {
+    const cells = records[i];
+    const record: Record<string, string> = {};
+    headers.forEach((header, idx) => {
+      if (!header) return;
+      record[header] = cells[idx] ?? "";
+    });
+    rows.push(record);
+  }
+  return { headers, rows };
+}
+
 function normalizeHeader(header: string): string {
   const key = header.trim().toLowerCase().replace(/[\s_-]+/g, "");
   const map: Record<string, string> = {

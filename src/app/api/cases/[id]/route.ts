@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { cases, folders, runResults } from "@/db/schema";
+import { cases, customFieldDefs, folders, runResults } from "@/db/schema";
 import { isLockFailure } from "@/lib/pg-error";
 import { recordCaseFieldChanges } from "@/lib/case-activity";
 import { buildCasePatch, updateCaseSchema } from "@/lib/case-update";
 import { requireProjectAccess } from "@/lib/project";
+import {
+  loadCaseTcm,
+  replaceCaseParameters,
+  replaceCaseSteps,
+  snapshotCaseVersion,
+  upsertCustomFieldValues,
+} from "@/lib/tcm/case-tcm";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -42,6 +49,15 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Case not found" }, { status: 404 });
   }
 
+  const tcm = await loadCaseTcm(access.ctx.project.id, id);
+  const fieldDefs = await db.query.customFieldDefs.findMany({
+    where: and(
+      eq(customFieldDefs.workspaceId, access.ctx.project.id),
+      eq(customFieldDefs.entity, "case"),
+    ),
+    orderBy: [asc(customFieldDefs.position)],
+  });
+
   return NextResponse.json({
     case: {
       id: row.id,
@@ -69,6 +85,18 @@ export async function GET(request: Request, { params }: Params) {
         ? { id: row.folder.id, name: row.folder.name }
         : null,
       updatedAt: row.updatedAt,
+      structuredSteps: tcm.structuredSteps,
+      parameters: tcm.parameters,
+      datasets: tcm.datasets,
+      customFields: tcm.customFields,
+      customFieldDefs: fieldDefs.map((d) => ({
+        id: d.id,
+        key: d.key,
+        label: d.label,
+        type: d.type,
+        options: d.optionsJson ? JSON.parse(d.optionsJson) : [],
+        required: d.required,
+      })),
     },
   });
 }
@@ -147,53 +175,102 @@ export async function PATCH(request: Request, { params }: Params) {
     folderNameById,
   );
 
-  if (fields.length === 0) {
+  const tcmChanged =
+    parsed.data.structuredSteps !== undefined ||
+    parsed.data.parameters !== undefined ||
+    parsed.data.datasets !== undefined ||
+    parsed.data.customFields !== undefined;
+
+  if (fields.length === 0 && !tcmChanged) {
     return NextResponse.json({ case: existing, updated: false });
   }
 
-  const [next] = await db
-    .update(cases)
-    .set({
-      ...(patch.title !== undefined ? { title: patch.title } : {}),
-      ...(patch.description !== undefined
-        ? { description: patch.description }
-        : {}),
-      ...(patch.preconditions !== undefined
-        ? { preconditions: patch.preconditions }
-        : {}),
-      ...(patch.steps !== undefined ? { steps: patch.steps } : {}),
-      ...(patch.expectedResult !== undefined
-        ? { expectedResult: patch.expectedResult }
-        : {}),
-      ...(patch.priority !== undefined
-        ? { priority: patch.priority as "P0" | "P1" | "P2" | "P3" }
-        : {}),
-      ...(patch.status !== undefined
-        ? {
-            status: patch.status as
-              | "draft"
-              | "ready"
-              | "blocked"
-              | "deprecated",
-          }
-        : {}),
-      ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
-      ...(patch.tags !== undefined ? { tags: patch.tags } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(cases.id, id))
-    .returning();
+  let next = existing;
+  if (fields.length > 0) {
+    const [updated] = await db
+      .update(cases)
+      .set({
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        ...(patch.description !== undefined
+          ? { description: patch.description }
+          : {}),
+        ...(patch.preconditions !== undefined
+          ? { preconditions: patch.preconditions }
+          : {}),
+        ...(patch.steps !== undefined ? { steps: patch.steps } : {}),
+        ...(patch.expectedResult !== undefined
+          ? { expectedResult: patch.expectedResult }
+          : {}),
+        ...(patch.priority !== undefined
+          ? { priority: patch.priority as "P0" | "P1" | "P2" | "P3" }
+          : {}),
+        ...(patch.status !== undefined
+          ? {
+              status: patch.status as
+                | "draft"
+                | "ready"
+                | "blocked"
+                | "deprecated",
+            }
+          : {}),
+        ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
+        ...(patch.tags !== undefined ? { tags: patch.tags } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(cases.id, id))
+      .returning();
+    next = updated ?? existing;
 
-  await recordCaseFieldChanges({
-    caseId: id,
-    actorId: session.user.id,
-    action: "updated",
-    before,
-    after,
-    fields,
+    await recordCaseFieldChanges({
+      caseId: id,
+      actorId: session.user.id,
+      action: "updated",
+      before,
+      after,
+      fields,
+    });
+  }
+
+  if (parsed.data.structuredSteps) {
+    await replaceCaseSteps({
+      workspaceId,
+      caseId: id,
+      steps: parsed.data.structuredSteps,
+    });
+  }
+  if (parsed.data.parameters || parsed.data.datasets) {
+    const currentTcm = await loadCaseTcm(workspaceId, id);
+    await replaceCaseParameters({
+      caseId: id,
+      parameters: parsed.data.parameters ?? currentTcm.parameters,
+      datasets: parsed.data.datasets ?? currentTcm.datasets,
+    });
+  }
+  if (parsed.data.customFields) {
+    const savedFields = await upsertCustomFieldValues({
+      workspaceId,
+      entityType: "case",
+      entityId: id,
+      values: parsed.data.customFields,
+    });
+    if (!savedFields.ok) {
+      return NextResponse.json({ error: savedFields.error }, { status: 400 });
+    }
+  }
+
+  if (fields.length > 0 || tcmChanged) {
+    await snapshotCaseVersion({
+      workspaceId,
+      caseId: id,
+      actorId: session.user.id,
+    });
+  }
+
+  const tcm = await loadCaseTcm(workspaceId, id);
+  return NextResponse.json({
+    case: { ...next, ...tcm },
+    updated: true,
   });
-
-  return NextResponse.json({ case: next, updated: true });
 }
 
 export async function DELETE(request: Request, { params }: Params) {

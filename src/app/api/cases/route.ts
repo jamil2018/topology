@@ -12,7 +12,8 @@ import {
 import { unionTags } from "@/lib/case-update";
 import { caseWriteError, isLockFailure } from "@/lib/pg-error";
 import { requireProjectAccess } from "@/lib/project";
-import { listCases } from "@/lib/queries";
+import { caseListQueryFromSearchParams } from "@/lib/case-list";
+import { listCasesPage } from "@/lib/queries";
 
 const createCaseSchema = z.object({
   key: z.string().min(1).max(64),
@@ -114,11 +115,25 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const folderId = searchParams.get("folderId");
-  if (folderId !== null && !z.string().uuid().safeParse(folderId).success) {
+  if (
+    folderId !== null &&
+    folderId !== "all" &&
+    folderId !== "unfiled" &&
+    !z.string().uuid().safeParse(folderId).success
+  ) {
     return NextResponse.json({ error: "Invalid folder id" }, { status: 400 });
   }
-  const data = await listCases(workspaceId, folderId);
-  return NextResponse.json({ cases: data });
+  const query = caseListQueryFromSearchParams(searchParams);
+  if (searchParams.get("all") === "1") query.all = true;
+  const page = await listCasesPage(workspaceId, query);
+  return NextResponse.json({
+    cases: page.items,
+    total: page.total,
+    page: page.page,
+    pageSize: page.pageSize,
+    totalPages: page.totalPages,
+    nextCursor: page.nextCursor,
+  });
 }
 
 export async function POST(request: Request) {

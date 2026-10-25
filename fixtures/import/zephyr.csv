@@ -1,0 +1,5 @@
+Key,Name,Folder,Priority,Status,Labels,Precondition,Objective,Test Script (Step-by-Step) - Step,Test Script (Step-by-Step) - Test Data,Test Script (Step-by-Step) - Expected Result
+PROJ-T1,Login with SSO,Auth,High,Approved,sso;smoke,IdP is configured,User reaches the hub,Open /login,,Login form
+PROJ-T1,,,,,,,,Click Continue with SSO,,Redirect to IdP
+PROJ-T1,,,,,,,,Return with assertion,,Hub loads
+PROJ-T2,Logout,Auth,Low,Draft,auth,,Session ends,Click avatar menu,,Menu opens

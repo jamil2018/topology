@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suite>
+  <id>S1</id>
+  <name>Master</name>
+  <sections>
+    <section>
+      <name>Auth</name>
+      <cases>
+        <case>
+          <id>1</id>
+          <title>Successful login</title>
+          <priority>High</priority>
+          <type>Functional</type>
+          <references>smoke</references>
+          <custom>
+            <preconds>A user exists</preconds>
+            <steps_separated>
+              <step>
+                <index>1</index>
+                <content>Open /login</content>
+                <expected>Login form is shown</expected>
+              </step>
+              <step>
+                <index>2</index>
+                <content>Submit valid credentials</content>
+                <expected>Redirect to dashboard</expected>
+              </step>
+            </steps_separated>
+          </custom>
+        </case>
+      </cases>
+      <sections>
+        <section>
+          <name>Recovery</name>
+          <cases>
+            <case>
+              <id>C2</id>
+              <title>Reset password</title>
+              <priority>Medium</priority>
+              <custom>
+                <preconds></preconds>
+                <steps>1. Open forgot password</steps>
+                <expected>Reset email is sent</expected>
+              </custom>
+            </case>
+          </cases>
+        </section>
+      </sections>
+    </section>
+  </sections>
+</suite>

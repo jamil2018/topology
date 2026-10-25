@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildCasesCsvTemplate, parseCasesCsv, serializeCasesCsv } from "@/lib/csv";
+import {
+  buildCasesCsvTemplate,
+  parseCasesCsv,
+  parseCsvTable,
+  serializeCasesCsv,
+} from "@/lib/csv";
 
 describe("parseCasesCsv", () => {
   it("parses a standard cases CSV", () => {
@@ -142,6 +147,20 @@ describe("serializeCasesCsv", () => {
     expect(csv).toContain("'=Reports");
     expect(csv).not.toMatch(/(^|,)[=+\-@]/m);
     expect(csv).not.toMatch(/(^|,)"[=+\-@]/m);
+  });
+});
+
+describe("parseCsvTable", () => {
+  it("keeps original headers for vendor mapping", () => {
+    const { headers, rows } = parseCsvTable(`ID,Title,Section Hierarchy
+C1,Login,Auth
+`);
+    expect(headers).toEqual(["ID", "Title", "Section Hierarchy"]);
+    expect(rows[0]).toEqual({
+      ID: "C1",
+      Title: "Login",
+      "Section Hierarchy": "Auth",
+    });
   });
 });
 

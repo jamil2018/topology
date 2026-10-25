@@ -7,7 +7,14 @@ import {
   type RemoteIssue,
 } from "@topology/issue-providers";
 import { db } from "@/db";
-import { cases, linkedIssues, runResults, runs, triageItems } from "@/db/schema";
+import {
+  assertLinkedIssueProvider,
+  cases,
+  linkedIssues,
+  runResults,
+  runs,
+  triageItems,
+} from "@/db/schema";
 import { dispatchWebhook } from "@/lib/webhooks";
 
 export type LinkedIssueRow = typeof linkedIssues.$inferSelect;
@@ -29,7 +36,9 @@ function toRowValues(
     remote.status === "done";
   return {
     workspaceId: meta.workspaceId,
-    provider: assertPersistedIssueProvider(remote.provider),
+    provider: assertLinkedIssueProvider(
+      assertPersistedIssueProvider(remote.provider),
+    ),
     remoteId: remote.id,
     remoteKey: remote.key,
     url: remote.url,
@@ -75,6 +84,7 @@ export async function createIssueFromResult(input: {
   const caseKey = result.case?.key ?? result.externalKey ?? "unknown";
   const caseTitle = result.case?.title ?? result.title ?? "Untitled failure";
   const provider = resolveIssueProvider({ provider: input.provider });
+  assertPersistedIssueProvider(String(provider.id));
   const title =
     input.title ?? `[${caseKey}] ${caseTitle} — ${result.status}`;
   const description =
@@ -162,6 +172,7 @@ export async function linkExistingIssue(input: {
   }
 
   const provider = resolveIssueProvider({ provider: input.provider });
+  assertPersistedIssueProvider(String(provider.id));
   const remote = await provider.linkExisting(input.remoteKey);
 
   const [row] = await db
@@ -307,9 +318,76 @@ export async function clearRetestFlag(id: string, workspaceId?: string) {
   return row;
 }
 
+export type OutboundCloseReason = "local_mark" | "retest_pass";
+
+/** Passed result against an open issue closes it; already-done issues are acked. */
+export function outboundCloseAction(
+  resultStatus: string,
+  remoteStatus: string,
+): "close" | "ack" | "skip" {
+  if (resultStatus !== "passed") return "skip";
+  if (remoteStatus === "done") return "ack";
+  return "close";
+}
+
+export function localCloseNeedsRetest(
+  reason: OutboundCloseReason,
+  wasOpen: boolean,
+  existingFlag: number,
+): number {
+  if (reason === "retest_pass") return 0;
+  return wasOpen || existingFlag === 1 ? 1 : 0;
+}
+
+async function tryRemoteTransition(
+  providerId: string,
+  idOrKey: string,
+): Promise<RemoteIssue | null> {
+  try {
+    const provider = resolveIssueProvider({ provider: providerId });
+    return await provider.transition(idOrKey, { status: "done" });
+  } catch {
+    return null;
+  }
+}
+
+async function applyLocalClose(
+  existing: LinkedIssueRow,
+  reason: OutboundCloseReason,
+  remote: RemoteIssue | null,
+  workspaceId?: string,
+) {
+  const wasOpen = existing.remoteStatus !== "done";
+  const [row] = await db
+    .update(linkedIssues)
+    .set({
+      remoteStatus: "done",
+      needsRetest: localCloseNeedsRetest(
+        reason,
+        wasOpen,
+        existing.needsRetest,
+      ),
+      title: remote?.title ?? existing.title,
+      url: remote?.url ?? existing.url,
+      lastSyncedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      workspaceId
+        ? and(
+            eq(linkedIssues.id, existing.id),
+            eq(linkedIssues.workspaceId, workspaceId),
+          )
+        : eq(linkedIssues.id, existing.id),
+    )
+    .returning();
+  return row;
+}
+
 /**
- * Stub for limited provider sync: mark a linked issue closed locally so the
- * retest queue surfaces without waiting on a remote pull.
+ * Mark a linked issue closed. Attempts outbound transition on the tracker
+ * (Jira/Linear/GitHub/mock); falls back to a local close so the retest queue
+ * still surfaces when the remote call fails.
  */
 export async function markIssueClosedLocally(id: string, workspaceId?: string) {
   const existing = await db.query.linkedIssues.findFirst({
@@ -319,22 +397,49 @@ export async function markIssueClosedLocally(id: string, workspaceId?: string) {
   });
   if (!existing) throw new Error("Linked issue not found");
 
-  const wasOpen = existing.remoteStatus !== "done";
-  const [row] = await db
-    .update(linkedIssues)
-    .set({
-      remoteStatus: "done",
-      needsRetest: wasOpen || existing.needsRetest === 1 ? 1 : 0,
-      lastSyncedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(
-      workspaceId
-        ? and(eq(linkedIssues.id, id), eq(linkedIssues.workspaceId, workspaceId))
-        : eq(linkedIssues.id, id),
-    )
-    .returning();
-  return row;
+  const remote = await tryRemoteTransition(
+    existing.provider,
+    existing.remoteKey || existing.remoteId,
+  );
+  return applyLocalClose(existing, "local_mark", remote, workspaceId);
+}
+
+/**
+ * When a retest (or any later result) passes, close open linked issues on the
+ * tracker and clear the retest flag on issues that were already done remotely.
+ */
+export async function syncIssuesOnPassingRetest(input: {
+  workspaceId: string;
+  caseId: string;
+}) {
+  const linked = await db.query.linkedIssues.findMany({
+    where: and(
+      eq(linkedIssues.workspaceId, input.workspaceId),
+      eq(linkedIssues.caseId, input.caseId),
+    ),
+  });
+  const updated: LinkedIssueRow[] = [];
+  for (const issue of linked) {
+    const action = outboundCloseAction("passed", issue.remoteStatus);
+    if (action === "skip") continue;
+    if (action === "ack") {
+      const row = await clearRetestFlag(issue.id, input.workspaceId);
+      if (row) updated.push(row);
+      continue;
+    }
+    const remote = await tryRemoteTransition(
+      issue.provider,
+      issue.remoteKey || issue.remoteId,
+    );
+    const row = await applyLocalClose(
+      issue,
+      "retest_pass",
+      remote,
+      input.workspaceId,
+    );
+    if (row) updated.push(row);
+  }
+  return updated;
 }
 
 export async function listIssuesForRun(runId: string) {

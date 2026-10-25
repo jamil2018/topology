@@ -1,0 +1,33 @@
+{
+  "status": true,
+  "result": {
+    "total": 1,
+    "entities": [
+      {
+        "id": 9,
+        "title": "Create a collection",
+        "description": "Merchant can group products",
+        "preconditions": "Signed in as merchant",
+        "priority": 1,
+        "severity": 2,
+        "status": 0,
+        "suite_title": "Catalog / Collections",
+        "tags": [{ "title": "merchant" }, { "title": "catalog" }],
+        "steps": [
+          {
+            "position": 1,
+            "action": "Open Collections",
+            "expected_result": "Empty state is shown",
+            "data": ""
+          },
+          {
+            "position": 2,
+            "action": "Save a name",
+            "expected_result": "Collection appears in the list",
+            "data": "Summer"
+          }
+        ]
+      }
+    ]
+  }
+}
