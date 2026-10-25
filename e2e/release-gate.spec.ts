@@ -16,7 +16,9 @@ test("release gate: login → hub → case → run → fail → mock issue → t
   await signIn(page);
 
   // Hub readiness / pulse smoke
-  await expect(page.getByText("Quality pulse")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Quality pulse" }),
+  ).toBeVisible();
   await expect(page.getByText("Milestone gate", { exact: true })).toBeVisible();
   await expect(
     page.getByText(/^(Go|At risk|No-Go)$/).first(),
@@ -29,7 +31,7 @@ test("release gate: login → hub → case → run → fail → mock issue → t
   await expect(page.getByRole("heading", { name: "Cases" })).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByText("TOP-1").first()).toBeVisible();
+  await expect(page.getByText("HAR-1").first()).toBeVisible();
 
   // Runs — create a dedicated release-gate run
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", {
