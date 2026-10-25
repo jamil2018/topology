@@ -60,21 +60,17 @@ export function RunCaseList({
   const mineCount = currentUserId
     ? results.filter((row) => row.assigneeId === currentUserId).length
     : 0;
-  const virtual = useVirtualWindow({
+  const { setParent, parent, start, end, totalHeight } = useVirtualWindow({
     count: filtered.length,
     rowHeight: RUN_CASE_ROW_HEIGHT,
   });
   const focusedIndex = filtered.findIndex((row) => row.id === focusedId);
 
   useEffect(() => {
-    scrollIndexIntoView(
-      virtual.parentRef.current,
-      focusedIndex,
-      RUN_CASE_ROW_HEIGHT,
-    );
-  }, [focusedIndex, virtual.parentRef]);
+    scrollIndexIntoView(parent, focusedIndex, RUN_CASE_ROW_HEIGHT);
+  }, [focusedIndex, parent]);
 
-  const visible = filtered.slice(virtual.start, virtual.end);
+  const visible = filtered.slice(start, end);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -131,10 +127,7 @@ export function RunCaseList({
         </div>
       </div>
 
-      <div
-        ref={virtual.parentRef}
-        className="min-h-0 flex-1 overflow-y-auto"
-      >
+      <div ref={setParent} className="min-h-0 flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
           <p className="px-3 py-6 text-sm text-[color:var(--topo-muted)]">
             No cases match these filters.
@@ -143,10 +136,10 @@ export function RunCaseList({
           <ul
             aria-label="Run cases"
             className="relative m-0 list-none p-0"
-            style={{ height: virtual.totalHeight }}
+            style={{ height: totalHeight }}
           >
             {visible.map((result, offset) => {
-              const index = virtual.start + offset;
+              const index = start + offset;
               const selected = result.id === focusedId;
               const assignee = memberLabel(members, result.assigneeId);
               return (
