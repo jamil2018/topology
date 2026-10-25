@@ -45,6 +45,18 @@ describe("settings-sections", () => {
       page: "integrations",
       anchor: "webhooks",
     });
+    expect(resolveSettingsSection("tokens")).toEqual({
+      page: "security",
+      anchor: "tokens",
+    });
+    expect(resolveSettingsSection("audit")).toEqual({
+      page: "security",
+      anchor: "audit",
+    });
+    expect(resolveSettingsSection("fields")).toEqual({
+      page: "projects",
+      anchor: "fields",
+    });
   });
 
   it("accepts canonical page ids", () => {
@@ -53,6 +65,7 @@ describe("settings-sections", () => {
     expect(resolveSettingsSection("integrations")).toEqual({
       page: "integrations",
     });
+    expect(resolveSettingsSection("security")).toEqual({ page: "security" });
   });
 
   it("builds hrefs and detects legacy sections", () => {

@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { triageItems } from "@/db/schema";
 import { requireProjectAccess } from "@/lib/project";
 import { getTriageQueue } from "@/lib/queries";
+import { emitLive } from "@/lib/live";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -76,6 +77,13 @@ export async function PATCH(request: Request) {
   if (!updated) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  emitLive({
+    workspaceId,
+    topic: "triage",
+    entityId: updated.id,
+    status: updated.status,
+  });
 
   return NextResponse.json({ item: updated });
 }

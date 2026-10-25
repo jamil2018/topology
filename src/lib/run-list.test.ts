@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   filterAndSortRuns,
   paginateRuns,
+  runProgressPct,
   RUN_LIST_PAGE_SIZE,
+  runListQueryFromSearchParams,
   type RunListItem,
 } from "./run-list";
 
@@ -83,5 +85,25 @@ describe("paginateRuns", () => {
 
     const overflow = paginateRuns(many, 99, RUN_LIST_PAGE_SIZE);
     expect(overflow.page).toBe(3);
+  });
+});
+
+describe("runProgressPct", () => {
+  it("uses executed over total and ignores empty runs", () => {
+    expect(runProgressPct({ ...runs[0], passed: 4, failed: 1, untested: 5, total: 10 })).toBe(50);
+    expect(runProgressPct(runs[0])).toBeNull();
+  });
+});
+
+describe("runListQueryFromSearchParams", () => {
+  it("reads existing UI query-string page params", () => {
+    const query = runListQueryFromSearchParams(
+      new URLSearchParams("page=2&q=smoke&kind=manual&sort=name&limit=25"),
+    );
+    expect(query.page).toBe(2);
+    expect(query.search).toBe("smoke");
+    expect(query.kind).toBe("manual");
+    expect(query.sort).toBe("name");
+    expect(query.limit).toBe(25);
   });
 });

@@ -3,7 +3,7 @@ import { and, eq, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { runResults, runs } from "@/db/schema";
+import { runResults, runStepResults, runs } from "@/db/schema";
 import { parseAssigneeInput, requireWorkspaceAssignee } from "@/lib/assignee";
 import { openTriageForResult } from "@/lib/ci-ingest";
 import { isLockFailure } from "@/lib/pg-error";
@@ -14,21 +14,64 @@ import {
   isRunFrozen,
   runImmutableResponse,
 } from "@/lib/run-immutability-http";
+import { syncIssuesOnPassingRetest } from "@/lib/issues";
 import {
   buildRunCompletedPayload,
   dispatchWebhook,
 } from "@/lib/webhooks";
+import { emitLive } from "@/lib/live";
 
-const updateResultSchema = z.object({
-  caseId: z.string().uuid(),
-  status: z.enum(["untested", "passed", "failed", "blocked", "skipped"]),
-  notes: z.string().optional().default(""),
-});
+const resultStatusEnum = z.enum([
+  "untested",
+  "passed",
+  "failed",
+  "blocked",
+  "skipped",
+]);
+
+const updateResultSchema = z
+  .object({
+    caseId: z.string().uuid(),
+    resultId: z.string().uuid().optional(),
+    status: resultStatusEnum.optional(),
+    notes: z.string().optional().default(""),
+    stepResults: z
+      .array(
+        z.object({
+          position: z.number().int().min(0),
+          status: resultStatusEnum,
+          notes: z.string().optional(),
+        }),
+      )
+      .optional(),
+    customFields: z.record(z.string(), z.unknown()).optional(),
+  })
+  .refine((v) => v.status !== undefined || (v.stepResults && v.stepResults.length > 0), {
+    message: "Provide a status or step results",
+  });
 
 type Params = { params: Promise<{ id: string }> };
 
 function invalidId(id: string) {
   return !z.string().uuid().safeParse(id).success;
+}
+
+function liveRun(
+  workspaceId: string,
+  runId: string,
+  extra: {
+    resultId?: string;
+    status?: string;
+    assigneeId?: string | null;
+    runStatus?: string;
+  } = {},
+) {
+  emitLive({
+    workspaceId,
+    topic: "run",
+    entityId: runId,
+    ...extra,
+  });
 }
 
 async function rejectAssignee(workspaceId: string, assigneeId: string | null) {
@@ -138,6 +181,7 @@ export async function PATCH(request: Request, { params }: Params) {
       })
       .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
       .returning();
+    liveRun(workspaceId, id, { runStatus: "aborted" });
     return NextResponse.json({ run: updated });
   }
 
@@ -154,6 +198,7 @@ export async function PATCH(request: Request, { params }: Params) {
       })
       .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
       .returning();
+    liveRun(workspaceId, id, { runStatus: "in_progress" });
     return NextResponse.json({ run: updated });
   }
 
@@ -241,6 +286,7 @@ export async function PATCH(request: Request, { params }: Params) {
       } catch {
         // Rollups are best-effort; the run is already completed.
       }
+      liveRun(workspaceId, id, { runStatus: "completed" });
       return NextResponse.json({ run: outcome.run });
     } catch (err) {
       if (isLockFailure(err)) {
@@ -299,6 +345,7 @@ export async function PATCH(request: Request, { params }: Params) {
       if (outcome.kind === "frozen") {
         return runImmutableResponse(immutableMessageFor(outcome.status));
       }
+      liveRun(workspaceId, id, { assigneeId: outcome.run.assigneeId });
       return NextResponse.json({ run: outcome.run });
     } catch (err) {
       if (isLockFailure(err)) {
@@ -364,6 +411,10 @@ export async function PATCH(request: Request, { params }: Params) {
       if (outcome.kind === "result-missing") {
         return NextResponse.json({ error: "Result not found" }, { status: 404 });
       }
+      liveRun(workspaceId, id, {
+        resultId: outcome.result.id,
+        assigneeId: outcome.result.assigneeId,
+      });
       return NextResponse.json({ result: outcome.result });
     } catch (err) {
       if (isLockFailure(err)) {
@@ -391,24 +442,71 @@ export async function PATCH(request: Request, { params }: Params) {
     return runImmutableResponse(immutableMessageFor(existing.status));
   }
 
+  const resultWhere = parsed.data.resultId
+    ? and(eq(runResults.runId, id), eq(runResults.id, parsed.data.resultId))
+    : and(eq(runResults.runId, id), eq(runResults.caseId, parsed.data.caseId));
+
+  let overallStatus = parsed.data.status;
+  if (parsed.data.stepResults && parsed.data.stepResults.length > 0) {
+    const current = await db.query.runResults.findFirst({
+      where: resultWhere,
+    });
+    if (!current) {
+      return NextResponse.json({ error: "Result not found" }, { status: 404 });
+    }
+    for (const step of parsed.data.stepResults) {
+      await db
+        .update(runStepResults)
+        .set({
+          status: step.status,
+          notes: step.notes ?? "",
+        })
+        .where(
+          and(
+            eq(runStepResults.resultId, current.id),
+            eq(runStepResults.position, step.position),
+          ),
+        );
+    }
+    if (overallStatus === undefined) {
+      const rows = await db.query.runStepResults.findMany({
+        where: eq(runStepResults.resultId, current.id),
+      });
+      const { rollupStepStatuses } = await import("@/lib/tcm/steps");
+      overallStatus = rollupStepStatuses(rows.map((r) => r.status));
+    }
+  }
+
+  if (overallStatus === undefined) {
+    return NextResponse.json({ error: "Provide a status" }, { status: 400 });
+  }
+
   const [updated] = await db
     .update(runResults)
     .set({
-      status: parsed.data.status,
+      status: overallStatus,
       notes: parsed.data.notes,
       executedById: session.user.id,
       executedAt: new Date(),
     })
-    .where(
-      and(
-        eq(runResults.runId, id),
-        eq(runResults.caseId, parsed.data.caseId),
-      ),
-    )
+    .where(resultWhere)
     .returning();
 
   if (!updated) {
     return NextResponse.json({ error: "Result not found" }, { status: 404 });
+  }
+
+  if (parsed.data.customFields) {
+    const { upsertCustomFieldValues } = await import("@/lib/tcm/case-tcm");
+    const saved = await upsertCustomFieldValues({
+      workspaceId,
+      entityType: "result",
+      entityId: updated.id,
+      values: parsed.data.customFields,
+    });
+    if (!saved.ok) {
+      return NextResponse.json({ error: saved.error }, { status: 400 });
+    }
   }
 
   await db
@@ -423,6 +521,21 @@ export async function PATCH(request: Request, { params }: Params) {
   if (updated.status === "failed" || updated.status === "blocked") {
     await openTriageForResult(updated.id);
   }
+  if (updated.status === "passed" && updated.caseId) {
+    try {
+      await syncIssuesOnPassingRetest({
+        workspaceId,
+        caseId: updated.caseId,
+      });
+    } catch {
+      // Outbound close is best-effort; the result is already recorded.
+    }
+  }
 
+  liveRun(workspaceId, id, {
+    resultId: updated.id,
+    status: updated.status,
+    runStatus: "in_progress",
+  });
   return NextResponse.json({ result: updated });
 }

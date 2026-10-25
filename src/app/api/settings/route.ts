@@ -3,6 +3,7 @@ import { compare, hash } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
+import { passwordSchema } from "@/lib/password";
 import { isCrossSiteRequest } from "@/auth-session";
 import { db } from "@/db";
 import { users } from "@/db/schema";
@@ -15,15 +16,15 @@ const preferencesSchema = z.object({
   themePreference: z.enum(["system", "light", "dark"]).optional(),
 });
 
-const passwordSchema = z.object({
-  currentPassword: z.string().min(6),
-  newPassword: z.string().min(6).max(128),
+const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: passwordSchema,
 });
 
 const patchSchema = z.object({
   profile: profileSchema.optional(),
   preferences: preferencesSchema.optional(),
-  password: passwordSchema.optional(),
+  password: passwordChangeSchema.optional(),
 });
 
 export async function GET() {

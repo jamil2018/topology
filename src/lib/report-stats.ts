@@ -313,11 +313,11 @@ export function donutSegments(
   >,
 ): Array<{ key: string; value: number; color: string; start: number; end: number }> {
   const entries: Array<{ key: string; value: number; color: string }> = [
-    { key: "passed", value: counts.passed, color: "rgb(16 185 129 / 0.85)" },
-    { key: "failed", value: counts.failed, color: "rgb(239 68 68 / 0.85)" },
-    { key: "blocked", value: counts.blocked, color: "rgb(245 158 11 / 0.85)" },
-    { key: "skipped", value: counts.skipped, color: "rgb(113 113 122 / 0.7)" },
-    { key: "untested", value: counts.untested, color: "rgb(63 63 70 / 0.9)" },
+    { key: "passed", value: counts.passed, color: "var(--topo-success)" },
+    { key: "failed", value: counts.failed, color: "var(--topo-danger)" },
+    { key: "blocked", value: counts.blocked, color: "var(--topo-warning)" },
+    { key: "skipped", value: counts.skipped, color: "var(--topo-muted)" },
+    { key: "untested", value: counts.untested, color: "var(--topo-chip)" },
   ].filter((e) => e.value > 0);
 
   const total = entries.reduce((s, e) => s + e.value, 0);

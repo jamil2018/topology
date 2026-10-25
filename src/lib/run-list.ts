@@ -1,3 +1,8 @@
+import {
+  parseLimitParam,
+  parsePageParam,
+} from "@/lib/list-pagination";
+
 export type RunListItem = {
   id: string;
   name: string;
@@ -5,11 +10,67 @@ export type RunListItem = {
   environment: string;
   createdAt?: string | Date;
   updatedAt: string | Date;
+  passed?: number;
+  failed?: number;
+  skipped?: number;
+  blocked?: number;
+  untested?: number;
+  total?: number;
+  assigneeName?: string | null;
 };
+
+export function runExecutedCount(run: RunListItem): number {
+  return (
+    (run.passed ?? 0) +
+    (run.failed ?? 0) +
+    (run.skipped ?? 0) +
+    (run.blocked ?? 0)
+  );
+}
+
+export function runProgressPct(run: RunListItem): number | null {
+  const total = run.total ?? runExecutedCount(run) + (run.untested ?? 0);
+  if (!total) return null;
+  return Math.round((runExecutedCount(run) / total) * 100);
+}
 
 export type RunListSort = "updated" | "created" | "name" | "status";
 
 export const RUN_LIST_PAGE_SIZE = 10;
+
+export type RunListQuery = {
+  kind?: "manual" | "automation";
+  search?: string;
+  sort?: RunListSort;
+  page?: number;
+  limit?: number;
+  cursor?: string | null;
+  all?: boolean;
+};
+
+const RUN_SORTS = new Set<RunListSort>(["updated", "created", "name", "status"]);
+
+export function parseRunListSort(value: string | null | undefined): RunListSort {
+  if (value && RUN_SORTS.has(value as RunListSort)) return value as RunListSort;
+  return "updated";
+}
+
+/** Map UI / API query-string params onto the server listRuns query. */
+export function runListQueryFromSearchParams(
+  params: URLSearchParams,
+): RunListQuery {
+  const kindRaw = params.get("kind");
+  const kind =
+    kindRaw === "manual" || kindRaw === "automation" ? kindRaw : undefined;
+  return {
+    kind,
+    search: params.get("q") ?? params.get("search") ?? "",
+    sort: parseRunListSort(params.get("sort")),
+    page: parsePageParam(params.get("page")),
+    limit: parseLimitParam(params.get("limit"), RUN_LIST_PAGE_SIZE),
+    cursor: params.get("cursor"),
+  };
+}
 
 function toTime(value: string | Date | undefined): number {
   if (!value) return 0;

@@ -3,7 +3,8 @@ export type SettingsPageId =
   | "account"
   | "projects"
   | "access"
-  | "integrations";
+  | "integrations"
+  | "security";
 
 export type SettingsAnchor =
   | "profile"
@@ -14,7 +15,10 @@ export type SettingsAnchor =
   | "ci"
   | "repositories"
   | "ai"
-  | "webhooks";
+  | "webhooks"
+  | "tokens"
+  | "audit"
+  | "fields";
 
 export type ResolvedSettingsSection = {
   page: SettingsPageId;
@@ -31,6 +35,7 @@ export const SETTINGS_NAV: {
   { id: "projects", label: "Projects", hint: "Workspace" },
   { id: "access", label: "Access", hint: "Members + Roles" },
   { id: "integrations", label: "Integrations", hint: "Connect" },
+  { id: "security", label: "Security", hint: "Tokens + Audit" },
 ];
 
 const PAGE_IDS = new Set<string>(SETTINGS_NAV.map((item) => item.id));
@@ -42,6 +47,7 @@ const SECTION_ALIASES: Record<string, ResolvedSettingsSection> = {
   preferences: { page: "account", anchor: "preferences" },
   projects: { page: "projects" },
   workspace: { page: "projects" },
+  fields: { page: "projects", anchor: "fields" },
   access: { page: "access" },
   members: { page: "access", anchor: "members" },
   roles: { page: "access", anchor: "roles" },
@@ -51,6 +57,9 @@ const SECTION_ALIASES: Record<string, ResolvedSettingsSection> = {
   repositories: { page: "integrations", anchor: "repositories" },
   ai: { page: "integrations", anchor: "ai" },
   webhooks: { page: "integrations", anchor: "webhooks" },
+  security: { page: "security" },
+  tokens: { page: "security", anchor: "tokens" },
+  audit: { page: "security", anchor: "audit" },
 };
 
 export function resolveSettingsSection(

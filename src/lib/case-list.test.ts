@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CASE_LIST_PAGE_SIZE,
+  caseListQueryFromSearchParams,
   filterAndSortCases,
   paginateCases,
   type CaseListItem,
@@ -103,5 +104,24 @@ describe("paginateCases", () => {
     expect(p1.items).toHaveLength(10);
     expect(p1.totalPages).toBe(3);
     expect(paginateCases(many, 99, CASE_LIST_PAGE_SIZE).page).toBe(3);
+  });
+});
+
+describe("caseListQueryFromSearchParams", () => {
+  it("reads existing UI query-string page params", () => {
+    const query = caseListQueryFromSearchParams(
+      new URLSearchParams(
+        "page=2&q=login&folder=unfiled&status=ready&priority=P0&sort=title&dir=desc&cursor=abc",
+      ),
+    );
+    expect(query.page).toBe(2);
+    expect(query.search).toBe("login");
+    expect(query.folderFilter).toBe("unfiled");
+    expect(query.statusFilter).toBe("ready");
+    expect(query.priorityFilter).toBe("P0");
+    expect(query.sort).toBe("title");
+    expect(query.dir).toBe("desc");
+    expect(query.cursor).toBe("abc");
+    expect(query.limit).toBe(CASE_LIST_PAGE_SIZE);
   });
 });

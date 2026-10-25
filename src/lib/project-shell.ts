@@ -11,5 +11,6 @@ export function projectShellProps(ctx: ActiveProjectContext | null) {
   return {
     projects,
     activeProjectId: ctx?.project.id ?? null,
+    qualityGraphEnabled: ctx?.project.qualityGraphEnabled ?? false,
   };
 }
