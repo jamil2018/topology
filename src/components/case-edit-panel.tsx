@@ -25,7 +25,7 @@ import {
   type DatasetDraft,
   type ParameterDraft,
 } from "./case-tcm-panel";
-import { formatStatusLabel } from "./cases-model";
+import { formatStatusLabel } from "@/lib/format-labels";
 import { useQualityGraph } from "./quality-graph-provider";
 import { Bone } from "./skeletons";
 

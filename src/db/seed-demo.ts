@@ -827,7 +827,14 @@ export async function seedDemoWorkspace(input: {
     })
     .returning();
 
-  const planCases = [...smokeCases, ...checkoutCases.slice(0, 20)];
+  const seenPlanCaseIds = new Set<string>();
+  const planCases = [...smokeCases, ...checkoutCases.slice(0, 20)].filter(
+    (row) => {
+      if (seenPlanCaseIds.has(row.id)) return false;
+      seenPlanCaseIds.add(row.id);
+      return true;
+    },
+  );
   await db.insert(testPlanCases).values(
     planCases.map((row, position) => ({
       planId: plan.id,
