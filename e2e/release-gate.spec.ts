@@ -15,14 +15,11 @@ test("release gate: login → hub → case → run → fail → mock issue → t
 }) => {
   await signIn(page);
 
-  // Hub readiness / pulse smoke
+  // Hub lands on QA home (overview pulse is ?view=overview).
   await expect(
-    page.getByRole("heading", { name: "Quality pulse" }),
+    page.getByRole("heading", { name: "QA home" }),
   ).toBeVisible();
-  await expect(page.getByText("Milestone gate", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText(/^(Go|At risk|No-Go)$/).first(),
-  ).toBeVisible();
+  await expect(page.getByText("My assigned runs")).toBeVisible();
 
   // Cases
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", {

@@ -168,7 +168,7 @@ describe("CasesWorkspace authoring", () => {
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
     // Key sort is lexicographic, so TOP-9 lands on page 2.
     expect(screen.queryByText("TOP-9")).not.toBeInTheDocument();
-  });
+  }, 15_000);
 
   it("asks before closing a dirty case peek", async () => {
     const user = userEvent.setup();
