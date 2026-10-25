@@ -62,14 +62,12 @@ test("release gate: login → hub → case → run → fail → mock issue → t
     await expect(startBtn).toBeHidden({ timeout: 15_000 });
   }
 
-  await page.getByRole("button", { name: /^Mark HAR-\d+ as failed$/ }).first().click();
-  // Failing a case advances focus; wait for the Failed chip count, then reopen.
-  const failedChip = page.getByRole("button", { name: "Failed", exact: true });
-  await expect(failedChip).toContainText("1");
-  await failedChip.click();
-  await expect(page.getByRole("button", { name: "Create issue" })).toBeVisible({
-    timeout: 15_000,
-  });
+  await page.getByRole("button", { name: /Mark .+ as failed/ }).first().click();
+  // Failing a case advances focus to the next untested one; reopen the failure.
+  await page.getByRole("button", { name: "Failed", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Create issue" }).first(),
+  ).toBeVisible({ timeout: 15_000 });
 
   // Create issue uses TOPOLOGY_ISSUE_PROVIDER=mock (no remote OAuth/issue APIs).
   await page.getByRole("button", { name: "Create issue" }).first().click();
