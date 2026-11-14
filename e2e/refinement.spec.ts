@@ -18,7 +18,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.goto(route);
       await expect(page.locator("main h1")).toBeVisible();
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /dark/ : /^(?!.*dark).*$/);
-      await page.screenshot({ path: info.outputPath(`${route.replaceAll("/", "-") || "home"}-${theme}.png`), fullPage: true });
+      await page.screenshot({caret: "initial",  path: info.outputPath(`${route.replaceAll("/", "-") || "home"}-${theme}.png`), fullPage: true });
       const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
       expect.soft(audit.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? "")), `${route} ${theme}`).toEqual([]);
       expect.soft(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${route} overflow`).toBeLessThanOrEqual(1);
@@ -33,7 +33,7 @@ test("responsive cases, keyboard dialog and inspector", async ({ page }, info) =
     await page.goto("/cases");
     await expect(page.locator("main h1")).toHaveText("Test cases");
     expect.soft(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `cases at ${width}`).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: info.outputPath(`cases-${width}.png`), fullPage: true });
+    await page.screenshot({caret: "initial",  path: info.outputPath(`cases-${width}.png`), fullPage: true });
   }
   await page.keyboard.press("?");
   const shortcuts = page.getByRole("dialog", { name: "Keyboard shortcuts" });
@@ -98,6 +98,6 @@ test("execution reflows with accessible actions in both themes", async ({ page }
     }
     const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
     expect(audit.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
-    await page.screenshot({ path: info.outputPath(`execution-${theme}.png`), fullPage: true });
+    await page.screenshot({caret: "initial",  path: info.outputPath(`execution-${theme}.png`), fullPage: true });
   }
 });

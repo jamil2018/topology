@@ -96,7 +96,7 @@ for (const width of [320,768,1440]) {
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
     const scan=await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();
     expect(scan.violations.filter(v=>v.impact==='serious'||v.impact==='critical')).toEqual([]);
-    await page.screenshot({path:`test-results/ux-simplification/${testInfo.project.name}-${width}-${route==='/'?'home':route.split('?')[0].replaceAll('/','-')}.png`,fullPage:true});
+    await page.screenshot({caret: "initial", path:`test-results/ux-simplification/${testInfo.project.name}-${width}-${route==='/'?'home':route.split('?')[0].replaceAll('/','-')}.png`,fullPage:true});
   }
   expect(errors).toEqual([]);
  });
@@ -138,7 +138,7 @@ for (const theme of ['Light', 'Dark']) {
       await expect(page.locator('main h1')).toBeVisible();
       const scan=await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();
       expect(scan.violations.filter(v=>v.impact==='serious'||v.impact==='critical')).toEqual([]);
-      await page.screenshot({path:`test-results/ux-simplification/${testInfo.project.name}-${theme}-${route.slice(1)}.png`,fullPage:true});
+      await page.screenshot({caret: "initial", path:`test-results/ux-simplification/${testInfo.project.name}-${theme}-${route.slice(1)}.png`,fullPage:true});
     }
     await page.goto('/runs');
     await page.locator('main a[href^="/runs/"]:not([href="/runs/new"])').first().click();
@@ -148,7 +148,7 @@ for (const theme of ['Light', 'Dark']) {
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
       const scan=await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();
       expect(scan.violations.filter(v=>v.impact==='serious'||v.impact==='critical')).toEqual([]);
-      await page.screenshot({path:`test-results/ux-simplification/${testInfo.project.name}-${theme}-execution-${width}.png`,fullPage:true});
+      await page.screenshot({caret: "initial", path:`test-results/ux-simplification/${testInfo.project.name}-${theme}-execution-${width}.png`,fullPage:true});
     }
     expect(errors).toEqual([]);
   });
