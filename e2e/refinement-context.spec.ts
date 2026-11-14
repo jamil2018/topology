@@ -20,7 +20,7 @@ test("case filters and pagination restore through browser Back", async ({ page }
   await page.goto("/cases");
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page).toHaveURL(/page=2/);
-  const search = page.getByLabel("Search cases", { exact: true });
+  const search = page.getByLabel("Search cases", { exact: true }).filter({visible:true});
   await search.fill("checkout");
   await expect(page).toHaveURL(/q=checkout/);
   expect(new URL(page.url()).searchParams.has("page")).toBe(false);
