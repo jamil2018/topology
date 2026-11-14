@@ -122,7 +122,7 @@ export function ApiTokensPanel() {
           <p className="text-xs font-medium text-[color:var(--topo-ink)]">
             New token (shown once)
           </p>
-          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-[color:var(--topo-ink)]">
+          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs text-[color:var(--topo-ink)]">
             {plaintext}
           </pre>
           <Button
@@ -150,7 +150,7 @@ export function ApiTokensPanel() {
                   <StatusChip mono>{token.tokenPrefix}…</StatusChip>
                   <StatusChip>{token.scope}</StatusChip>
                 </div>
-                <p className="text-[11px] text-[color:var(--topo-muted)]">
+                <p className="text-xs text-[color:var(--topo-muted)]">
                   Last used {formatWhen(token.lastUsedAt)}
                   {token.expiresAt
                     ? ` · expires ${formatWhen(token.expiresAt)}`
@@ -175,7 +175,7 @@ export function ApiTokensPanel() {
 
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="space-y-1">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             Name
           </span>
           <Input
@@ -199,7 +199,7 @@ export function ApiTokensPanel() {
           </select>
         </label>
         <label className="space-y-1 sm:col-span-2">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             Expires (optional)
           </span>
           <Input

@@ -14,12 +14,12 @@ Product screenshots are not in the repository yet. After the quickstart below, t
 | Deploy | Self-hosted | Cloud or paid on-prem | Cloud | Self-hosted |
 | UX | Linear-like hub and command palette | Classic TCM | Modern SaaS TCM | Django-based TCM |
 | Cases and runs | Yes, with CSV and vendor import | Full TCM | Full TCM | Full TCM |
-| Structured steps, plans | On the [roadmap](ROADMAP.md) | Yes | Yes | Yes |
+| Structured steps, plans | Structured/shared steps, versions, matrix plans | Yes | Yes | Yes |
 | CI | JUnit ingest + CLI | Yes | Yes | Yes |
 | Issue trackers | Jira, Linear, GitHub | Broad | Broad | Broad |
 | Agents | MCP plugin | — | — | — |
 
-Topology is pre-1.0. Use it when you want a self-hosted TCM you can read and run locally. Stay on TestRail/Qase if you need plans or structured steps today. Import from TestRail, Qase, Zephyr Scale, or Xray: [docs/import.md](docs/import.md).
+Topology is pre-1.0. Use it when you want a self-hosted TCM you can read and run locally. Import from TestRail, Qase, Zephyr Scale, or Xray: [docs/import.md](docs/import.md).
 
 ## Quickstart
 
@@ -70,9 +70,12 @@ Workspace roles: `admin` / `member` / `viewer`. Assign runs and individual resul
 
 ## What you get
 
-- Operating hub: quality pulse, milestone Go / At-risk / No-Go, flake and retest queues
+- Work-first home with assigned work, Continue testing, active runs, and failure/retest queues; aggregate quality metrics live in Overview
 - Cases and folders (CRUD, CSV import/export, TestRail/Qase/Zephyr/Xray import), saved views, bulk edit, case history
-- Manual runs with assign, notes, comments, attachments, pass/fail
+- Manual runs with structured step results, assignment, notes, comments, attachments, and pass/fail
+- Private/team saved views, reusable run templates, reviewed retests with source lineage, and in-app assignment handoffs
+- Paginated cases/runs with URL filters and history; per-user/project/run execution context
+- Shared steps, case versions, custom fields, and plans with configuration-matrix launches
 - Command palette (`⌘K` / `Ctrl+K`) to create a case, start a run, file an issue, or jump
 - CI JUnit ingest and shard merge (CLI + `/api/ci/*`), automation browser with flake signals
 - Failure triage, issue create/link (Jira / Linear / GitHub), outbound webhooks

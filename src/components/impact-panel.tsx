@@ -107,7 +107,7 @@ export function ImpactPanel() {
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="space-y-1">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             Commit SHA
           </span>
           <Input
@@ -117,7 +117,7 @@ export function ImpactPanel() {
           />
         </label>
         <label className="space-y-1">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             PR number
           </span>
           <Input
@@ -127,7 +127,7 @@ export function ImpactPanel() {
           />
         </label>
         <label className="space-y-1">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             Paths (optional override)
           </span>
           <Input
@@ -164,7 +164,7 @@ export function ImpactPanel() {
             <StatusChip>{result.summary.gaps} gaps</StatusChip>
           </div>
           {result.paths.length > 0 ? (
-            <p className="font-mono text-[10px] leading-relaxed text-[color:var(--topo-muted)]">
+            <p className="font-mono text-xs leading-relaxed text-[color:var(--topo-muted)]">
               {result.paths.join(", ")}
             </p>
           ) : null}

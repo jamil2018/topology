@@ -29,9 +29,11 @@ const STEPS = [
 
 export function GuidedFirstRun({
   title = "Get started",
+  completed = [],
   description = "Four steps to a working test workspace: case, run, CI, then triage.",
 }: {
   title?: string;
+  completed?: string[];
   description?: string;
 }) {
   return (
@@ -54,11 +56,11 @@ export function GuidedFirstRun({
               className="flex gap-3 rounded-md border border-[color:var(--topo-line)] px-3 py-2.5 transition hover:bg-[color:var(--topo-chip)]/50"
             >
               <span className="font-mono text-xs text-[color:var(--topo-accent)]">
-                {step.n}
+                {completed.includes(step.n) ? "✓" : step.n}
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-[color:var(--topo-ink)]">
-                  {step.title}
+                  {step.title}{completed.includes(step.n) ? " · Complete" : ""}
                 </span>
                 <span className="mt-0.5 block text-xs text-[color:var(--topo-muted)]">
                   {step.hint}

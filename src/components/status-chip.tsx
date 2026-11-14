@@ -159,7 +159,7 @@ export function StatusChip({
   return (
     <span
       title={title}
-      className={`inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${toneClasses} ${
+      className={`inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium ${toneClasses} ${
         mono ? "font-mono normal-case tracking-normal" : ""
       }`}
     >

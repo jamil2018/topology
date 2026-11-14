@@ -12,6 +12,13 @@ const eslintConfig = defineConfig([
       "react-hooks/purity": "warn",
     },
   },
+  {
+    files: ["e2e/**/*.ts"],
+    rules: {
+      // Playwright fixture callbacks are named `use`. They are not React hooks.
+      "react-hooks/rules-of-hooks": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

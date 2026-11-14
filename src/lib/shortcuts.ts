@@ -60,7 +60,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "go-runs", keys: ["G", "R"], label: "Go to test runs", group: "Go" },
   { id: "go-plans", keys: ["G", "P"], label: "Go to plans", group: "Go" },
   { id: "go-triage", keys: ["G", "T"], label: "Go to triage", group: "Go" },
-  { id: "go-hub", keys: ["G", "H"], label: "Go to hub", group: "Go" },
+  { id: "go-hub", keys: ["G", "H"], label: "Go to home", group: "Go" },
   { id: "nav-next", keys: ["J"], label: "Next item", group: "Lists" },
   { id: "nav-prev", keys: ["K"], label: "Previous item", group: "Lists" },
   { id: "open", keys: ["↵"], label: "Open focused item", group: "Lists" },
@@ -178,6 +178,12 @@ export function matchShortcut(
 
   const key = event.key;
   if (key === "Escape") return "escape";
+  // Enter belongs to the focused control; do not swallow native activation.
+  if (key === "Enter" && event.target) {
+    const target = event.target as ShortcutTarget;
+    if (["BUTTON", "A", "SUMMARY"].includes(target.tagName?.toUpperCase() ?? "") ||
+        target.closest?.("button, a[href], summary, [role='button'], [role='tab'], [role='menuitem']")) return null;
+  }
   if (shouldIgnoreShortcutTarget(event.target)) return null;
   if (key === "?" || (key === "/" && event.shiftKey)) return "cheat-sheet";
 

@@ -146,7 +146,7 @@ export function ShellLoadingFrame({
   label: string;
 }) {
   return (
-    <div aria-busy="true" aria-label={label}>
+    <div role="status" aria-busy="true" aria-label={label}>
       {children}
     </div>
   );

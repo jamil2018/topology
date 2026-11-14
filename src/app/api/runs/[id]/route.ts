@@ -3,7 +3,7 @@ import { and, eq, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { runResults, runStepResults, runs } from "@/db/schema";
+import { runResults, runStepResults, runs, notifications } from "@/db/schema";
 import { parseAssigneeInput, requireWorkspaceAssignee } from "@/lib/assignee";
 import { openTriageForResult } from "@/lib/ci-ingest";
 import { isLockFailure } from "@/lib/pg-error";
@@ -109,7 +109,7 @@ export async function GET(request: Request, { params }: Params) {
     where: and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)),
     with: {
       results: {
-        with: { case: true },
+        with: { case: true, stepResults: true },
       },
     },
   });
@@ -337,6 +337,9 @@ export async function PATCH(request: Request, { params }: Params) {
           })
           .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
           .returning();
+        if (updated.assigneeId && updated.assigneeId !== locked.assigneeId && updated.assigneeId !== session.user.id) {
+          await tx.insert(notifications).values({ workspaceId, userId: updated.assigneeId, type: "assignment", title: `Run assigned: ${updated.name}`, body: "Open the run to continue testing.", entityType: "run", entityId: id });
+        }
         return { kind: "ok" as const, run: updated };
       });
       if (outcome.kind === "missing") {
@@ -392,6 +395,7 @@ export async function PATCH(request: Request, { params }: Params) {
         if (isRunFrozen(locked.status)) {
           return { kind: "frozen" as const, status: locked.status };
         }
+        const [previous] = await tx.select({ assigneeId: runResults.assigneeId }).from(runResults).where(and(eq(runResults.runId, id), eq(runResults.id, resultId.data))).for("update");
         const [updated] = await tx
           .update(runResults)
           .set({ assigneeId: parsedAssignee.assigneeId })
@@ -400,6 +404,9 @@ export async function PATCH(request: Request, { params }: Params) {
           )
           .returning();
         if (!updated) return { kind: "result-missing" as const };
+        if (updated.assigneeId && updated.assigneeId !== previous?.assigneeId && updated.assigneeId !== session.user.id) {
+          await tx.insert(notifications).values({ workspaceId, userId: updated.assigneeId, type: "assignment", title: `Test assigned in ${existing.name}`, body: "Open the result to continue testing.", entityType: "result", entityId: updated.id });
+        }
         return { kind: "ok" as const, result: updated };
       });
       if (outcome.kind === "missing") {

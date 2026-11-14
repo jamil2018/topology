@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Input,
@@ -71,6 +71,7 @@ export function CaseCreateDialog({
   );
   const [steps, setSteps] = useState<OrderedStep[]>([emptyStructuredStep()]);
   const [saving, setSaving] = useState(false);
+  const lock = useRef(false);
 
   useEffect(() => {
     setForm(blankForm(initialKey, initialFolderId));
@@ -78,6 +79,8 @@ export function CaseCreateDialog({
   }, [initialKey, initialFolderId]);
 
   async function createCase() {
+    if (lock.current) return;
+    lock.current = true;
     setSaving(true);
     onError("");
     try {
@@ -92,6 +95,7 @@ export function CaseCreateDialog({
           status: form.status,
           folderId: form.folderId || null,
           tags: parseTagInput(form.tags),
+          structuredSteps: steps.filter((step) => step.action.trim() || step.expected.trim() || step.data.trim()).map((step) => ({ action: step.action, expected: step.expected, data: step.data, sharedStepId: step.sharedStepId })),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -111,16 +115,6 @@ export function CaseCreateDialog({
         folderId?: string | null;
         intentId?: string | null;
       };
-      const filledSteps = steps.filter(
-        (step) => step.action.trim() || step.expected.trim() || step.data.trim(),
-      );
-      if (filledSteps.length > 0) {
-        await fetch(`/api/cases/${created.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ structuredSteps: filledSteps }),
-        }).catch(() => undefined);
-      }
       const folder =
         created.folderId != null
           ? (() => {
@@ -138,7 +132,10 @@ export function CaseCreateDialog({
         folder,
         intentId: created.intentId,
       });
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Could not save case. Your draft is preserved.");
     } finally {
+      lock.current = false;
       setSaving(false);
     }
   }
@@ -152,7 +149,28 @@ export function CaseCreateDialog({
       exit={{ opacity: 0, y: -8 }}
       className="space-y-3 rounded-xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div>
+        <TextField name="title" className="w-full">
+          <Label>Title</Label>
+          <p className="text-xs text-[color:var(--topo-muted)]">Required</p>
+          <Input
+            placeholder="What should this test verify?"
+            autoFocus
+            value={form.title}
+            onChange={(e) =>
+              setForm((current) => ({ ...current, title: e.target.value }))
+            }
+            className="w-full"
+          />
+        </TextField>
+      </div>
+      <div className="space-y-1.5">
+        <Label>Steps</Label>
+        <CaseStepsEditor steps={steps} onChange={setSteps} disabled={busy} />
+      </div>
+      <details className="rounded-md border border-[color:var(--topo-line)] p-3">
+        <summary className="cursor-pointer text-sm font-medium">Case details <span className="text-[color:var(--topo-muted)]">· {form.key || "Key required"} · {formatStatusLabel(form.status)} · {form.priority}</span></summary>
+        <p className="my-2 text-sm text-[color:var(--topo-muted)]">A key is suggested for you. Adjust priority, status, folder, and tags here.</p>
         <TextField name="key" className="w-full">
           <Label>Key</Label>
           <Input
@@ -162,18 +180,6 @@ export function CaseCreateDialog({
             className="w-full"
           />
         </TextField>
-        <TextField name="title" className="w-full">
-          <Label>Title</Label>
-          <Input
-            placeholder="Case title"
-            value={form.title}
-            onChange={(e) =>
-              setForm((current) => ({ ...current, title: e.target.value }))
-            }
-            className="w-full"
-          />
-        </TextField>
-      </div>
       <TextField name="description" className="w-full">
         <Label>Description</Label>
         <TextArea
@@ -184,10 +190,6 @@ export function CaseCreateDialog({
           className="w-full"
         />
       </TextField>
-      <div className="space-y-1.5">
-        <Label>Steps</Label>
-        <CaseStepsEditor steps={steps} onChange={setSteps} disabled={busy} />
-      </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Select
           className="w-full"
@@ -292,6 +294,9 @@ export function CaseCreateDialog({
           className="w-full"
         />
       </TextField>
+      </details>
+      {!form.key.trim() ? <p role="alert">Enter a key in Case details to save.</p> : null}
+      <p role="status" className="text-sm text-[color:var(--topo-muted)]">{!form.title.trim() ? "Enter a title to save this case." : form.status === "draft" ? "This case will be saved as Draft. When it is ready for testing, change Status to Ready in Case details." : `This case will be saved as ${formatStatusLabel(form.status)}.`}</p>
       <div className="flex gap-2">
         <Button
           variant="primary"

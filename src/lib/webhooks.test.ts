@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   compareSnapshotDimensions,
@@ -7,6 +8,7 @@ import {
   WEBHOOK_EVENTS,
   assertSafeWebhookDestination,
   isBlockedIpAddress,
+  signBody,
   webhookUrlError,
 } from "./webhooks";
 
@@ -47,6 +49,21 @@ describe("assertSafeWebhookDestination", () => {
       async () => [{ address: "8.8.8.8", family: 4 }],
     );
     expect(allowed).toEqual({ ok: true });
+  });
+});
+
+describe("signBody", () => {
+  it("signs the raw payload with HMAC-SHA256 and skips an empty secret", () => {
+    const body = JSON.stringify({
+      id: "delivery-1",
+      event: "run.completed",
+      data: { run: { id: "run-1" } },
+    });
+    const secret = "whsec_test";
+    expect(signBody(secret, body)).toBe(
+      createHmac("sha256", secret).update(body).digest("hex"),
+    );
+    expect(signBody("", body)).toBeNull();
   });
 });
 

@@ -1,4 +1,6 @@
 "use client";
+import { useProjectActions } from "./project-actions";
+import { useMutationFeedback } from "./use-mutation-feedback";
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -52,13 +54,18 @@ export function ProposalsWorkspace({
   aiProvider: string;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [transitionPending, startTransition] = useTransition();
   const [items, setItems] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const { can } = useProjectActions();
+  const { saving, submit } = useMutationFeedback(setError);
+  const pending = transitionPending || saving;
 
   const queue = items.filter((p) => p.status === "pending");
 
   async function review(id: string, status: "accepted" | "rejected") {
+    if (!can("proposals.review")) return;
+    return submit(async () => {
     setError(null);
     const res = await fetch("/api/proposals", {
       method: "PATCH",
@@ -79,6 +86,7 @@ export function ProposalsWorkspace({
       );
     }
     startTransition(() => router.refresh());
+    });
   }
 
   return (
@@ -110,7 +118,7 @@ export function ProposalsWorkspace({
       ) : null}
 
       {error ? (
-        <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {error}
         </p>
       ) : null}
@@ -126,7 +134,7 @@ export function ProposalsWorkspace({
           {queue.map((item, index) => (
             <motion.li
               key={item.id}
-              initial={{ opacity: 0, y: 6 }}
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: Math.min(index * 0.03, 0.2) }}
               className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
@@ -164,14 +172,14 @@ export function ProposalsWorkspace({
                   <Button
                     size="sm"
                     variant="secondary"
-                    isDisabled={pending}
+                    isDisabled={pending || !can("proposals.review")}
                     onPress={() => void review(item.id, "rejected")}
                   >
                     Reject
                   </Button>
                   <Button
                     size="sm"
-                    isDisabled={pending}
+                    isDisabled={pending || !can("proposals.review")}
                     onPress={() => void review(item.id, "accepted")}
                   >
                     Accept

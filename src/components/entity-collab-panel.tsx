@@ -1,4 +1,5 @@
 "use client";
+import { formatDateTime } from "@/lib/format-date";
 
 import { useEffect, useState, useTransition } from "react";
 import { Button, TextArea } from "@heroui/react";
@@ -28,12 +29,7 @@ function displayName(user: { name: string | null; email: string } | null) {
 function formatWhen(value: string | Date) {
   const d = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(d);
 }
 
 export function EntityCollabPanel({
@@ -126,7 +122,7 @@ export function EntityCollabPanel({
   return (
     <div className="mt-4 space-y-4 border-t border-[color:var(--topo-line)] pt-4">
       <div>
-        <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+        <div className="text-xs font-medium text-[color:var(--topo-muted)]">
           Owner
         </div>
         <select
@@ -150,7 +146,7 @@ export function EntityCollabPanel({
       </div>
 
       <div>
-        <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+        <div className="text-xs font-medium text-[color:var(--topo-muted)]">
           Comments
         </div>
         {comments.length === 0 ? (
@@ -168,7 +164,7 @@ export function EntityCollabPanel({
                   <span className="font-medium text-[color:var(--topo-ink)]">
                     {displayName(c.user)}
                   </span>
-                  <span className="font-mono text-[10px] text-[color:var(--topo-muted)]">
+                  <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                     {formatWhen(c.createdAt)}
                   </span>
                 </div>

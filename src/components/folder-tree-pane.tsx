@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Button } from "@heroui/react";
-import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useMemo, useState } from "react";
+import { Button, Modal } from "@heroui/react";
+import { useProjectActions } from "./project-actions";
 import {
   CaretDownIcon,
   CaretRightIcon,
@@ -36,6 +36,7 @@ type Props = {
   onRename: (folderId: string) => void;
   onDelete: (folderId: string) => void;
   collapsed: boolean;
+  inline?: boolean;
   onToggleCollapsed: () => void;
 };
 
@@ -62,6 +63,7 @@ function TreeRows({
   onRename: (folderId: string) => void;
   onDelete: (folderId: string) => void;
 }) {
+  const { can } = useProjectActions();
   return (
     <>
       {nodes.map((node) => {
@@ -79,6 +81,7 @@ function TreeRows({
               }`}
               style={{ paddingLeft: 4 + depth * 12 }}
             >
+              {hasChildren ? (
               <button
                 type="button"
                 aria-label={
@@ -107,6 +110,7 @@ function TreeRows({
                   <span className="h-2 w-2" />
                 )}
               </button>
+              ) : <span aria-hidden="true" className="h-6 w-5 shrink-0" />}
               <button
                 type="button"
                 onClick={() => onSelect(node.id)}
@@ -126,7 +130,7 @@ function TreeRows({
                   />
                 )}
                 <span className="truncate font-medium">{node.name}</span>
-                <span className="ml-auto shrink-0 font-mono text-[10px] text-[color:var(--topo-muted)]">
+                <span className="ml-auto shrink-0 font-mono text-xs text-[color:var(--topo-muted)]">
                   {count}
                 </span>
               </button>
@@ -134,6 +138,7 @@ function TreeRows({
                 <button
                   type="button"
                   aria-label={`New subfolder in ${node.name}`}
+                  disabled={!can("folders.manage")}
                   className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-panel)] hover:text-[color:var(--topo-ink)]"
                   onClick={() => onCreateSubfolder(node.id)}
                 >
@@ -142,6 +147,7 @@ function TreeRows({
                 <button
                   type="button"
                   aria-label={`Rename ${node.name}`}
+                  disabled={!can("folders.manage")}
                   className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-panel)] hover:text-[color:var(--topo-ink)]"
                   onClick={() => onRename(node.id)}
                 >
@@ -150,6 +156,7 @@ function TreeRows({
                 <button
                   type="button"
                   aria-label={`Delete ${node.name}`}
+                  disabled={!can("folders.manage")}
                   className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-panel)] hover:text-red-600 dark:hover:text-red-400"
                   onClick={() => onDelete(node.id)}
                 >
@@ -190,8 +197,17 @@ export function FolderTreePane({
   onRename,
   onDelete,
   collapsed,
+  inline = false,
   onToggleCollapsed,
 }: Props) {
+  const { can } = useProjectActions();
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1023px)");
+    const sync = () => setCompact(media.matches);
+    sync(); media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
   const tree = useMemo(() => buildFolderTree(folders), [folders]);
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     const initial = new Set<string>();
@@ -262,7 +278,7 @@ export function FolderTreePane({
           className="shrink-0 text-[color:var(--topo-accent)]"
         />
         <span className="font-medium">All cases</span>
-        <span className="ml-auto font-mono text-[10px] text-[color:var(--topo-muted)]">
+        <span className="ml-auto font-mono text-xs text-[color:var(--topo-muted)]">
           {totalCount}
         </span>
       </button>
@@ -281,7 +297,7 @@ export function FolderTreePane({
           className="shrink-0 text-[color:var(--topo-muted)]"
         />
         <span className="font-medium">Unfiled</span>
-        <span className="ml-auto font-mono text-[10px] text-[color:var(--topo-muted)]">
+        <span className="ml-auto font-mono text-xs text-[color:var(--topo-muted)]">
           {unfiledCount}
         </span>
       </button>
@@ -315,17 +331,18 @@ export function FolderTreePane({
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 text-left lg:pointer-events-none"
-          onClick={onToggleCollapsed}
-          aria-expanded={!collapsed}
-          aria-controls="cases-folder-tree-mobile"
+          onClick={inline ? undefined : onToggleCollapsed}
+          disabled={inline}
+          aria-expanded={inline ? undefined : !collapsed}
+          aria-controls={inline ? undefined : "cases-folder-tree-mobile"}
         >
-          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
             Folders
           </span>
-          <span className="truncate text-xs text-[color:var(--topo-muted)] lg:hidden">
+          <span className={inline ? "hidden" : "truncate text-xs text-[color:var(--topo-muted)] lg:hidden"}>
             {selectionLabel}
           </span>
-          <span className="ml-auto text-[color:var(--topo-muted)] lg:hidden">
+          <span className={inline ? "hidden" : "ml-auto text-[color:var(--topo-muted)] lg:hidden"}>
             {collapsed ? (
               <CaretRightIcon size={12} weight="bold" />
             ) : (
@@ -339,30 +356,24 @@ export function FolderTreePane({
           isIconOnly
           className="size-6 min-w-6 shrink-0 text-[color:var(--topo-ink)]"
           aria-label="New folder"
+          isDisabled={!can("folders.manage")}
           onPress={onCreateRoot}
         >
           <PlusIcon size={13} weight="bold" />
         </Button>
       </div>
 
-      <div className="hidden max-h-[min(70vh,32rem)] overflow-y-auto lg:block">
+      <div className={inline ? "max-h-[min(70vh,32rem)] overflow-y-auto" : "hidden max-h-[min(70vh,32rem)] overflow-y-auto lg:block"}>
         {treeBody}
       </div>
-      <AnimatePresence initial={false}>
-        {!collapsed ? (
-          <motion.div
-            key="mobile-tree"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            className="overflow-hidden lg:hidden"
-            id="cases-folder-tree-mobile"
-          >
-            <div className="max-h-64 overflow-y-auto">{treeBody}</div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      <Modal.Backdrop isOpen={!inline && compact && !collapsed} onOpenChange={(open) => { if (!open && !collapsed) onToggleCollapsed(); }}>
+        <Modal.Container placement="center" size="sm" className="justify-start p-0">
+          <Modal.Dialog aria-label="Case folders">
+            <Modal.Header><Modal.Heading>Case folders</Modal.Heading><Modal.CloseTrigger /></Modal.Header>
+            <Modal.Body id="cases-folder-tree-mobile">{treeBody}</Modal.Body>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </aside>
   );
 }

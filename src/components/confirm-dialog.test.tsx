@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import { Button, useOverlayState } from "@heroui/react";
 import { ConfirmDialog } from "./confirm-dialog";

@@ -1,4 +1,5 @@
 "use client";
+import { formatDateTime } from "@/lib/format-date";
 
 import { useEffect, useState } from "react";
 import { Button } from "@heroui/react";
@@ -20,12 +21,7 @@ export type ActivityRow = {
 function formatWhen(value: string | Date) {
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(d);
 }
 
 export function CaseHistoryPanel({
@@ -114,7 +110,7 @@ export function CaseHistoryPanel({
                 className="relative border-l-2 border-[color:var(--topo-line)] pl-3"
               >
                 <p className="text-sm text-[color:var(--topo-ink)]">{a.summary}</p>
-                <p className="mt-0.5 font-mono text-[11px] text-[color:var(--topo-muted)]">
+                <p className="mt-0.5 font-mono text-xs text-[color:var(--topo-muted)]">
                   {who} · {formatWhen(a.createdAt)}
                 </p>
               </li>
@@ -133,7 +129,7 @@ export function CaseHistoryPanel({
     <aside className="flex h-full flex-col rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
       <div className="flex items-start justify-between gap-2 border-b border-[color:var(--topo-line)] px-3 py-2.5">
         <div className="min-w-0">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <p className="text-xs font-medium text-[color:var(--topo-muted)]">
             History
           </p>
           <p className="truncate font-mono text-xs text-[color:var(--topo-accent)]">

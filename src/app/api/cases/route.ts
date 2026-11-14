@@ -3,19 +3,21 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { cases, folders } from "@/db/schema";
+import { cases, folders, sharedSteps } from "@/db/schema";
 import { requireWorkspaceAssignee } from "@/lib/assignee";
 import {
   recordCaseActivity,
   recordCaseFieldChanges,
 } from "@/lib/case-activity";
-import { unionTags } from "@/lib/case-update";
+import { replaceCaseSteps } from "@/lib/tcm/case-tcm";
+import { structuredStepInputSchema, unionTags } from "@/lib/case-update";
 import { caseWriteError, isLockFailure } from "@/lib/pg-error";
 import { requireProjectAccess } from "@/lib/project";
 import { caseListQueryFromSearchParams } from "@/lib/case-list";
 import { listCasesPage } from "@/lib/queries";
 
 const createCaseSchema = z.object({
+  structuredSteps: z.array(structuredStepInputSchema).max(500).optional(),
   key: z.string().min(1).max(64),
   title: z.string().min(1).max(240),
   description: z.string().optional().default(""),
@@ -192,27 +194,22 @@ export async function POST(request: Request) {
     }
   }
 
+  const sharedIds = [...new Set((parsed.data.structuredSteps ?? []).map((step) => step.sharedStepId).filter((id): id is string => Boolean(id)))];
+  if (sharedIds.length) {
+    const available = await db.select({ id: sharedSteps.id }).from(sharedSteps).where(and(eq(sharedSteps.workspaceId, workspaceId), inArray(sharedSteps.id, sharedIds)));
+    if (available.length !== sharedIds.length) return NextResponse.json({ error: "Shared steps unavailable in this project" }, { status: 400 });
+  }
   try {
-    const [created] = await db
-      .insert(cases)
-      .values({
-        ...parsed.data,
-        workspaceId,
-        createdById: session.user.id,
-      })
-      .returning();
-
-    const { ensureIntentForCase } = await import("@/lib/quality-graph");
-    const { intentId } = await ensureIntentForCase(created);
-    const withIntent = { ...created, intentId };
-
-    await recordCaseActivity({
-      caseId: created.id,
-      actorId: session.user.id,
-      action: "created",
-      summary: `Created case ${created.key}`,
+    const withIntent = await db.transaction(async (tx) => {
+      const { structuredSteps, ...fields } = parsed.data;
+      const [created] = await tx.insert(cases).values({ ...fields, workspaceId, createdById: session.user.id }).returning();
+      if (structuredSteps) await replaceCaseSteps({ workspaceId, caseId: created.id, steps: structuredSteps }, tx);
+      const { ensureIntentForCase } = await import("@/lib/quality-graph");
+      const { intentId } = await ensureIntentForCase(created, tx);
+      await recordCaseActivity({ caseId: created.id, actorId: session.user.id, action: "created", summary: `Created case ${created.key}` }, tx);
+      const current = await tx.query.cases.findFirst({ where: eq(cases.id, created.id) });
+      return { ...current!, intentId };
     });
-
     return NextResponse.json({ case: withIntent }, { status: 201 });
   } catch (err) {
     const mapped = caseWriteError(err);

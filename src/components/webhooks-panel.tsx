@@ -128,7 +128,7 @@ export function WebhooksPanel() {
 
       <div className="flex flex-wrap items-end gap-2">
         <label className="min-w-[220px] flex-1 space-y-1">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             Endpoint URL
           </span>
           <Input
@@ -138,7 +138,7 @@ export function WebhooksPanel() {
           />
         </label>
         <label className="w-40 space-y-1">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             Secret
           </span>
           <Input

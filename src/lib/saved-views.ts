@@ -14,6 +14,10 @@ export const caseViewConfigSchema = z.object({
 });
 
 export const runViewConfigSchema = z.object({
+  status: z.enum(["all", "planned", "in_progress", "completed", "aborted"]).default("all"),
+  assignee: z.string().default("all"),
+  environment: z.string().default(""),
+  kind: z.enum(["all", "manual", "automation"]).default("all"),
   search: z.string().default(""),
   sort: z.enum(["updated", "created", "name", "status"]).default("updated"),
 });

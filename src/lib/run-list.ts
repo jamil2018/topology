@@ -39,6 +39,9 @@ export type RunListSort = "updated" | "created" | "name" | "status";
 export const RUN_LIST_PAGE_SIZE = 10;
 
 export type RunListQuery = {
+  status?: string;
+  assignee?: string;
+  environment?: string;
   kind?: "manual" | "automation";
   search?: string;
   sort?: RunListSort;
@@ -64,6 +67,9 @@ export function runListQueryFromSearchParams(
     kindRaw === "manual" || kindRaw === "automation" ? kindRaw : undefined;
   return {
     kind,
+    status: params.get("status") ?? "all",
+    assignee: params.get("assignee") ?? "all",
+    environment: params.get("environment") ?? "",
     search: params.get("q") ?? params.get("search") ?? "",
     sort: parseRunListSort(params.get("sort")),
     page: parsePageParam(params.get("page")),

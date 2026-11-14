@@ -1,4 +1,6 @@
 "use client";
+import { useProjectActions } from "./project-actions";
+import { useMutationFeedback } from "./use-mutation-feedback";
 
 import { useState } from "react";
 import { Button } from "@heroui/react";
@@ -12,8 +14,12 @@ export function ReportExportActions({
 }) {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { can } = useProjectActions();
+  const { saving, submit } = useMutationFeedback(setError);
 
   async function share() {
+    if (!can("reports.create")) return;
+    return submit(async () => {
     setError(null);
     const res = await fetch(`/api/reports/${runId}/share`, { method: "POST" });
     const data = await res.json().catch(() => ({}));
@@ -22,6 +28,7 @@ export function ReportExportActions({
       return;
     }
     setShareUrl(typeof data.url === "string" ? data.url : data.path);
+    });
   }
 
   return (
@@ -36,7 +43,7 @@ export function ReportExportActions({
         </a>
       ))}
       {shareable ? (
-        <Button size="sm" variant="secondary" onPress={() => void share()}>
+        <Button size="sm" variant="secondary" isDisabled={saving || !can("reports.create")} onPress={() => void share()}>
           Share link
         </Button>
       ) : null}
@@ -45,7 +52,7 @@ export function ReportExportActions({
           readOnly
           aria-label="Shareable report URL"
           value={shareUrl}
-          className="min-w-0 flex-1 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 font-mono text-[11px]"
+          className="min-w-0 flex-1 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 font-mono text-xs"
           onFocus={(e) => e.currentTarget.select()}
         />
       ) : null}

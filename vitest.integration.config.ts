@@ -14,10 +14,19 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 60_000,
     fileParallelism: false,
+    // Route glob imports load next-auth as native ESM. Node cannot resolve
+    // extensionless `next/server` from that package. Inline it so Vite resolves
+    // the subpath the same way static route imports already do.
+    server: {
+      deps: {
+        inline: ["next-auth"],
+      },
+    },
   },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@topology/domain/client": path.resolve(__dirname, "./packages/domain/src/client.ts"),
       "@topology/domain": path.resolve(
         __dirname,
         "./packages/domain/src/index.ts",

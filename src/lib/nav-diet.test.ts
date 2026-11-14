@@ -17,7 +17,7 @@ describe("nav diet", () => {
     }
     const labels = visibleNavItems(false).map((item) => item.label);
     expect(labels).toEqual([
-      "Hub",
+      "Home",
       "Test cases",
       "Plans",
       "Test runs",

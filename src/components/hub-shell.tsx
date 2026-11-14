@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { Button } from "@heroui/react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { motion } from "motion/react";
+import { Button, Modal } from "@heroui/react";
 import { signOut } from "next-auth/react";
 import {
   BugIcon,
@@ -25,8 +25,8 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { BrandMark } from "./brand-mark";
-import { openCommandPalette } from "./command-palette";
-import { openCheatSheet } from "./shortcut-layer";
+import { CommandPalette, openCommandPalette } from "./command-palette";
+import { ShortcutLayer, openCheatSheet } from "./shortcut-layer";
 import {
   ProjectSwitcher,
   type ProjectOption,
@@ -44,6 +44,9 @@ import {
   type NavGroupDef,
 } from "@/lib/nav-diet";
 
+const SIDEBAR_PREF = "topology:sidebar-collapsed";
+function subscribeSidebar(listener: () => void) { window.addEventListener(SIDEBAR_PREF, listener); window.addEventListener("storage", listener); return () => { window.removeEventListener(SIDEBAR_PREF, listener); window.removeEventListener("storage", listener); }; }
+function readSidebar() { try { return localStorage.getItem(SIDEBAR_PREF) === "1"; } catch { return false; } }
 type NavIcon = typeof CirclesFourIcon;
 
 const NAV_ICONS: Record<string, NavIcon> = {
@@ -92,7 +95,7 @@ function NavLinks({
             />
           ) : null}
           {!collapsed ? (
-            <p className="mb-1 px-2.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--topo-muted)]">
+            <p className="mb-1 px-2.5 text-xs font-medium text-[color:var(--topo-muted)]">
               {group.label}
             </p>
           ) : (
@@ -229,7 +232,7 @@ function SidebarChrome({
         {!collapsed ? <ThemeToggle /> : <ThemeToggle compact />}
         {!collapsed && userEmail ? (
           <p
-            className="truncate font-mono text-[11px] text-[color:var(--topo-muted)]"
+            className="truncate font-mono text-xs text-[color:var(--topo-muted)]"
             title={userEmail}
           >
             {userEmail}
@@ -272,6 +275,8 @@ export function HubShell({
       workspaceId={activeProjectId}
       initialEnabled={qualityGraphEnabled}
     >
+      <CommandPalette />
+      <ShortcutLayer />
       <HubShellInner
         userEmail={userEmail}
         projects={projects}
@@ -299,7 +304,12 @@ function HubShellInner({
   const groups = visibleNavGroups(qualityGraphEnabled, pathname);
   const nav = visibleNavItems(qualityGraphEnabled, pathname);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
+  const desktopCollapsed = useSyncExternalStore(subscribeSidebar, readSidebar, () => false);
+  const setDesktopCollapsed = (next: boolean | ((previous: boolean) => boolean)) => {
+    const value = typeof next === "function" ? next(readSidebar()) : next;
+    try { localStorage.setItem(SIDEBAR_PREF, value ? "1" : "0"); } catch { /* Storage unavailable. */ }
+    window.dispatchEvent(new Event(SIDEBAR_PREF));
+  };
   const [openForPath, setOpenForPath] = useState(pathname);
 
   if (openForPath !== pathname) {
@@ -346,6 +356,7 @@ function HubShellInner({
 
   return (
     <div className="topology-shell flex min-h-[100dvh] bg-[color:var(--topo-paper)]">
+      <a href="#main-content" className="topo-skip-link">Skip to content</a>
       {/* Desktop sidebar — inset canvas companion */}
       <aside
         className={`sticky top-0 z-30 hidden h-[100dvh] shrink-0 transition-[width] duration-200 ease-out lg:block ${
@@ -363,52 +374,18 @@ function HubShellInner({
       </aside>
 
       {/* Mobile drawer */}
-      <AnimatePresence>
-        {mobileOpen ? (
-          <>
-            <motion.button
-              type="button"
-              aria-label="Close menu"
-              className="fixed inset-0 z-40 bg-black/40 lg:hidden"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setMobileOpen(false)}
-            />
-            <motion.aside
-              className="fixed inset-y-0 left-0 z-50 w-[min(18rem,88vw)] border-r border-[color:var(--topo-line)] bg-[color:var(--topo-sidebar)] shadow-xl lg:hidden"
-              initial={{ x: -24, opacity: 0.6 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -16, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 380, damping: 34 }}
-            >
-              <div className="absolute right-2 top-2 z-10">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  aria-label="Close sidebar"
-                  className="min-w-0 px-2"
-                  onPress={() => setMobileOpen(false)}
-                >
-                  <XIcon size={14} weight="bold" />
-                </Button>
-              </div>
-              <SidebarChrome
-                userEmail={userEmail}
-                pathname={pathname}
-                groups={groups}
-                onNavigate={() => setMobileOpen(false)}
-                projects={projects}
-                activeProjectId={activeProjectId}
-              />
-            </motion.aside>
-          </>
-        ) : null}
-      </AnimatePresence>
+      <Modal.Backdrop isOpen={mobileOpen} onOpenChange={setMobileOpen} className="lg:hidden">
+        <Modal.Container className="items-start justify-start p-0">
+          <Modal.Dialog aria-label="Navigation" className="h-[100dvh] w-[min(18rem,88vw)] rounded-none bg-[color:var(--topo-sidebar)]">
+            <Button size="sm" variant="tertiary" aria-label="Close sidebar" onPress={() => setMobileOpen(false)}><XIcon size={16} />Close</Button>
+            <div className="h-[calc(100dvh-3rem)]"><SidebarChrome userEmail={userEmail} pathname={pathname} groups={groups} onNavigate={() => setMobileOpen(false)} projects={projects} activeProjectId={activeProjectId} /></div>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
       {/* Inset core-control panel — sits flush beside sidebar (gutter ≤ px-10) */}
       <div className="flex min-w-0 flex-1 p-2 pl-1 sm:p-2.5 sm:pl-1.5 lg:p-3 lg:pl-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-[color:var(--topo-line)] px-2.5 sm:gap-3 sm:px-3">
             <Button
               size="sm"
@@ -445,7 +422,7 @@ function HubShellInner({
               </span>
             </div>
 
-            <NotificationsBell />
+            <NotificationsBell key={activeProjectId} />
             <span title="Keyboard shortcuts ?">
               <Button
                 size="sm"
@@ -474,6 +451,7 @@ function HubShellInner({
           </header>
 
           <main
+            id="main-content" tabIndex={-1}
             key={activeProjectId ?? "none"}
             className="w-full max-w-none flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-5"
           >

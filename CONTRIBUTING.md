@@ -28,11 +28,13 @@ Demo credentials (air-gap / OAuth unset): `demo@topology.local` / `topology-demo
 | Unit | `npm run test:unit` | Vitest (`vitest.packages.config.ts`) — domain, roles, CSV, packages |
 | Unit watch | `npm run test:watch` | Same config |
 | UI | `npm run test:ui` | Vitest + Testing Library component tests |
-| Integration | `npm run test:integration` | Vitest API/DB/CLI/MCP (needs Postgres) |
-| E2E | `npm run test:e2e` | Playwright (`playwright.config.ts`). Start `npm run dev` (and migrate/seed) first, or use CI which boots the app. |
-| All | `npm run test:all` | unit + integration + ui + e2e |
+| Integration | `npm run test:integration` | Vitest API/DB/CLI/MCP (needs Postgres on :54329). RBAC in this suite needs `npm run db:seed:e2e`. |
+| E2E smoke | `npm run test:e2e` | Playwright `--project=chromium` (`e2e/smoke.spec.ts`, `e2e/release-gate.spec.ts`) with the demo seed. Start `npm run dev` first, or let Playwright boot the app. |
+| All | `npm run test:all` | unit + integration + ui + e2e smoke |
 
 ### Release gate
+
+The GitHub Actions job `release-gate` in `.github/workflows/ci.yml` is the umbrella check on every push and pull request to `main`. It exits 0 when lint, typecheck, build, unit, integration, `api-security`, Playwright desktop (`e2e`), and Playwright viewports (`e2e-viewport`) all succeed. A failed dependency fails the gate.
 
 Run this before tagging a release (and keep it green on `main`):
 
@@ -47,19 +49,35 @@ npm run typecheck
 npm run build
 
 npm run test:unit
-npm run test:integration
 npm run test:ui
 npm run test:e2e
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) runs lint, `tsc --noEmit`, `next build`, and the same test suites against a Postgres service container. Issue providers stay on `TOPOLOGY_ISSUE_PROVIDER=mock`; OAuth IdPs are not contacted in CI.
+`npm run test:e2e` is the chromium smoke project and uses the demo user from `npm run db:seed`. Release Playwright and the RBAC integration file need the e2e seed. `npm run db:seed:e2e` sets `TOPOLOGY_SEED_MODE=e2e` and adds member, viewer, custom, and the extra projects on top of the demo data.
 
-CI should keep unit tests green on every PR. E2E expects the demo user from `db:seed` and Postgres via Compose.
+```bash
+npm run db:seed:e2e
+npm run test:integration
+npx playwright test --project=setup --project=desktop-1440
+npx playwright test --project=setup \
+  --project=mobile-390 \
+  --project=tablet-834 \
+  --project=tablet-1194 \
+  --project=laptop-1366 \
+  --project=desktop-1920
+```
+
+`setup` writes `e2e/.auth/{admin,member,viewer,custom}.json`. `desktop-1440` runs the release specs. The viewport projects `mobile-390`, `tablet-834`, `tablet-1194`, `laptop-1366`, and `desktop-1920` run tests tagged `@responsive` or `@a11y`. CI shards those five projects across two runners (`--shard=1/2` and `--shard=2/2`) and uploads the Playwright HTML report and traces when a Playwright job fails.
+
+CI's integration job keeps `npm run db:migrate` and the demo seed (`npm run db:seed`), then runs `npm run test:integration` with `tests/integration/rbac.integration.test.ts` excluded. The `api-security` job uses the same Postgres service on port 54329, runs `npm run db:seed:e2e`, and runs that RBAC file together with the security integration tests, the unauthenticated route sweep, and the webhook, CLI, and MCP integration tests in one Vitest invocation. After `next build`, CI greps `.next/static` for assigned `JIRA_API_TOKEN`, `AUTH_GITHUB_SECRET`, `LINEAR_API_KEY`, and `GITLAB_TOKEN`. The build job also runs `npm audit --omit=dev --audit-level=high` and writes high and critical advisories to the job summary for triage. Issue providers stay on `TOPOLOGY_ISSUE_PROVIDER=mock`; OAuth IdPs are not contacted in CI.
+
+CI should keep unit tests green on every PR. Postgres in CI is the workflow service container.
 
 ### Auth in tests
 
 - Unit tests do not hit live OAuth.
-- E2E uses the email/password demo path (OAuth buttons only appear when env secrets are set).
+- E2E smoke uses the email/password demo path (OAuth buttons only appear when env secrets are set).
+- Release Playwright `--project=setup` signs in as the e2e admin, member, viewer, and custom users from `npm run db:seed:e2e`.
 
 ## Env secrets
 

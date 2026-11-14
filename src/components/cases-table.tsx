@@ -1,4 +1,5 @@
 "use client";
+import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
 import {
@@ -6,8 +7,6 @@ import {
   Chip,
   Input,
   Label,
-  ListBox,
-  Select,
   TextField,
 } from "@heroui/react";
 import { motion } from "motion/react";
@@ -46,7 +45,7 @@ function IntentLink({
     <div className="mt-0.5">
       <Link
         href={`/intents?intent=${intent.id}`}
-        className="text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)] hover:underline"
+        className="text-xs uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)] hover:underline"
         onClick={(event) => event.stopPropagation()}
       >
         Intent {intent.key}
@@ -70,32 +69,18 @@ function InlineFieldSelect({
   className?: string;
   shortcut?: string;
 }) {
+  const { can } = useProjectActions();
   return (
-    <Select
-      className={className}
-      variant="secondary"
+    <select
+      aria-label={ariaLabel}
+      disabled={!can("cases.edit")}
       value={value}
-      onChange={(next) => {
-        if (next == null) return;
-        onChange(String(next));
-      }}
+      onChange={(event) => onChange(event.target.value)}
+      data-case-shortcut={shortcut}
+      className={`min-h-9 max-w-full rounded-md border border-transparent bg-transparent px-1.5 text-sm text-[color:var(--topo-ink)] hover:border-[color:var(--topo-line)] focus:border-[color:var(--topo-accent)] disabled:cursor-default ${className ?? ""}`}
     >
-      <Label className="sr-only">{ariaLabel}</Label>
-      <Select.Trigger className="min-w-0" data-case-shortcut={shortcut}>
-        <Select.Value />
-        <Select.Indicator />
-      </Select.Trigger>
-      <Select.Popover>
-        <ListBox>
-          {options.map((option) => (
-            <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
-              {option.label}
-              <ListBox.ItemIndicator />
-            </ListBox.Item>
-          ))}
-        </ListBox>
-      </Select.Popover>
-    </Select>
+      {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+    </select>
   );
 }
 
@@ -214,8 +199,9 @@ export function CasesTable({
   onInlinePatch: (id: string, patch: CaseInlinePatch) => void;
   onPageChange: (page: number) => void;
 }) {
+  const { can } = useProjectActions();
   return (
-    <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
+    <div className="min-w-0 overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
       <div className="flex flex-col gap-2 border-b border-[color:var(--topo-line)] p-2.5 sm:flex-row sm:items-center sm:gap-3">
         <TextField name="case-list-search" className="min-w-0 flex-1">
           <Label className="sr-only">Search cases</Label>
@@ -234,8 +220,9 @@ export function CasesTable({
         ) : null}
       </div>
 
-      <table className="hidden w-full text-left text-sm sm:table">
-        <thead className="border-b border-[color:var(--topo-line)] font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
+      <div className="topo-cases-table-scroll relative hidden max-h-[70vh] overflow-auto md:block" tabIndex={0} role="region" aria-label="Case table">
+      <table className="w-full min-w-[760px] text-left text-sm">
+        <thead className="border-b border-[color:var(--topo-line)] text-xs text-[color:var(--topo-muted)]">
           <tr>
             <th className="w-10 px-2 py-2">
               <input
@@ -249,22 +236,22 @@ export function CasesTable({
             {sortColumns.map((col) => {
               const active = sort === col.id;
               return (
-                <th key={col.id} className="px-3 py-2 font-medium">
-                  <button
-                    type="button"
-                    onClick={() => onToggleSort(col.id)}
-                    className={`inline-flex items-center gap-1 uppercase tracking-[0.12em] transition-colors ${
-                      active
-                        ? "text-[color:var(--topo-ink)]"
-                        : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-                    }`}
-                    aria-sort={
+                <th key={col.id} className="px-3 py-2 font-medium" aria-sort={
                       active
                         ? sortDir === "asc"
                           ? "ascending"
                           : "descending"
                         : "none"
-                    }
+                    }>
+                  <button
+                    type="button"
+                    onClick={() => onToggleSort(col.id)}
+                    className={`inline-flex items-center gap-1 transition-colors ${
+                      active
+                        ? "text-[color:var(--topo-ink)]"
+                        : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+                    }`}
+
                   >
                     {col.label}
                     <span aria-hidden className="font-sans text-[9px]">
@@ -302,7 +289,7 @@ export function CasesTable({
             cases.map((row, index) => (
               <motion.tr
                 key={row.id}
-                initial={{ opacity: 0, y: 4 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(index, 12) * 0.02 }}
                 className={`group border-b border-[color:var(--topo-line)] last:border-0 ${
@@ -325,6 +312,7 @@ export function CasesTable({
                   <button
                     type="button"
                     className="hover:underline"
+                    data-case-key={row.key}
                     onClick={() => onOpen(row)}
                   >
                     {row.key}
@@ -335,6 +323,7 @@ export function CasesTable({
                   <button
                     type="button"
                     className="text-left"
+                    data-case-key={row.key}
                     onClick={() => onOpen(row)}
                   >
                     <div className="font-medium text-[color:var(--topo-ink)]">
@@ -398,6 +387,7 @@ export function CasesTable({
                   <button
                     type="button"
                     aria-label={`Delete ${row.key}`}
+                    disabled={!can("cases.delete")}
                     className="rounded p-1 text-[color:var(--topo-muted)] opacity-100 hover:bg-[color:var(--topo-chip)] hover:text-red-600 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100 dark:hover:text-red-400"
                     onClick={() => onDelete(row)}
                   >
@@ -409,8 +399,9 @@ export function CasesTable({
           )}
         </tbody>
       </table>
+      </div>
 
-      <ul className="divide-y divide-[color:var(--topo-line)] sm:hidden">
+      <ul className="divide-y divide-[color:var(--topo-line)] md:hidden">
         {totalCases === 0 ? (
           <li className="px-3 py-6">
             <GuidedFirstRun
@@ -444,7 +435,8 @@ export function CasesTable({
                 <button
                   type="button"
                   className="min-w-0 flex-1 text-left"
-                  onClick={() => onOpen(row)}
+                  data-case-key={row.key}
+                    onClick={() => onOpen(row)}
                 >
                   <p className="font-mono text-xs text-[color:var(--topo-accent)]">
                     {row.key}
@@ -457,6 +449,7 @@ export function CasesTable({
                 <button
                   type="button"
                   aria-label={`Delete ${row.key}`}
+                    disabled={!can("cases.delete")}
                   className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-red-600"
                   onClick={() => onDelete(row)}
                 >

@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, waitFor, screen, within } from "@testing-library/react";
+import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import { dispatchShortcut } from "@/lib/shortcuts";
 import { RunExecutor } from "./run-executor";
 import type { ResultRow, RunDetail } from "./run-executor-model";
 
+vi.mock("./run-productivity-actions", () => ({ RunProductivityActions: () => null }));
+
 const refresh = vi.hoisted(() => vi.fn());
+const live = vi.hoisted(() => ({ reconnect: undefined as undefined | (() => Promise<void>) }));
+vi.mock("./use-live-updates", () => ({ useLiveUpdates: (_onEvent: unknown, options: {onReconnect: () => Promise<void>}) => { live.reconnect = options.onReconnect; return "live"; } }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh }),
@@ -151,7 +156,8 @@ describe("RunExecutor abort confirmation", () => {
 
     render(<RunExecutor run={{ ...baseRun, status: "planned" }} />);
 
-    await user.click(screen.getByRole("button", { name: /^Abort$/ }));
+    await user.click(screen.getByText("More actions"));
+    await user.click(screen.getByRole("button", { name: "Abort run" }));
     expect(
       screen.getByRole("heading", { name: "Abort this run?" }),
     ).toBeInTheDocument();
@@ -174,7 +180,8 @@ describe("RunExecutor abort confirmation", () => {
 
     render(<RunExecutor run={{ ...baseRun, status: "planned" }} />);
 
-    await user.click(screen.getByRole("button", { name: /^Abort$/ }));
+    await user.click(screen.getByText("More actions"));
+    await user.click(screen.getByRole("button", { name: "Abort run" }));
     await user.click(screen.getByRole("button", { name: "Abort run" }));
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -262,10 +269,10 @@ describe("RunExecutor list and detail", () => {
     );
 
     expect(screen.getByRole("list", { name: "Run cases" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Untested" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Failed" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Blocked" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Mine" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Untested \d+$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Failed \d+$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Blocked \d+$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Mine \d+$/ })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Search cases" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "First case" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Back to case list/ })).toBeInTheDocument();
@@ -282,18 +289,18 @@ describe("RunExecutor list and detail", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Failed" }));
+    await user.click(screen.getByRole("button", { name: /^Failed \d+$/ }));
     const list = screen.getByRole("list", { name: "Run cases" });
     expect(within(list).getByText("CASE-3")).toBeInTheDocument();
     expect(within(list).queryByText("CASE-1")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Failed mine" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Failed" }));
-    await user.click(screen.getByRole("button", { name: "Mine" }));
+    await user.click(screen.getByRole("button", { name: /^Failed \d+$/ }));
+    await user.click(screen.getByRole("button", { name: /^Mine \d+$/ }));
     expect(within(list).getByText("CASE-3")).toBeInTheDocument();
     expect(within(list).queryByText("CASE-2")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Mine" }));
+    await user.click(screen.getByRole("button", { name: /^Mine \d+$/ }));
     await user.type(screen.getByRole("searchbox", { name: "Search cases" }), "Second");
     expect(within(list).getByText("CASE-2")).toBeInTheDocument();
     expect(within(list).queryByText("CASE-1")).not.toBeInTheDocument();
@@ -310,7 +317,7 @@ describe("RunExecutor list and detail", () => {
 
     expect(screen.getByRole("heading", { name: "First case" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Mark CASE-1 as passed" }));
-    expect(screen.getByRole("heading", { name: "Second case" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Second case" })).toBeInTheDocument());
   });
 
   it("moves focus with J/K and records with P", async () => {
@@ -324,7 +331,7 @@ describe("RunExecutor list and detail", () => {
     act(() => {
       dispatchShortcut("nav-next");
     });
-    expect(screen.getByRole("heading", { name: "Second case" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Second case" })).toBeInTheDocument());
     act(() => {
       dispatchShortcut("nav-prev");
     });
@@ -332,7 +339,7 @@ describe("RunExecutor list and detail", () => {
     act(() => {
       dispatchShortcut("pass");
     });
-    expect(screen.getByRole("heading", { name: "Second case" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Second case" })).toBeInTheDocument());
   });
 
   it("paints selected statuses with semantic colors instead of accent", () => {
@@ -424,4 +431,108 @@ describe("RunExecutor list and detail", () => {
     expect(within(list).getByText("CASE-0")).toBeInTheDocument();
     expect(within(list).queryByText("CASE-79")).not.toBeInTheDocument();
   });
+});
+
+
+describe("run save ordering", () => {
+  it("queues an explicit status after delayed notes autosave", async () => {
+    const user = userEvent.setup();
+    let finishNotes!: () => void;
+    const fetchMock = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finishNotes = () => resolve({ok:true, json:async()=>({})}); }))
+      .mockResolvedValue({ok:true, json:async()=>({})});
+    vi.stubGlobal("fetch", fetchMock);
+    render(<RunExecutor run={{...baseRun, results:[result({status:"untested"})]}} />);
+    await user.type(screen.getByRole("textbox", {name:"Notes"}), "Keep these notes");
+    await user.click(screen.getByRole("button", {name:"Mark SMOKE-1 as passed"}));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => { finishNotes(); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(body).toMatchObject({status:"passed", notes:"Keep these notes"});
+    await waitFor(() => expect(screen.getByRole("button", {name:"Mark SMOKE-1 as passed"})).toHaveAttribute("aria-pressed", "true"));
+  });
+
+  it("reconciles again instead of applying a stale reconnect snapshot", async () => {
+    const user = userEvent.setup();
+    const initial = {...baseRun, results:[result({status:"untested"})]};
+    let finishRead!: () => void;
+    let reads = 0;
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) => {
+      if (options?.method === "PATCH") return Promise.resolve({ok:true,json:async()=>({})});
+      reads += 1;
+      if (reads === 1) return new Promise(resolve => {finishRead = () => resolve({ok:true,json:async()=>({run:initial})});});
+      return Promise.resolve({ok:true,json:async()=>({run:{...initial, results:[result({status:"passed"})]}})});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<RunExecutor run={initial} />);
+    let reconnect!: Promise<void>;
+    await act(async () => { reconnect = live.reconnect!(); });
+    await user.click(screen.getByRole("button", {name:"Mark SMOKE-1 as passed"}));
+    await act(async () => { finishRead(); await reconnect; });
+    expect(reads).toBe(2);
+    expect(screen.getByRole("button", {name:"Mark SMOKE-1 as passed"})).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+it("allows retrying Complete after a failed lifecycle request", async () => {
+  const user = userEvent.setup();
+  const fetchMock = vi.fn().mockResolvedValueOnce({ok:false,json:async()=>({error:"Temporary outage"})})
+    .mockResolvedValue({ok:true,json:async()=>({})});
+  vi.stubGlobal("fetch", fetchMock);
+  render(<RunExecutor run={baseRun} />);
+  await user.click(screen.getByRole("button", {name:"Complete"}));
+  await user.click(screen.getByRole("button", {name:"Complete run"}));
+  await screen.findByText("Temporary outage");
+  await user.click(await screen.findByRole("button", {name:"Complete run"}));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.getByText(/completed and locked/i)).toBeVisible());
+});
+
+it("waits for writes queued while reconnect is awaiting an autosave", async () => {
+  const user = userEvent.setup();
+  const initial = {...baseRun, results:[result({status:"untested"})]};
+  let finishNotes!: () => void;
+  let finishStatus!: () => void;
+  let writes = 0;
+  let reads = 0;
+  vi.stubGlobal("fetch", vi.fn((_url: string, options?: RequestInit) => {
+    if (options?.method === "PATCH") {
+      writes += 1;
+      return new Promise(resolve => {
+        const done = () => resolve({ok:true,json:async()=>({})});
+        if (writes === 1) finishNotes = done; else finishStatus = done;
+      });
+    }
+    reads += 1;
+    return Promise.resolve({ok:true,json:async()=>({run:{...initial,results:[result({status:"passed",notes:"Draft"})]}})});
+  }));
+  render(<RunExecutor run={initial} />);
+  await user.type(screen.getByRole("textbox", {name:"Notes"}), "Draft");
+  await user.tab();
+  let reconnect!: Promise<void>;
+  await act(async () => { reconnect = live.reconnect!(); });
+  await user.click(screen.getByRole("button", {name:"Mark SMOKE-1 as passed"}));
+  await act(async () => { finishNotes(); });
+  expect(writes).toBe(2);
+  expect(reads).toBe(0);
+  await act(async () => { finishStatus(); await reconnect; });
+  expect(reads).toBe(1);
+  expect(screen.getByRole("button", {name:"Mark SMOKE-1 as passed"})).toHaveAttribute("aria-pressed", "true");
+});
+
+it("allows completing after reverting a failed notes draft to its saved value", async () => {
+  const user = userEvent.setup();
+  const fetchMock = vi.fn().mockResolvedValueOnce({ok:false,json:async()=>({error:"Notes failed"})})
+    .mockResolvedValue({ok:true,json:async()=>({})});
+  vi.stubGlobal("fetch", fetchMock);
+  render(<RunExecutor run={baseRun} />);
+  const notes = screen.getByRole("textbox", {name:"Notes"});
+  await user.type(notes, "Abandoned draft");
+  await user.tab();
+  await screen.findByText("Notes failed");
+  await user.clear(notes);
+  await user.click(screen.getByRole("button", {name:"Complete"}));
+  await user.click(screen.getByRole("button", {name:"Complete run"}));
+  await waitFor(() => expect(screen.getByText(/completed and locked/i)).toBeVisible());
+  expect(fetchMock).toHaveBeenCalledTimes(2);
 });

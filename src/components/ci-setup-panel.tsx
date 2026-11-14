@@ -23,7 +23,7 @@ export function CiSetupPanel() {
           <p className="font-medium text-[color:var(--topo-ink)]">CLI quick path</p>
           <StatusChip mono>TOPOLOGY_API_TOKEN</StatusChip>
         </div>
-        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[color:var(--topo-ink)]">
+        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-[color:var(--topo-ink)]">
 {`export TOPOLOGY_URL=http://127.0.0.1:4317
 export TOPOLOGY_API_TOKEN=<token from Settings → Security>
 npx topology runs create --name "CI build" --source github --shards 2

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
+import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import { CaseEditPanel } from "./case-edit-panel";
 
@@ -104,6 +105,25 @@ describe("CaseEditPanel", () => {
       title: "Edited title",
       key: "AUTO-a::one",
     });
+  });
+
+  it("retains the draft and unlocks Save after a rejected request", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    const detail = { id: caseId, key: "K-1", title: "Original", description: "", preconditions: "", steps: "", expectedResult: "", priority: "P2", status: "draft", tags: [], folderId: null };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PATCH") throw new Error("Offline");
+      return { ok: true, json: async () => String(input).includes("/activity") ? { activities: [] } : { case: detail } };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CaseEditPanel caseId={caseId} caseKey="K-1" caseTitle="Original" folders={[]} flatFolders={[]} onClose={() => undefined} onSaved={onSaved} />);
+    const title = await screen.findByDisplayValue("Original");
+    await user.clear(title); await user.type(title, "Keep this draft");
+    await user.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Save$/i })).toBeEnabled());
+    expect(title).toHaveValue("Keep this draft");
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(screen.getByText(/Offline/)).toBeInTheDocument();
   });
 
   it("explains a disabled Save and reports dirty state", async () => {

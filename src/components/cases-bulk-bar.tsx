@@ -1,4 +1,5 @@
 "use client";
+import { useProjectActions } from "./project-actions";
 
 import { Button, Input, Label, ListBox, Select, TextField } from "@heroui/react";
 import { motion } from "motion/react";
@@ -32,6 +33,8 @@ export function CasesBulkBar({
   onBulkUpdate: (patch: BulkPatch) => void;
   onClear: () => void;
 }) {
+  const { can } = useProjectActions();
+  const disabled = bulkPending || !can("cases.edit");
   return (
     <motion.div
       initial={{ opacity: 0, y: -6 }}
@@ -43,6 +46,7 @@ export function CasesBulkBar({
         {selectedCount} selected
       </span>
       <Select
+        isDisabled={disabled}
         className="w-[8.5rem]"
         variant="secondary"
         placeholder="Status"
@@ -72,6 +76,7 @@ export function CasesBulkBar({
         </Select.Popover>
       </Select>
       <Select
+        isDisabled={disabled}
         className="w-[12rem]"
         variant="secondary"
         placeholder="Move folder"
@@ -115,7 +120,7 @@ export function CasesBulkBar({
       <Button
         size="sm"
         variant="secondary"
-        isDisabled={bulkPending || !bulkTags.trim()}
+        isDisabled={disabled || !bulkTags.trim()}
         onPress={() =>
           onBulkUpdate({
             tags: parseTagInput(bulkTags),

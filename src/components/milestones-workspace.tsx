@@ -1,4 +1,6 @@
 "use client";
+import { useProjectActions } from "./project-actions";
+import { useMutationFeedback } from "./use-mutation-feedback";
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -36,9 +38,12 @@ export function MilestonesWorkspace({
   initial: MilestoneView[];
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { can } = useProjectActions();
+  const [transitionPending, startTransition] = useTransition();
   const [items, setItems] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const { saving, submit } = useMutationFeedback(setError);
+  const pending = transitionPending || saving;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     passRateThreshold: 95,
@@ -59,6 +64,8 @@ export function MilestonesWorkspace({
   }
 
   async function saveThresholds(id: string) {
+    if (!can("milestones.manage")) return;
+    return submit(async () => {
     setError(null);
     const res = await fetch("/api/milestones", {
       method: "PATCH",
@@ -79,9 +86,12 @@ export function MilestonesWorkspace({
     }
     setEditingId(null);
     startTransition(() => router.refresh());
+    });
   }
 
   async function createMilestone() {
+    if (!can("milestones.manage")) return;
+    return submit(async () => {
     const name = newName.trim();
     if (!name) return;
     setError(null);
@@ -96,6 +106,7 @@ export function MilestonesWorkspace({
     }
     setNewName("");
     startTransition(() => router.refresh());
+    });
   }
 
   return (
@@ -130,7 +141,7 @@ export function MilestonesWorkspace({
 
       <div className="flex flex-wrap items-end gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3">
         <label className="min-w-[200px] flex-1 space-y-1">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             New milestone
           </span>
           <Input
@@ -143,7 +154,7 @@ export function MilestonesWorkspace({
         <Button
           size="sm"
           variant="primary"
-          isDisabled={pending || !newName.trim()}
+          isDisabled={!can("milestones.manage") || pending || !newName.trim()}
           onPress={() => void createMilestone()}
         >
           Create
@@ -159,7 +170,7 @@ export function MilestonesWorkspace({
           {items.map((view, i) => (
             <motion.li
               key={view.milestone.id}
-              initial={{ opacity: 0, y: 6 }}
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: Math.min(i, 8) * 0.03 }}
               className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
@@ -192,10 +203,10 @@ export function MilestonesWorkspace({
                   <div className="font-mono text-3xl font-semibold tabular-nums text-[color:var(--topo-ink)]">
                     {view.readiness.score}
                   </div>
-                  <div className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+                  <div className="font-medium text-xs text-[color:var(--topo-muted)]">
                     score
                   </div>
-                  <div className="mt-2 space-y-0.5 font-mono text-[11px] text-[color:var(--topo-muted)]">
+                  <div className="mt-2 space-y-0.5 font-mono text-xs text-[color:var(--topo-muted)]">
                     <div>
                       pass{" "}
                       {view.readiness.passRate == null
@@ -227,7 +238,7 @@ export function MilestonesWorkspace({
                     ] as const
                   ).map(([key, label]) => (
                     <label key={key} className="space-y-1">
-                      <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+                      <span className="font-medium text-xs text-[color:var(--topo-muted)]">
                         {label}
                       </span>
                       <Input
@@ -246,7 +257,7 @@ export function MilestonesWorkspace({
                     <Button
                       size="sm"
                       variant="primary"
-                      isDisabled={pending}
+                      isDisabled={!can("milestones.manage") || pending}
                       onPress={() => void saveThresholds(view.milestone.id)}
                     >
                       Save thresholds
@@ -277,7 +288,7 @@ export function MilestonesWorkspace({
                   <Button
                     size="sm"
                     variant="secondary"
-                    onPress={() => beginEdit(view)}
+                    isDisabled={!can("milestones.manage")} onPress={() => beginEdit(view)}
                   >
                     Edit thresholds
                   </Button>

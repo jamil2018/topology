@@ -82,7 +82,7 @@ export function AutomationWorkspace({
 
       <div className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3 text-sm text-[color:var(--topo-muted)]">
         <p className="font-medium text-[color:var(--topo-ink)]">CLI quick path</p>
-        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[color:var(--topo-ink)]">
+        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-[color:var(--topo-ink)]">
 {`export TOPOLOGY_URL=http://127.0.0.1:4317
 export TOPOLOGY_API_TOKEN=<token from Settings → Security>
 npx topology runs create --name "CI build" --source github --shards 2
@@ -131,7 +131,7 @@ npx topology runs complete --run-id <id>`}
           </h2>
           <Link
             href="/triage"
-            className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
+            className="font-medium text-xs text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
           >
             Open triage
           </Link>
@@ -146,7 +146,7 @@ npx topology runs complete --run-id <id>`}
             {initialRuns.map((run, i) => (
               <motion.li
                 key={run.id}
-                initial={{ opacity: 0, y: 4 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i, 10) * 0.02 }}
               >
@@ -168,7 +168,7 @@ npx topology runs complete --run-id <id>`}
                           {run.commitSha.slice(0, 7)}
                         </StatusChip>
                       ) : null}
-                      <span className="font-mono text-[10px] text-[color:var(--topo-muted)]">
+                      <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                         {run.id.slice(0, 8)}
                       </span>
                     </div>
@@ -215,7 +215,7 @@ npx topology runs complete --run-id <id>`}
             {flakeHints.map((hint, i) => (
               <motion.li
                 key={hint.caseId}
-                initial={{ opacity: 0, y: 4 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i, 8) * 0.02 }}
                 className="px-3 py-2.5 text-sm"

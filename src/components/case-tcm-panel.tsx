@@ -93,7 +93,7 @@ export function CaseTcmPanel({
             <p className="text-xs text-red-600 dark:text-red-300">{error}</p>
           ) : null}
           <div className="space-y-1.5">
-            <p className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+            <p className="font-medium text-xs text-[color:var(--topo-muted)]">
               Parameters
             </p>
             {parameters.map((param, i) => (
@@ -152,7 +152,7 @@ export function CaseTcmPanel({
 
           {parameters.some((p) => p.name.trim()) ? (
             <div className="space-y-1.5">
-              <p className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+              <p className="font-medium text-xs text-[color:var(--topo-muted)]">
                 Dataset rows
               </p>
               {datasets.map((row, i) => (
@@ -207,7 +207,7 @@ export function CaseTcmPanel({
 
           {customFieldDefs.length > 0 ? (
             <div className="space-y-1.5">
-              <p className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+              <p className="font-medium text-xs text-[color:var(--topo-muted)]">
                 Custom fields
               </p>
               {customFieldDefs.map((def) => (
@@ -270,7 +270,7 @@ export function CaseTcmPanel({
           ) : null}
 
           <div className="space-y-1.5">
-            <p className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+            <p className="font-medium text-xs text-[color:var(--topo-muted)]">
               Versions
             </p>
             {versions.length === 0 ? (

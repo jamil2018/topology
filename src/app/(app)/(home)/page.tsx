@@ -16,9 +16,9 @@ import { getJourneyCoverage } from "@/lib/quality-graph";
 import { resolveActiveProject } from "@/lib/project";
 
 export const metadata: Metadata = {
-  title: pageTitle("Hub"),
+  title: pageTitle("Home"),
   description:
-    "QA home for in-progress runs, failures, and workspace pulse.",
+    "Your test runs, failures, and work in progress.",
 };
 
 export default async function HomePage({

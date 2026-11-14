@@ -1,4 +1,6 @@
 "use client";
+import { useProjectActions } from "./project-actions";
+import { useMutationFeedback } from "./use-mutation-feedback";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -21,9 +23,12 @@ export function JourneysWorkspace({
   initial: JourneyRow[];
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [transitionPending, startTransition] = useTransition();
   const [items, setItems] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const { can } = useProjectActions();
+  const { saving, submit } = useMutationFeedback(setError);
+  const pending = transitionPending || saving;
   const [draft, setDraft] = useState({
     key: "",
     title: "",
@@ -32,6 +37,8 @@ export function JourneysWorkspace({
   });
 
   async function createJourney() {
+    if (!can("journeys.create")) return;
+    return submit(async () => {
     if (!draft.key.trim() || !draft.title.trim()) return;
     setError(null);
     const res = await fetch("/api/journeys", {
@@ -50,6 +57,7 @@ export function JourneysWorkspace({
     setItems((prev) => [{ ...row, intentIds: row.intentIds ?? [] }, ...prev]);
     setDraft({ key: "", title: "", description: "", criticality: "P2" });
     startTransition(() => router.refresh());
+    });
   }
 
   return (
@@ -72,39 +80,39 @@ export function JourneysWorkspace({
           New journey
         </h2>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <Input
+          <label className="topo-field"><span>Journey key</span><Input
             aria-label="Journey key"
             placeholder="JOURNEY-CHECKOUT"
             value={draft.key}
             onChange={(e) => setDraft((d) => ({ ...d, key: e.target.value }))}
-          />
-          <Input
+          /></label>
+          <label className="topo-field"><span>Criticality</span><Input
             aria-label="Criticality"
             value={draft.criticality}
             onChange={(e) =>
               setDraft((d) => ({ ...d, criticality: e.target.value }))
             }
-          />
+          /></label>
         </div>
-        <Input
-          className="mt-2"
+        <label className="topo-field"><span>Title</span><Input
+          className="w-full"
           aria-label="Title"
           placeholder="Checkout to order confirmation"
           value={draft.title}
           onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-        />
-        <TextArea
-          className="mt-2"
+        /></label>
+        <label className="topo-field"><span>Description</span><TextArea
+          className="w-full"
           aria-label="Description"
           value={draft.description}
           onChange={(e) =>
             setDraft((d) => ({ ...d, description: e.target.value }))
           }
-        />
+        /></label>
         <Button
           className="mt-3"
           onPress={() => void createJourney()}
-          isDisabled={pending}
+          isDisabled={pending || !can("journeys.create")}
         >
           Create journey
         </Button>

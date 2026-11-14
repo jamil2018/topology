@@ -1,10 +1,11 @@
 "use client";
+import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Input } from "@heroui/react";
 import { motion } from "motion/react";
-import { clusterTriageBySignature } from "@topology/domain";
+import { clusterTriageBySignature } from "@topology/domain/client";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 import { useLiveUpdates } from "./use-live-updates";
@@ -71,7 +72,10 @@ export function TriageWorkspace({
   issueProvider?: string;
   demoMode?: boolean;
 }) {
-  const [pending] = useTransition();
+  const { can } = useProjectActions();
+  const busy = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
   const [queue, setQueue] = useState(initialQueue);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(
@@ -104,9 +108,21 @@ export function TriageWorkspace({
     },
     [],
   );
-  useLiveUpdates(onLive);
+  const liveStatus = useLiveUpdates(onLive, { onReconnect: () => onLive({ topic: "triage", workspaceId: "*" } as LiveEvent) });
 
   const clusters = toClusterItems(queue);
+  useEffect(() => {
+    const openTarget = () => {
+      const id = window.location.hash.replace("#failure-", "");
+      const cluster = toClusterItems(queue).find((item) => item.items.some((member) => member.id === id));
+      if (cluster) {
+        setExpanded((current) => new Set([...current, cluster.signatureId]));
+        requestAnimationFrame(() => document.getElementById(`failure-${id}`)?.scrollIntoView({ block: "center" }));
+      }
+    };
+    openTarget(); window.addEventListener("hashchange", openTarget);
+    return () => window.removeEventListener("hashchange", openTarget);
+  }, [queue]);
 
   function toggleCluster(signatureId: string) {
     setExpanded((prev) => {
@@ -118,6 +134,9 @@ export function TriageWorkspace({
   }
 
   async function setStatus(id: string, status: "resolved" | "snoozed") {
+    if (!can("triage.manage") || busy.current) return;
+    busy.current = true; setPending(true);
+    try {
     setError(null);
     const res = await fetch("/api/triage", {
       method: "PATCH",
@@ -129,6 +148,9 @@ export function TriageWorkspace({
       return;
     }
     setQueue((prev) => prev.filter((item) => item.id !== id));
+    } catch { setError("The request failed. Your input is preserved; try again."); }
+    finally { busy.current = false; setPending(false); }
+
   }
 
   async function fileIssue(item: QueueItem) {
@@ -136,6 +158,9 @@ export function TriageWorkspace({
       setError("This failure has no result to attach an issue to");
       return;
     }
+    if (!can("triage.manage") || busy.current) return;
+    busy.current = true; setPending(true);
+    try {
     setError(null);
     const res = await fetch("/api/issues", {
       method: "POST",
@@ -154,6 +179,9 @@ export function TriageWorkspace({
       return;
     }
     setQueue((prev) => prev.filter((q) => q.id !== item.id));
+    } catch { setError("The request failed. Your input is preserved; try again."); }
+    finally { busy.current = false; setPending(false); }
+
   }
 
   async function linkIssue(item: QueueItem) {
@@ -163,6 +191,9 @@ export function TriageWorkspace({
     }
     const remoteKey = (linkKey[item.id] ?? "").trim();
     if (!remoteKey) return;
+    if (!can("triage.manage") || busy.current) return;
+    busy.current = true; setPending(true);
+    try {
     setError(null);
     const res = await fetch("/api/issues", {
       method: "POST",
@@ -182,15 +213,21 @@ export function TriageWorkspace({
       return;
     }
     setQueue((prev) => prev.filter((q) => q.id !== item.id));
+    } catch { setError("The request failed. Your input is preserved; try again."); }
+    finally { busy.current = false; setPending(false); }
+
   }
 
   function renderItem(item: QueueItem, nested = false) {
     return (
       <div
+        id={`failure-${item.id}`}
         className={`flex flex-wrap items-start justify-between gap-3 ${
           nested ? "border-t border-[color:var(--topo-line)] px-3 py-3 pl-6" : ""
         }`}
       >
+        {can("runs.create") && item.resultId ? <label className="flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`Select ${item.caseKey || item.caseTitle} for retest`} checked={selected.includes(item.resultId)} onChange={(event) => setSelected((ids) => event.target.checked ? [...ids, item.resultId!] : ids.filter((id) => id !== item.resultId))} />Retest</label> : null}
+
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <StatusChip mono>{item.priority}</StatusChip>
@@ -213,7 +250,7 @@ export function TriageWorkspace({
               <>
                 {" · "}
                 <Link
-                  href={`/runs/${item.runId}`}
+                  href={`/runs/${item.runId}${item.resultId ? `?result=${item.resultId}` : ""}`}
                   className="underline-offset-2 hover:underline"
                 >
                   {item.runName}
@@ -232,7 +269,7 @@ export function TriageWorkspace({
           {item.notes ? (
             <div className="mt-2">
               <p
-                className={`font-mono text-[11px] text-[color:var(--topo-muted)] ${
+                className={`font-mono text-xs text-[color:var(--topo-muted)] ${
                   expandedNotes.has(item.id) ? "whitespace-pre-wrap" : "line-clamp-3"
                 }`}
               >
@@ -241,7 +278,7 @@ export function TriageWorkspace({
               {item.notes.length > 160 || item.notes.split("\n").length > 3 ? (
                 <button
                   type="button"
-                  className="mt-1 text-[11px] text-[color:var(--topo-accent)] hover:underline"
+                  className="mt-1 text-xs text-[color:var(--topo-accent)] hover:underline"
                   onClick={() =>
                     setExpandedNotes((prev) => {
                       const next = new Set(prev);
@@ -268,7 +305,7 @@ export function TriageWorkspace({
               <Button
                 size="sm"
                 variant="primary"
-                isDisabled={pending}
+                isDisabled={pending || !can("triage.manage")}
                 onPress={() => void fileIssue(item)}
               >
                 File issue
@@ -277,7 +314,7 @@ export function TriageWorkspace({
             <Button
               size="sm"
               variant="secondary"
-              isDisabled={pending}
+              isDisabled={pending || !can("triage.manage")}
               onPress={() => setStatus(item.id, "snoozed")}
             >
               Snooze
@@ -285,7 +322,7 @@ export function TriageWorkspace({
             <Button
               size="sm"
               variant="secondary"
-              isDisabled={pending}
+              isDisabled={pending || !can("triage.manage")}
               onPress={() => setStatus(item.id, "resolved")}
             >
               Resolve
@@ -298,6 +335,7 @@ export function TriageWorkspace({
               ) : null}
               <div className="flex flex-wrap items-center justify-end gap-1">
                 <Input
+                  aria-label="Issue key"
                   value={linkKey[item.id] ?? ""}
                   onChange={(e) =>
                     setLinkKey((prev) => ({
@@ -311,7 +349,7 @@ export function TriageWorkspace({
                 <Button
                   size="sm"
                   variant="secondary"
-                  isDisabled={pending || !(linkKey[item.id] ?? "").trim()}
+                  isDisabled={pending || !can("triage.manage") || !(linkKey[item.id] ?? "").trim()}
                   onPress={() => void linkIssue(item)}
                 >
                   Link
@@ -326,10 +364,11 @@ export function TriageWorkspace({
 
   return (
     <div className="space-y-5">
+      {liveStatus !== "live" ? <p role="status" className="text-xs text-[color:var(--topo-muted)]">Reconnecting — failures may be out of date.</p> : null}
       <PageHeader
         eyebrow="Failures"
         title="Triage"
-        description="Failed results without a linked issue, grouped by failure signature. File or link a tracker issue, then resolve. Flake suspects are demoted so real regressions surface first."
+        description="Review failures, link an issue for follow-up, and resolve items when addressed. Similar failures are grouped together."
         meta={
           <>
             <StatusChip tone={queue.length ? "danger" : "success"} mono>
@@ -345,6 +384,7 @@ export function TriageWorkspace({
         }
       />
 
+      {selected.length && can("runs.create") ? <div className="topo-toolbar"><span className="text-sm">{selected.length} selected failures</span><Link className="underline text-sm" href={`/runs/new?retest=${selected.join(",")}`}>Review retest</Link><button className="text-xs" onClick={() => setSelected([])}>Clear</button></div> : null}
       {error ? (
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
       ) : null}
@@ -373,7 +413,7 @@ export function TriageWorkspace({
               return (
                 <motion.li
                   key={cluster.signatureId}
-                  initial={{ opacity: 0, y: 4 }}
+                  initial={false}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: Math.min(i, 10) * 0.02 }}
                   className="px-3 py-3"
@@ -386,7 +426,7 @@ export function TriageWorkspace({
             return (
               <motion.li
                 key={cluster.signatureId}
-                initial={{ opacity: 0, y: 4 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i, 10) * 0.02 }}
               >

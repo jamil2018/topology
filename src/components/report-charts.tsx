@@ -101,8 +101,8 @@ export function SuiteBars({ rows }: { rows: SuiteBreakdownRow[] }) {
               <span className="truncate font-medium text-[color:var(--topo-ink)]">
                 {row.label}
               </span>
-              <span className="shrink-0 font-mono text-[10px] text-[color:var(--topo-muted)]">
-                {row.passed}P · {row.failed}F
+              <span className="shrink-0 font-mono text-xs text-[color:var(--topo-muted)]">
+                {row.passed} passed · {row.failed} failed
                 {row.passRate != null ? ` · ${row.passRate}%` : ""}
               </span>
             </div>
@@ -181,7 +181,7 @@ export function CumulativeTimeline({ points }: { points: TimelinePoint[] }) {
 
   return (
     <div>
-      <div className="mb-2 flex flex-wrap gap-3 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+      <div className="mb-2 flex flex-wrap gap-3 font-medium text-xs text-[color:var(--topo-muted)]">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-0.5 w-3 bg-[color:var(--topo-success)]" /> Pass cumulative
         </span>
@@ -365,14 +365,12 @@ export function PassRateTrend({ points }: { points: ReportsTrendPoint[] }) {
             r={2.5}
             fill="var(--topo-success)"
           >
-            <title>
-              {point.date}:{" "}
-              {point.passRate == null ? "n/a" : `${point.passRate}%`}
-            </title>
+            <title>{`${point.date}: ${point.passRate == null ? "n/a" : `${point.passRate}%`}`}</title>
           </circle>
         ))}
       </svg>
-      <div className="mt-1 flex justify-between font-mono text-[10px] text-[color:var(--topo-muted)]">
+      <details className="mt-2 text-xs text-[color:var(--topo-muted)]"><summary className="cursor-pointer">View daily values</summary><ul className="mt-2 space-y-1">{points.map((point) => <li key={point.date}>{point.date}: {point.passRate == null ? "No executed results" : `${point.passRate}% passed`}</li>)}</ul></details>
+      <div className="mt-1 flex justify-between font-mono text-xs text-[color:var(--topo-muted)]">
         <span>{points[0]?.date}</span>
         <span>{points[points.length - 1]?.date}</span>
       </div>

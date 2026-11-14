@@ -7,3 +7,5 @@ export * from "./schema/execution";
 export * from "./schema/ops";
 export * from "./schema/relations";
 export * from "./schema/types";
+
+export * from "./schema/productivity";

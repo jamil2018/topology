@@ -18,7 +18,7 @@ export function RunCommentsPanel({
 }) {
   return (
     <div className="space-y-2 border-t border-[color:var(--topo-line)] pt-3">
-      <p className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+      <p className="font-medium text-xs text-[color:var(--topo-muted)]">
         Comments
       </p>
       {comments.length === 0 ? (
@@ -78,7 +78,7 @@ export function RunAttachmentsPanel({
 }) {
   return (
     <div className="space-y-2">
-      <p className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+      <p className="font-medium text-xs text-[color:var(--topo-muted)]">
         Attachments
       </p>
       {attachments.length === 0 ? (
@@ -95,7 +95,7 @@ export function RunAttachmentsPanel({
               >
                 {attachment.filename}
               </a>
-              <span className="ml-2 text-[10px] text-[color:var(--topo-muted)]">
+              <span className="ml-2 text-xs text-[color:var(--topo-muted)]">
                 {(attachment.sizeBytes / 1024).toFixed(1)} KB
               </span>
             </li>

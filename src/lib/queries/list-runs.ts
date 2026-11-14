@@ -7,6 +7,7 @@ import {
   gt,
   ilike,
   inArray,
+  isNull,
   lt,
   or,
   sql,
@@ -107,7 +108,7 @@ function runSearchSql(search: string | undefined): SQL | undefined {
   return or(
     ilike(runs.name, pattern),
     sql`${runs.id}::text ilike ${pattern} escape '\\'`,
-    ilike(runs.status, pattern),
+    ilike(sql`${runs.status}::text`, pattern),
     ilike(runs.environment, pattern),
     sql`replace(${runs.status}::text, '_', ' ') ilike ${spacedPattern} escape '\\'`,
   );
@@ -117,6 +118,9 @@ function runWhere(workspaceId: string, query: RunListQuery): SQL | undefined {
   return and(
     eq(runs.workspaceId, workspaceId),
     query.kind ? eq(runs.kind, query.kind) : undefined,
+    query.status && ["planned", "in_progress", "completed", "aborted"].includes(query.status) ? sql`${runs.status}::text = ${query.status}` : undefined,
+    query.assignee === "unassigned" ? isNull(runs.assigneeId) : query.assignee && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query.assignee) ? eq(runs.assigneeId, query.assignee) : undefined,
+    query.environment ? ilike(runs.environment, containsPattern(query.environment)) : undefined,
     runSearchSql(query.search),
   );
 }

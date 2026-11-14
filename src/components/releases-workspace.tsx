@@ -1,4 +1,7 @@
 "use client";
+import { formatDateTime } from "@/lib/format-date";
+import { useProjectActions } from "./project-actions";
+import { useMutationFeedback } from "./use-mutation-feedback";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -34,11 +37,7 @@ function formatDate(value: Date | string | null) {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatDateTime(d);
 }
 
 export function ReleasesWorkspace({
@@ -47,9 +46,12 @@ export function ReleasesWorkspace({
   initial: ReleaseListItem[];
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { can } = useProjectActions();
+  const [transitionPending, startTransition] = useTransition();
   const items = initial;
   const [error, setError] = useState<string | null>(null);
+  const { saving, submit } = useMutationFeedback(setError);
+  const pending = transitionPending || saving;
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     name: "",
@@ -66,8 +68,9 @@ export function ReleasesWorkspace({
   const [covBusy, setCovBusy] = useState(false);
 
   async function loadCoverageSnapshots() {
+    try {
     const res = await fetch("/api/coverage/snapshots");
-    if (!res.ok) return;
+    if (!res.ok) throw new Error("Could not load coverage snapshots. Try again.");
     const data = (await res.json()) as {
       snapshots?: Array<{
         id: string;
@@ -76,9 +79,12 @@ export function ReleasesWorkspace({
       }>;
     };
     setCovSnapshots(data.snapshots ?? []);
+    } catch (error) { setError(error instanceof Error ? error.message : "Could not load snapshots"); }
   }
 
   async function createRelease() {
+    if (!can("releases.create")) return;
+    return submit(async () => {
     if (!draft.name.trim()) return;
     setError(null);
     const res = await fetch("/api/releases", {
@@ -104,9 +110,12 @@ export function ReleasesWorkspace({
     if (data.release?.id) {
       router.push(`/releases/${data.release.id}`);
     }
+    });
   }
 
   async function snapshotCoverage() {
+    if (!can("intents.view") && !can("automation.manage")) return;
+    return submit(async () => {
     setCovBusy(true);
     setError(null);
     try {
@@ -128,9 +137,11 @@ export function ReleasesWorkspace({
     } finally {
       setCovBusy(false);
     }
+    });
   }
 
   async function openCoverageCompare() {
+    return submit(async () => {
     if (!covBefore || !covAfter || covBefore === covAfter) {
       setError("Pick two different coverage snapshots");
       return;
@@ -156,6 +167,7 @@ export function ReleasesWorkspace({
       setError(null);
       setNotice("No coverage drops between selected snapshots.");
     }
+    });
   }
 
   function openCompare() {
@@ -219,7 +231,7 @@ export function ReleasesWorkspace({
         <Button
           className="mt-3"
           onPress={() => void createRelease()}
-          isDisabled={pending}
+          isDisabled={pending || !can("releases.create")}
         >
           Create release
         </Button>
@@ -236,7 +248,7 @@ export function ReleasesWorkspace({
         <div className="mt-3 flex flex-wrap gap-2">
           <Button
             variant="secondary"
-            isDisabled={covBusy || pending}
+            isDisabled={covBusy || pending || !(can("intents.view") || can("automation.manage"))}
             onPress={() => {
               void loadCoverageSnapshots().then(() => snapshotCoverage());
             }}
@@ -355,7 +367,7 @@ export function ReleasesWorkspace({
                       <div className="font-medium text-[color:var(--topo-ink)]">
                         {rel.name}
                       </div>
-                      <p className="mt-0.5 font-mono text-[11px] text-[color:var(--topo-muted)]">
+                      <p className="mt-0.5 font-mono text-xs text-[color:var(--topo-muted)]">
                         {rel.gitTag ?? "no tag"}
                         {rel.sha ? ` · ${rel.sha.slice(0, 8)}` : ""}
                         {rel.milestoneName ? ` · ${rel.milestoneName}` : ""}

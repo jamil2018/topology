@@ -1,5 +1,6 @@
 "use client";
 
+import { GuidedFirstRun } from "./guided-first-run";
 import Link from "next/link";
 import { useReducedMotion } from "motion/react";
 import { formatPriorityLabel, formatStatusLabel } from "@/lib/format-labels";
@@ -26,14 +27,14 @@ function RunRow({ run }: { run: RunPulse }) {
             <div className="truncate font-medium text-[color:var(--topo-ink)]">
               {run.name}
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-[color:var(--topo-muted)]">
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-xs text-[color:var(--topo-muted)]">
               {run.kind === "automation" ? (
                 <StatusChip tone="info">CI</StatusChip>
               ) : (
                 <StatusChip>Manual</StatusChip>
               )}
               <span>
-                {passed}P / {failed}F
+                {passed} passed · {failed} failed
                 {untested > 0 ? ` · ${untested} left` : ""}
               </span>
             </div>
@@ -65,6 +66,9 @@ export function QaHome({ pulse }: { pulse: HubPulseData }) {
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      {pulse.cases.total === 0 || pulse.runs.total === 0 ? <div className="col-span-full"><GuidedFirstRun completed={[...(pulse.cases.total ? ["1"] : []), ...(pulse.runs.total ? ["2"] : []), ...((pulse.runs.automation ?? 0) > 0 ? ["3"] : [])]} /></div> : null}
+      {(assigned[0] ?? inProgress[0]) ? <section className="col-span-full flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-accent-soft)] p-4"><div><p className="text-xs text-[color:var(--topo-muted)]">Pick up where you left off</p><h2 className="mt-1 text-base font-semibold">{(assigned[0] ?? inProgress[0]).name}</h2></div><Link className="rounded-md bg-[color:var(--topo-accent)] px-4 py-2 text-sm font-medium text-[color:var(--accent-foreground)]" href={`/runs/${(assigned[0] ?? inProgress[0]).id}`}>Continue testing</Link></section> : null}
+
       <WidgetCard reduceMotion={reduceMotion} delay={0.02} className="overflow-hidden">
         <div className="flex items-baseline justify-between gap-2 border-b border-[color:var(--topo-line)] px-4 py-3">
           <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
@@ -72,15 +76,14 @@ export function QaHome({ pulse }: { pulse: HubPulseData }) {
           </h2>
           <Link
             href="/runs"
-            className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
+            className="font-medium text-xs text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
           >
             All runs
           </Link>
         </div>
         {assigned.length === 0 ? (
           <p className="px-4 py-6 text-sm text-[color:var(--topo-muted)]">
-            Nothing assigned to you. Open a planned or in-progress run and take
-            it from the executor.
+            Nothing assigned to you. Open a test run and choose yourself under Run assignee.
           </p>
         ) : (
           <ul className="divide-y divide-[color:var(--topo-line)]">
@@ -143,7 +146,7 @@ export function QaHome({ pulse }: { pulse: HubPulseData }) {
             {failing.map((item) => (
               <li key={item.id}>
                 <Link
-                  href="/triage"
+                  href={`/triage#failure-${item.id}`}
                   className="flex items-start justify-between gap-2 px-4 py-2.5 text-sm transition-colors hover:bg-[color:var(--topo-chip)]/60"
                 >
                   <div className="min-w-0">
@@ -158,11 +161,7 @@ export function QaHome({ pulse }: { pulse: HubPulseData }) {
                       ) : null}
                       {item.title}
                     </div>
-                    {item.runId ? (
-                      <p className="mt-0.5 font-mono text-[10px] text-[color:var(--topo-muted)]">
-                        run {item.runId.slice(0, 8)}
-                      </p>
-                    ) : null}
+
                   </div>
                   <StatusChip
                     tone={item.priority === "P0" ? "danger" : "warning"}
@@ -214,15 +213,15 @@ export function QaHome({ pulse }: { pulse: HubPulseData }) {
                   </div>
                   {item.runId ? (
                     <Link
-                      href={`/runs/${item.runId}`}
-                      className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-accent)] hover:underline"
+                      href={`/runs/${item.runId}${item.resultId ? `?result=${item.resultId}` : ""}`}
+                      className="shrink-0 font-medium text-xs text-[color:var(--topo-accent)] hover:underline"
                     >
                       Retest
                     </Link>
                   ) : (
                     <Link
                       href="/runs"
-                      className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-accent)] hover:underline"
+                      className="shrink-0 font-medium text-xs text-[color:var(--topo-accent)] hover:underline"
                     >
                       Start run
                     </Link>

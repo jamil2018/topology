@@ -33,6 +33,14 @@ describe("authConfig.authorized", () => {
     expect(authorized("/api/webhooks/github", null)).toBe(true);
   });
 
+  it("allows only signed-report page and export routes to validate their tokens", () => {
+    expect(authorized("/share/reports/signed-token", null)).toBe(true);
+    expect(authorized("/api/share/reports/signed-token/export", null)).toBe(true);
+    expect(authorized("/share/reports", null)).toBe(false);
+    expect(authorized("/share/reports/token/admin", null)).toBe(false);
+    expect(authorized("/api/share/reports/token", null)).toBe(false);
+  });
+
   it("allows Next.js internals", () => {
     expect(authorized("/_next/static/chunks/app.js", null)).toBe(true);
   });

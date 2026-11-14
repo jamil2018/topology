@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const structuredStepInputSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.string().uuid().nullable().optional(),
   action: z.string(),
   expected: z.string().optional().default(""),
   data: z.string().optional().default(""),

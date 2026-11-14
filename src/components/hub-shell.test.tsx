@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { render } from "@/test/render";
 import { HubShell } from "./hub-shell";
 import { resetQualityGraphPref } from "@/lib/quality-graph-pref";
 
@@ -13,10 +14,12 @@ vi.mock("next-auth/react", () => ({
 
 vi.mock("./command-palette", () => ({
   openCommandPalette: vi.fn(),
+  CommandPalette: () => null,
 }));
 
 vi.mock("./shortcut-layer", () => ({
   openCheatSheet: vi.fn(),
+  ShortcutLayer: () => null,
 }));
 
 vi.mock("./project-switcher", () => ({
@@ -51,7 +54,7 @@ describe("HubShell nav diet", () => {
     );
 
     const nav = screen.getByRole("navigation", { name: "Primary" });
-    expect(nav).toHaveTextContent("Hub");
+    expect(nav).toHaveTextContent("Home");
     expect(nav).toHaveTextContent("Test cases");
     expect(nav).toHaveTextContent("Plans");
     expect(nav).toHaveTextContent("Test runs");

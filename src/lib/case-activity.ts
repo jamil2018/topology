@@ -30,8 +30,8 @@ export async function recordCaseActivity(input: {
   generatedBy?: string | null;
   model?: string | null;
   approvedById?: string | null;
-}) {
-  const [row] = await db
+}, executor: Pick<typeof db, "insert"> = db) {
+  const [row] = await executor
     .insert(caseActivities)
     .values({
       caseId: input.caseId,

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, waitFor } from "@testing-library/react";
+import { render } from "@/test/render";
 import { renderToString } from "react-dom/server";
 import { StatusChip } from "./status-chip";
 

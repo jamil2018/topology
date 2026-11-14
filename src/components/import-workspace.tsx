@@ -1,4 +1,5 @@
 "use client";
+import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -57,6 +58,8 @@ const emptyApi: ApiForm = { baseUrl: "", email: "", token: "", project: "" };
 
 export function ImportWorkspace() {
   const router = useRouter();
+  const { can } = useProjectActions();
+  const submissionLock = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [provider, setProvider] = useState<ImportProvider>("testrail");
   const [source, setSource] = useState<"file" | "api">("file");
@@ -100,6 +103,8 @@ export function ImportWorkspace() {
   };
 
   async function runPreview() {
+    if (!can("cases.create") || submissionLock.current) return;
+    submissionLock.current = true;
     setError(null);
     setMessage(null);
     setDryRun(null);
@@ -123,10 +128,13 @@ export function ImportWorkspace() {
       setError("Preview failed");
     } finally {
       setPending(null);
+      submissionLock.current = false;
     }
   }
 
   async function runImport(dry: boolean) {
+    if (!can("cases.create") || submissionLock.current) return;
+    submissionLock.current = true;
     setError(null);
     setMessage(null);
     setPending(dry ? "dry" : "run");
@@ -165,6 +173,7 @@ export function ImportWorkspace() {
       setError("Import failed");
     } finally {
       setPending(null);
+      submissionLock.current = false;
     }
   }
 
@@ -208,7 +217,7 @@ export function ImportWorkspace() {
       ) : null}
 
       <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--topo-muted)]">
+        <p className="text-xs font-medium text-[color:var(--topo-muted)]">
           Provider
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -356,7 +365,7 @@ export function ImportWorkspace() {
           <Button
             size="sm"
             variant="primary"
-            isDisabled={!canPreview || pending !== null}
+            isDisabled={!can("cases.create") || !canPreview || pending !== null}
             onPress={() => void runPreview()}
           >
             {pending === "preview" ? "Reading…" : "Preview mapping"}
@@ -378,7 +387,7 @@ export function ImportWorkspace() {
 
           <div className="overflow-x-auto rounded-md border border-[color:var(--topo-line)]">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-[color:var(--topo-chip)] text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+              <thead className="bg-[color:var(--topo-chip)] text-xs uppercase tracking-wide text-[color:var(--topo-muted)]">
                 <tr>
                   <th className="px-3 py-2 font-medium">Topology field</th>
                   <th className="px-3 py-2 font-medium">Source field</th>
@@ -423,7 +432,7 @@ export function ImportWorkspace() {
           {sample.length > 0 ? (
             <div className="overflow-x-auto rounded-md border border-[color:var(--topo-line)]">
               <table className="min-w-full text-left text-sm">
-                <thead className="bg-[color:var(--topo-chip)] text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+                <thead className="bg-[color:var(--topo-chip)] text-xs uppercase tracking-wide text-[color:var(--topo-muted)]">
                   <tr>
                     <th className="px-3 py-2 font-medium">Key</th>
                     <th className="px-3 py-2 font-medium">Title</th>
@@ -462,7 +471,7 @@ export function ImportWorkspace() {
             <Button
               size="sm"
               variant="secondary"
-              isDisabled={pending !== null}
+              isDisabled={!can("cases.create") || pending !== null}
               onPress={() => void runImport(true)}
             >
               {pending === "dry" ? "Checking…" : "Dry run"}
@@ -470,7 +479,7 @@ export function ImportWorkspace() {
             <Button
               size="sm"
               variant="primary"
-              isDisabled={pending !== null}
+              isDisabled={!can("cases.create") || pending !== null}
               onPress={() => void runImport(false)}
             >
               {pending === "run" ? "Importing…" : "Import cases"}

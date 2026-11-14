@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import { RunCaseList } from "./run-case-list";
 import type { ResultRow } from "./run-executor-model";
@@ -51,15 +52,15 @@ describe("RunCaseList", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "CASE-1 Alpha" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /CASE-1\s*Alpha/ })).toHaveAttribute(
       "aria-current",
       "true",
     );
     expect(screen.getByText("Ada")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Untested" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Failed" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Blocked" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Mine" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Untested \d+$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Failed \d+$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Blocked \d+$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Mine \d+$/ })).toBeInTheDocument();
   });
 
   it("notifies when a filter chip or row is pressed", async () => {
@@ -83,9 +84,9 @@ describe("RunCaseList", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Failed" }));
+    await user.click(screen.getByRole("button", { name: /^Failed \d+$/ }));
     expect(onStatusFilter).toHaveBeenCalledWith("failed");
-    await user.click(screen.getByRole("button", { name: "CASE-2 Bravo" }));
+    await user.click(screen.getByRole("button", { name: /CASE-2\s*Bravo/ }));
     expect(onSelect).toHaveBeenCalledWith("r2");
   });
 });

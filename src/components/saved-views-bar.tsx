@@ -1,4 +1,5 @@
 "use client";
+import { useProjectActions } from "./project-actions";
 
 import { useState } from "react";
 import { Button, Input, Label, TextField } from "@heroui/react";
@@ -9,6 +10,8 @@ export type SavedViewRow = {
   name: string;
   entity: "cases" | "runs" | "intents";
   config: unknown;
+  visibility?: "private" | "team";
+  createdById?: string | null;
 };
 
 function errorMessage(data: unknown, fallback: string): string {
@@ -37,7 +40,11 @@ export function SavedViewsBar({
   buildConfig: () => unknown;
   className?: string;
 }) {
+  const { can, canAdmin, canWrite, userId } = useProjectActions();
+  const writable = canWrite;
+  const [visibility, setVisibility] = useState<"private" | "team">("private");
   const [views, setViews] = useState<SavedViewRow[]>(initialViews);
+  const [editing, setEditing] = useState<SavedViewRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [showSave, setShowSave] = useState(false);
@@ -50,6 +57,7 @@ export function SavedViewsBar({
   }
 
   async function saveView() {
+    if (saving || !writable) return;
     const trimmed = name.trim();
     if (!trimmed) {
       setError("Name is required");
@@ -58,11 +66,12 @@ export function SavedViewsBar({
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/views", {
-        method: "POST",
+      const res = await fetch(editing ? `/api/views/${editing.id}` : "/api/views", {
+        method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: trimmed,
+          visibility,
           entity,
           config: buildConfig(),
         }),
@@ -75,7 +84,8 @@ export function SavedViewsBar({
       setName("");
       setShowSave(false);
       if (data.view) {
-        setViews((prev) => [data.view, ...prev]);
+        setViews((prev) => [data.view, ...prev.filter((view) => view.id !== data.view.id)]);
+        setEditing(null);
         onSaved?.(data.view);
       }
     } catch {
@@ -86,16 +96,21 @@ export function SavedViewsBar({
   }
 
   async function removeView(id: string) {
-    const res = await fetch(`/api/views/${id}`, { method: "DELETE" });
-    if (!res.ok) return;
-    setViews((prev) => prev.filter((v) => v.id !== id));
+    if (saving) return;
+    setSaving(true); setError(null);
+    try {
+      const response = await fetch(`/api/views/${id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Could not delete view. Try again.");
+      setViews((previous) => previous.filter((view) => view.id !== id));
+    } catch (error) { setError(error instanceof Error ? error.message : "Could not delete view"); }
+    finally { setSaving(false); }
   }
 
   return (
     <div
       className={`flex flex-wrap items-center gap-1.5${className ? ` ${className}` : ""}`}
     >
-      <span className="mr-1 inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+      <span className="mr-1 inline-flex items-center gap-1 text-xs font-medium text-[color:var(--topo-muted)]">
         <BookmarkSimpleIcon size={12} weight="bold" />
         Views
       </span>
@@ -115,10 +130,12 @@ export function SavedViewsBar({
                     : "border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
                 }`}
               >
-                {view.name}
+                {view.name}{view.visibility === "team" ? " · Team" : ""}
               </button>
+              {writable && (view.createdById === userId || (view.visibility === "team" && canAdmin)) ? <button type="button" className="p-1 text-xs underline" aria-label={`Edit view ${view.name}`} onClick={() => { onApply(view); setEditing(view); setName(view.name); setVisibility(view.visibility ?? "private"); setShowSave(true); }}>Edit</button> : null}
               <button
                 type="button"
+                disabled={saving || !writable || (Boolean(view.createdById) && view.createdById !== userId && !canAdmin)}
                 aria-label={`Delete view ${view.name}`}
                 className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
                 onClick={() => void removeView(view.id)}
@@ -131,6 +148,11 @@ export function SavedViewsBar({
       )}
       {showSave ? (
         <div className="flex flex-wrap items-center gap-1.5">
+          <label className="text-xs">Visibility
+            <select aria-label="View visibility" value={visibility} onChange={(event) => setVisibility(event.target.value as "private" | "team")} className="ml-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-2">
+              <option value="private">Only me</option><option value="team">Project team</option>
+            </select>
+          </label>
           <TextField name="view-name" className="w-36">
             <Label className="sr-only">View name</Label>
             <Input
@@ -144,7 +166,7 @@ export function SavedViewsBar({
             type="button"
             size="sm"
             variant="primary"
-            isDisabled={saving || !canSave}
+            isDisabled={saving || !canSave || !writable}
             onPress={() => void saveView()}
           >
             {saving ? "Saving…" : "Save"}
@@ -155,6 +177,7 @@ export function SavedViewsBar({
             variant="tertiary"
             onPress={() => {
               setShowSave(false);
+              setEditing(null);
               setError(null);
             }}
           >
@@ -167,8 +190,8 @@ export function SavedViewsBar({
           size="sm"
           variant="secondary"
           className="gap-1.5"
-          isDisabled={!canSave}
-          onPress={() => setShowSave(true)}
+          isDisabled={!canSave || !writable}
+          onPress={() => { setEditing(null); setName(""); setShowSave(true); }}
         >
           <FloppyDiskIcon size={14} weight="bold" />
           Save current

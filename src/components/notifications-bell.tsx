@@ -1,116 +1,56 @@
 "use client";
-
-import { useCallback, useEffect, useState } from "react";
-import { Button } from "@heroui/react";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Modal } from "@heroui/react";
 import { BellIcon } from "@phosphor-icons/react";
-
-type NotificationItem = {
-  id: string;
-  type: string;
-  title: string;
-  body: string;
-  readAt: string | Date | null;
-  createdAt: string | Date;
-};
-
+import { useProjectActions } from "./project-actions";
+type Item = { id: string; title: string; body: string; readAt: string | null; href: string | null; openHref?: string | null };
 export function NotificationsBell() {
+  const { projectId } = useProjectActions();
+  const markLock = useRef(false);
+  const loadVersion = useRef(0);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<NotificationItem[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const [unread, setUnread] = useState(0);
-
-  const load = useCallback(async () => {
-    const res = await fetch("/api/notifications");
-    if (!res.ok) return;
-    const data = (await res.json()) as {
-      notifications?: NotificationItem[];
-      unreadCount?: number;
-    };
-    setItems(data.notifications ?? []);
-    setUnread(data.unreadCount ?? 0);
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
+  const [onlyUnread, setOnlyUnread] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const version = ++loadVersion.current;
+    setLoading(true);
+    try {
+      const response = await fetch("/api/notifications", { signal, headers: projectId ? { "x-topology-project-id": projectId } : {} });
+      if (!response.ok) throw new Error("Could not load notifications");
+      const data = await response.json();
+      if (!signal?.aborted && version === loadVersion.current) { setItems(data.notifications ?? []); setUnread(data.unreadCount ?? 0); setError(null); }
+    } catch { if (!signal?.aborted && version === loadVersion.current) setError("Could not load notifications. Try again."); }
+    finally { if (!signal?.aborted && version === loadVersion.current) setLoading(false); }
+  }, [projectId]);
+  useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
   async function markRead(id: string) {
-    await fetch("/api/notifications", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, read: true }),
-    });
-    void load();
+    if (markLock.current) return;
+    markLock.current = true;
+    setPending(id);
+    try {
+      const response = await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json", ...(projectId ? { "x-topology-project-id": projectId } : {}) }, body: JSON.stringify({ id, read: true }) });
+      if (!response.ok) throw new Error();
+      await load();
+    } catch { setError("Could not mark notification read. Try again."); }
+    finally { markLock.current = false; setPending(null); }
   }
-
-  return (
-    <div className="relative">
-      <Button
-        size="sm"
-        variant="secondary"
-        aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
-        aria-expanded={open}
-        className="relative min-w-0 px-2"
-        onPress={() => {
-          setOpen((v) => !v);
-          if (!open) void load();
-        }}
-      >
-        <BellIcon size={16} weight="bold" />
-        {unread > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-            {unread > 9 ? "9+" : unread}
-          </span>
-        ) : null}
-      </Button>
-      {open ? (
-        <>
-          <button
-            type="button"
-            aria-label="Close notifications"
-            className="fixed inset-0 z-40"
-            onClick={() => setOpen(false)}
-          />
-          <div className="absolute right-0 top-full z-50 mt-1 w-72 max-w-[90vw] rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] shadow-lg">
-            <p className="border-b border-[color:var(--topo-line)] px-3 py-2 text-xs font-semibold text-[color:var(--topo-ink)]">
-              Notifications
-            </p>
-            <ul className="max-h-64 overflow-y-auto">
-              {items.length === 0 ? (
-                <li className="px-3 py-4 text-xs text-[color:var(--topo-muted)]">
-                  No notifications yet.
-                </li>
-              ) : (
-                items.map((n) => (
-                  <li
-                    key={n.id}
-                    className={`border-b border-[color:var(--topo-line)]/50 px-3 py-2 text-xs last:border-0 ${
-                      n.readAt ? "opacity-70" : "bg-[color:var(--topo-chip)]/30"
-                    }`}
-                  >
-                    <p className="font-medium text-[color:var(--topo-ink)]">
-                      {n.title}
-                    </p>
-                    {n.body ? (
-                      <p className="mt-0.5 line-clamp-2 text-[color:var(--topo-muted)]">
-                        {n.body}
-                      </p>
-                    ) : null}
-                    {!n.readAt ? (
-                      <button
-                        type="button"
-                        className="mt-1 text-[10px] text-[color:var(--topo-accent)]"
-                        onClick={() => void markRead(n.id)}
-                      >
-                        Mark read
-                      </button>
-                    ) : null}
-                  </li>
-                ))
-              )}
-            </ul>
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
+  const visible = onlyUnread ? items.filter((item) => !item.readAt) : items;
+  return <>
+    <Button size="sm" variant="secondary" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`} onPress={() => { setOpen(true); void load(); }}><BellIcon size={16} />{unread ? <span className="text-xs">{unread}</span> : null}</Button>
+    <Modal.Backdrop isOpen={open} onOpenChange={setOpen}><Modal.Container placement="center" size="lg"><Modal.Dialog>
+      <Modal.Header className="pe-12"><Modal.Heading>Notifications</Modal.Heading><Modal.CloseTrigger aria-label="Close notifications" /></Modal.Header>
+      <Modal.Body>
+        <div role="group" aria-label="Notification filter" className="mb-3 flex gap-2"><Button size="sm" variant={onlyUnread ? "primary" : "secondary"} onPress={() => setOnlyUnread(true)}>Unread</Button><Button size="sm" variant={!onlyUnread ? "primary" : "secondary"} onPress={() => setOnlyUnread(false)}>All</Button></div>
+        {error ? <p role="alert" className="topo-feedback">{error}<button onClick={() => void load()}>Retry</button></p> : null}
+        {loading ? <p role="status">Loading notifications…</p> : null}
+        {!loading && !error && !visible.length ? <p className="py-6 text-sm text-[color:var(--topo-muted)]">{onlyUnread ? "You’re caught up." : "No notifications yet."}</p> : null}
+        <ul className="divide-y divide-[color:var(--topo-line)]">{visible.map((item) => <li key={item.id} className="space-y-2 py-3"><p className="text-sm font-medium">{item.title}</p><p className="text-xs text-[color:var(--topo-muted)]">{item.body}</p><div className="flex items-center gap-3 text-xs">{item.href ? <Link className="underline" href={item.openHref || item.href} onClick={() => setOpen(false)}>Open item</Link> : <span>Item no longer available</span>}{!item.readAt ? <Button size="sm" variant="tertiary" isDisabled={Boolean(pending)} onPress={() => void markRead(item.id)}>Mark read</Button> : null}</div></li>)}</ul>
+      </Modal.Body>
+    </Modal.Dialog></Modal.Container></Modal.Backdrop>
+  </>;
 }

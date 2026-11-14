@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import type { Selection, SortDescriptor } from "@heroui/react";
 import {
   Button,
-  Checkbox,
   Chip,
   EmptyState,
   Input,
@@ -81,6 +80,7 @@ export function RunCasePickerTable({
 }) {
   const visibleIds = useMemo(() => visible.map((c) => c.id), [visible]);
   const selectedCount = selectedIds.size;
+  const hiddenSelected = selectedCount - visibleIds.filter((id) => selectedIds.has(id)).length;
 
   const tableSelectedKeys = useMemo<Selection>(() => {
     if (visibleIds.length === 0) return new Set();
@@ -111,13 +111,17 @@ export function RunCasePickerTable({
         <TextField name="case-search" className="w-full">
           <Label>Search</Label>
           <Input
-            placeholder="Title, key, ID, or tag"
+            placeholder="Search by title, key, or tag"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="w-full"
           />
         </TextField>
 
+        {hiddenSelected > 0 ? <p role="status" className="text-sm">{hiddenSelected} selected cases are outside these filters and will still be included.</p> : null}
+        {search || status !== "all" || priority !== "all" || folderId !== "all" || tag !== "all" ? <Button size="sm" variant="tertiary" onPress={() => { onSearchChange(""); onStatusChange("all"); onPriorityChange("all"); onFolderChange("all"); onTagChange("all"); }}>Clear filters</Button> : null}
+        <details>
+          <summary className="cursor-pointer py-2 text-sm font-medium">Filter and sort cases <span className="text-[color:var(--topo-muted)]">· {status === "all" ? "All statuses" : `${status} cases`}{priority !== "all" ? ` · ${priority}` : ""}{folderId !== "all" ? ` · ${folders.find((folder) => folder.id === folderId)?.name ?? "Folder"}` : ""}{tag !== "all" ? ` · ${tag}` : ""}</span></summary>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Select
             className="w-full"
@@ -282,15 +286,13 @@ export function RunCasePickerTable({
             </Button>
           </div>
         </div>
+        </details>
       </div>
 
       <Table.ScrollContainer className="max-h-64">
         <Table.Content
           aria-label="Case picker"
           className="min-w-[720px] text-sm"
-          selectionMode="multiple"
-          selectedKeys={tableSelectedKeys}
-          onSelectionChange={onSelectionChange}
           sortDescriptor={sortDescriptor}
           onSortChange={(descriptor) => {
             const col = String(descriptor.column);
@@ -306,13 +308,12 @@ export function RunCasePickerTable({
         >
           <Table.Header>
             <Table.Column className="w-10 pe-0">
-              <Checkbox aria-label="Select all visible cases" slot="selection">
-                <Checkbox.Content>
-                  <Checkbox.Control>
-                    <Checkbox.Indicator />
-                  </Checkbox.Control>
-                </Checkbox.Content>
-              </Checkbox>
+              <input type="checkbox" aria-label="Select all visible cases"
+                className="h-5 w-5 cursor-pointer accent-[var(--topo-accent)]"
+                checked={tableSelectedKeys === "all"}
+                ref={(element) => { if (element) element.indeterminate = tableSelectedKeys !== "all" && tableSelectedKeys.size > 0; }}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => onSelectionChange(event.target.checked ? "all" : new Set())} />
             </Table.Column>
             <Table.Column id="title" isRowHeader allowsSorting>
               {({ sortDirection }) => (
@@ -351,17 +352,11 @@ export function RunCasePickerTable({
             {visible.map((c) => (
               <Table.Row key={c.id} id={c.id}>
                 <Table.Cell className="pe-0">
-                  <Checkbox
-                    aria-label={`Select ${c.title}`}
-                    slot="selection"
-                    variant="secondary"
-                  >
-                    <Checkbox.Content>
-                      <Checkbox.Control>
-                        <Checkbox.Indicator />
-                      </Checkbox.Control>
-                    </Checkbox.Content>
-                  </Checkbox>
+                  <input type="checkbox" aria-label={`Select ${c.title}`}
+                    className="h-5 w-5 cursor-pointer accent-[var(--topo-accent)]"
+                    checked={selectedIds.has(c.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => { const next = new Set(selectedIds); if (event.target.checked) next.add(c.id); else next.delete(c.id); onSelectionChange(next); }} />
                 </Table.Cell>
                 <Table.Cell>
                   <span className="font-medium text-[color:var(--topo-ink)]">
@@ -369,7 +364,7 @@ export function RunCasePickerTable({
                   </span>
                 </Table.Cell>
                 <Table.Cell>
-                  <span className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+                  <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                     {c.key}
                   </span>
                 </Table.Cell>
@@ -380,14 +375,14 @@ export function RunCasePickerTable({
                   <StatusChip mono>{c.status}</StatusChip>
                 </Table.Cell>
                 <Table.Cell>
-                  <span className="text-[11px] text-[color:var(--topo-muted)]">
+                  <span className="text-xs text-[color:var(--topo-muted)]">
                     {c.folder?.name ?? "—"}
                   </span>
                 </Table.Cell>
                 <Table.Cell>
                   <div className="flex flex-wrap gap-1">
                     {(c.tags ?? []).length === 0 ? (
-                      <span className="text-[11px] text-[color:var(--topo-muted)]">
+                      <span className="text-xs text-[color:var(--topo-muted)]">
                         —
                       </span>
                     ) : (
@@ -409,8 +404,8 @@ export function RunCasePickerTable({
         <span>
           {selectedCount} selected · {visible.length} visible
         </span>
-        <span className="font-mono uppercase tracking-wide">
-          Multi-select required
+        <span className="font-medium">
+          Select at least one case
         </span>
       </Table.Footer>
     </Table>

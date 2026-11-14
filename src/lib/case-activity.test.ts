@@ -44,6 +44,7 @@ describe("saved view config", () => {
 
   it("parses run view config defaults", () => {
     expect(parseRunViewConfig("{}")).toEqual({
+      status: "all", assignee: "all", environment: "", kind: "all",
       search: "",
       sort: "updated",
     });

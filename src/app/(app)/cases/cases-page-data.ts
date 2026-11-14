@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, or, count, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { cases } from "@/db/schema";
 import { caseListQueryFromSearchParams } from "@/lib/case-list";
@@ -9,9 +9,13 @@ import type { SavedViewRow } from "@/components/saved-views-bar";
 
 export type CasesWorkspaceData = {
   cases: CaseRow[];
+  initialPage: import("@/lib/list-pagination").PaginatedList<CaseRow>;
+  selectedCase: CaseRow | null;
+  counts: { folderId: string | null; total: number }[];
   folders: Folder[];
   views: SavedViewRow[];
   projectPrefix: string;
+  suggestedKey: string;
   projectSlug: string;
 };
 
@@ -50,15 +54,26 @@ export async function loadCasesWorkspaceData(
   const query = caseListQueryFromSearchParams(
     searchParams ?? new URLSearchParams(),
   );
-  // Workspace still filters/paginates client-side; load the full matching set.
-  query.all = true;
-  const [listed, folderRows, views] = await Promise.all([
+  query.limit = 50;
+  const [listed, folderRows, views, counts] = await Promise.all([
     listCases(workspaceId, query),
     listFolders(workspaceId),
     listSavedViews(workspaceId, "cases", userId),
+    db.select({ folderId: cases.folderId, total: count() }).from(cases).where(eq(cases.workspaceId, workspaceId)).groupBy(cases.folderId),
   ]);
 
+  const prefix = prefixFromProjectSlug(projectSlug);
+  const [sequence] = await db.select({ value: sql<string>`coalesce(max(substring(${cases.key} from '[0-9]+$')::numeric), 0)` }).from(cases).where(and(eq(cases.workspaceId, workspaceId), sql`${cases.key} ~ ${`^${prefix}-[0-9]+$`}`));
+  const selected = searchParams?.get("case");
+  const selectedRow = selected ? await db.query.cases.findFirst({
+    where: and(eq(cases.workspaceId, workspaceId), or(eq(cases.key, selected), /^[0-9a-f-]{36}$/i.test(selected) ? eq(cases.id, selected) : undefined)),
+    with: { folder: true, intent: true },
+  }) : null;
   return {
+    suggestedKey: `${prefix}-${BigInt(sequence.value) + BigInt(1)}`,
+    selectedCase: selectedRow ? mapListedCase(selectedRow) : null,
+    counts,
+    initialPage: { ...listed, items: listed.items.map(mapListedCase) },
     cases: listed.items.map(mapListedCase),
     folders: folderRows.map((folder) => ({
       id: folder.id,

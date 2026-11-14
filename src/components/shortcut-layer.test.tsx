@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
+import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import { ShortcutLayer } from "./shortcut-layer";
 
@@ -90,4 +91,22 @@ describe("ShortcutLayer", () => {
     expect(push).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Title")).toHaveValue("gc");
   });
+});
+
+it("does not dispatch create without the required project action", async () => {
+  const user = userEvent.setup();
+  render(<ShortcutLayer />, { actions: ["cases.view"] });
+  await user.keyboard("c");
+  expect(push).not.toHaveBeenCalled();
+});
+
+it("contains tab focus and returns it to the opener", async () => {
+  const user = userEvent.setup();
+  render(<><button>Before dialog</button><ShortcutLayer /></>);
+  await user.click(screen.getByRole("button", { name: "Before dialog" }));
+  await user.keyboard("?");
+  const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+  for (let index = 0; index < 6; index++) { await user.tab(); expect(dialog.contains(document.activeElement)).toBe(true); }
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Before dialog" })).toHaveFocus());
 });

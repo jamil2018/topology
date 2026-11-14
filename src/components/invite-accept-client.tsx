@@ -41,7 +41,7 @@ export function InviteAcceptClient({
   return (
     <div className="w-full max-w-md space-y-4 rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-5">
       <div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--topo-muted)]">
+        <p className="text-xs font-medium text-[color:var(--topo-muted)]">
           Workspace invite
         </p>
         <h1 className="mt-1 text-xl font-semibold text-[color:var(--topo-ink)]">

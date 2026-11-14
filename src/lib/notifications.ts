@@ -1,7 +1,9 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, inArray, count } from "drizzle-orm";
 import { db } from "@/db";
 import {
   notifications,
+  runs,
+  runResults,
   workspaceMembers,
   type Notification,
 } from "@/db/schema";
@@ -61,32 +63,43 @@ export async function listNotificationsForUser(
     orderBy: [desc(notifications.createdAt)],
     limit,
   });
-  return rows.map(serializeNotification);
+  return notificationDestinations(rows, workspaceId);
+}
+
+export async function notificationDestinations(rows: Notification[], workspaceId: string) {
+  const resultIds = rows.filter((row) => row.entityType === "result" && row.entityId).map((row) => row.entityId!);
+  const resultTargets = resultIds.length ? await db.select({ id: runResults.id, runId: runs.id }).from(runResults).innerJoin(runs, eq(runs.id, runResults.runId)).where(and(eq(runs.workspaceId, workspaceId), inArray(runResults.id, resultIds))) : [];
+  const runIds = rows.filter((row) => row.entityType === "run" && row.entityId).map((row) => row.entityId!);
+  const runTargets = runIds.length ? await db.select({ id: runs.id }).from(runs).where(and(eq(runs.workspaceId, workspaceId), inArray(runs.id, runIds))) : [];
+  return rows.map((row) => {
+    let href: string | null = null;
+    if (row.entityType === "run" && runTargets.some((run) => run.id === row.entityId)) href = `/runs/${row.entityId}`;
+    if (row.entityType === "result") { const target = resultTargets.find((result) => result.id === row.entityId); if (target) href = `/runs/${target.runId}?result=${target.id}`; }
+    const routes: Record<string, string> = { intent: "/intents", requirement: "/requirements", component: "/components", release: "/releases" };
+    if (row.entityType && routes[row.entityType] && row.entityId) href = `${routes[row.entityType]}?${row.entityType}=${row.entityId}`;
+    return { ...serializeNotification(row), href, openHref: href ? `/api/notifications/${row.id}/open` : null };
+  });
 }
 
 export async function countUnreadNotifications(
   userId: string,
   workspaceId: string,
 ): Promise<number> {
-  const rows = await db.query.notifications.findMany({
-    where: and(
-      eq(notifications.userId, userId),
-      eq(notifications.workspaceId, workspaceId),
-      isNull(notifications.readAt),
-    ),
-    columns: { id: true },
-  });
-  return rows.length;
+  const [row] = await db.select({ total: count() }).from(notifications).where(and(eq(notifications.userId, userId), eq(notifications.workspaceId, workspaceId), isNull(notifications.readAt)));
+  return Number(row.total);
+
 }
 
 export async function markNotificationRead(
   userId: string,
   notificationId: string,
+  workspaceId?: string,
 ): Promise<boolean> {
   const existing = await db.query.notifications.findFirst({
     where: and(
       eq(notifications.id, notificationId),
       eq(notifications.userId, userId),
+      workspaceId ? eq(notifications.workspaceId, workspaceId) : undefined,
     ),
   });
   if (!existing) return false;

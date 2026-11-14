@@ -41,6 +41,7 @@ export type StepResultRow = {
 
 export type ResultRow = {
   id: string;
+  caseId?: string | null;
   status: string;
   notes: string;
   assigneeId: string | null;
@@ -60,6 +61,7 @@ export type ResultRow = {
 };
 
 export type RunDetail = {
+  environment?: string;
   id: string;
   name: string;
   status: string;

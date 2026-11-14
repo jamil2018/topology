@@ -75,7 +75,7 @@ export function IntentReliabilityCards({ intentId }: { intentId: string }) {
 
   return (
     <div className="mt-4 space-y-3">
-      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+      <div className="text-xs font-medium text-[color:var(--topo-muted)]">
         Reliability · {windowDays}d
       </div>
       <ul className="grid gap-2 sm:grid-cols-2">
@@ -92,13 +92,13 @@ export function IntentReliabilityCards({ intentId }: { intentId: string }) {
             </div>
             <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-[color:var(--topo-muted)]">
               <div>
-                <dt className="font-mono uppercase tracking-wide">Pass</dt>
+                <dt className="font-medium">Pass</dt>
                 <dd className="text-[color:var(--topo-ink)]">
                   {card.passRate == null ? "—" : `${Math.round(card.passRate)}%`}
                 </dd>
               </div>
               <div>
-                <dt className="font-mono uppercase tracking-wide">Flake</dt>
+                <dt className="font-medium">Flake</dt>
                 <dd className="text-[color:var(--topo-ink)]">
                   {card.flakeProbability == null
                     ? "—"
@@ -106,13 +106,13 @@ export function IntentReliabilityCards({ intentId }: { intentId: string }) {
                 </dd>
               </div>
               <div>
-                <dt className="font-mono uppercase tracking-wide">p50</dt>
+                <dt className="font-medium">p50</dt>
                 <dd className="text-[color:var(--topo-ink)]">
                   {card.durationP50 == null ? "—" : `${card.durationP50}ms`}
                 </dd>
               </div>
               <div>
-                <dt className="font-mono uppercase tracking-wide">p95</dt>
+                <dt className="font-medium">p95</dt>
                 <dd className="text-[color:var(--topo-ink)]">
                   {card.durationP95 == null ? "—" : `${card.durationP95}ms`}
                 </dd>
@@ -123,7 +123,7 @@ export function IntentReliabilityCards({ intentId }: { intentId: string }) {
       </ul>
       {byBrowser.length > 0 ? (
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <div className="text-xs font-medium text-[color:var(--topo-muted)]">
             Env matrix
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
