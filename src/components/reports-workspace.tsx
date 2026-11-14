@@ -1,4 +1,5 @@
 "use client";
+import { formatDateTime } from "@/lib/format-date";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -56,12 +57,7 @@ function formatWhen(value: string | Date | null | undefined) {
   if (!value) return "—";
   const d = new Date(value);
   if (!Number.isFinite(d.getTime())) return "—";
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(d);
 }
 
 export function ReportsWorkspace({
@@ -259,13 +255,13 @@ export function ReportsWorkspace({
           },
         ].map((tile) => (
           <div key={tile.label} className="bg-[color:var(--topo-panel)] px-3 py-3">
-            <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
+            <div className="font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
               {tile.label}
             </div>
             <div className="mt-1.5 font-mono text-2xl font-semibold tabular-nums tracking-tight text-[color:var(--topo-ink)]">
               {tile.value}
             </div>
-            <div className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
+            <div className="mt-1 text-xs text-[color:var(--topo-muted)]">
               {tile.hint}
             </div>
           </div>
@@ -274,7 +270,7 @@ export function ReportsWorkspace({
 
       <section className="grid gap-px overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-line)] lg:grid-cols-2">
         <div className="bg-[color:var(--topo-panel)] p-3 sm:p-4">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <h2 className="text-xs font-medium text-[color:var(--topo-muted)]">
             Pass-rate trend
           </h2>
           <div className="mt-3">
@@ -282,7 +278,7 @@ export function ReportsWorkspace({
           </div>
         </div>
         <div className="bg-[color:var(--topo-panel)] p-3 sm:p-4">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <h2 className="text-xs font-medium text-[color:var(--topo-muted)]">
             Results by suite
           </h2>
           <div className="mt-3">
@@ -290,7 +286,7 @@ export function ReportsWorkspace({
           </div>
         </div>
         <div className="bg-[color:var(--topo-panel)] p-3 sm:p-4">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <h2 className="text-xs font-medium text-[color:var(--topo-muted)]">
             Release readiness
           </h2>
           {dashboard.readiness.length === 0 ? (
@@ -324,7 +320,7 @@ export function ReportsWorkspace({
           )}
         </div>
         <div className="bg-[color:var(--topo-panel)] p-3 sm:p-4">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <h2 className="text-xs font-medium text-[color:var(--topo-muted)]">
             Tester throughput
           </h2>
           {dashboard.testers.length === 0 ? (
@@ -342,8 +338,8 @@ export function ReportsWorkspace({
                     <div className="truncate text-sm font-medium text-[color:var(--topo-ink)]">
                       {tester.name}
                     </div>
-                    <p className="font-mono text-[10px] text-[color:var(--topo-muted)]">
-                      {tester.executed} executed · {tester.passed}P / {tester.failed}F
+                    <p className="font-mono text-xs text-[color:var(--topo-muted)]">
+                      {tester.executed} executed · {tester.passed} passed · {tester.failed} failed
                     </p>
                   </div>
                   <span className="font-mono text-sm tabular-nums text-[color:var(--topo-ink)]">
@@ -390,7 +386,7 @@ export function ReportsWorkspace({
                     </div>
                   </div>
                   <StatusChip tone="danger" mono>
-                    {row.failCount}F
+                    {row.failCount} failed
                   </StatusChip>
                 </Link>
               </li>
@@ -488,13 +484,14 @@ export function ReportsWorkspace({
         ) : filtered.length === 0 ? (
           <p className="rounded-md border border-dashed border-[color:var(--topo-line)] px-3 py-10 text-center text-sm text-[color:var(--topo-muted)]">
             No reports match this filter.
+            <button className="mx-auto mt-2 block underline" onClick={() => { setSearch(""); setKind("all"); }}>Clear filters</button>
           </p>
         ) : (
           <ul className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] divide-y divide-[color:var(--topo-line)]">
             {filtered.map((report, i) => (
               <motion.li
                 key={report.runId}
-                initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: reduceMotion ? 0 : Math.min(i, 8) * 0.02 }}
               >
@@ -516,7 +513,7 @@ export function ReportsWorkspace({
                         {report.kind === "automation" ? "CI" : "manual"}
                       </StatusChip>
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 font-mono text-[11px] text-[color:var(--topo-muted)]">
+                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 font-mono text-xs text-[color:var(--topo-muted)]">
                       <span>{report.environment}</span>
                       {report.branch ? <span>{report.branch}</span> : null}
                       <span>updated {formatWhen(report.updatedAt)}</span>
@@ -528,13 +525,13 @@ export function ReportsWorkspace({
                       {report.passRate == null ? "—" : `${report.passRate}%`}
                     </span>
                     <StatusChip tone="success" mono>
-                      {report.passed}P
+                      {report.passed} passed
                     </StatusChip>
                     <StatusChip
                       tone={report.failed > 0 ? "danger" : "neutral"}
                       mono
                     >
-                      {report.failed}F
+                      {report.failed} failed
                     </StatusChip>
                     {report.skipped > 0 ? (
                       <StatusChip tone="neutral" mono>

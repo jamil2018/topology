@@ -1,4 +1,5 @@
 "use client";
+import { formatDateTime } from "@/lib/format-date";
 
 import Link from "next/link";
 import { PlayIcon } from "@phosphor-icons/react";
@@ -60,12 +61,7 @@ function formatWhen(value: string | Date | null | undefined) {
   if (!value) return "—";
   const d = new Date(value);
   if (!Number.isFinite(d.getTime())) return "—";
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(d);
 }
 
 export function ReportDetail({ report }: { report: ReportDetailModel }) {
@@ -165,7 +161,7 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
         }
       />
 
-      <p className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+      <p className="font-mono text-xs text-[color:var(--topo-muted)]">
         Run {run.id.slice(0, 8)} · started {formatWhen(run.startedAt)} · finished{" "}
         {formatWhen(run.completedAt)} · source {run.source}
       </p>
@@ -174,18 +170,18 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
         {kpiTiles.map((tile, i) => (
           <motion.div
             key={tile.label}
-            initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: reduceMotion ? 0 : 0.03 + i * 0.02 }}
             className="bg-[color:var(--topo-panel)] px-3 py-3"
           >
-            <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
+            <div className="font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
               {tile.label}
             </div>
             <div className="mt-1.5 font-mono text-2xl font-semibold tabular-nums tracking-tight text-[color:var(--topo-ink)]">
               {tile.value}
             </div>
-            <div className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
+            <div className="mt-1 text-xs text-[color:var(--topo-muted)]">
               {tile.hint}
             </div>
           </motion.div>
@@ -194,7 +190,7 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
 
       <section className="grid gap-px overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-line)] lg:grid-cols-2">
         <div className="bg-[color:var(--topo-panel)] p-3 sm:p-4">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <h2 className="text-xs font-medium text-[color:var(--topo-muted)]">
             Status breakdown
           </h2>
           <div className="mt-3">
@@ -202,7 +198,7 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
           </div>
         </div>
         <div className="bg-[color:var(--topo-panel)] p-3 sm:p-4">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <h2 className="text-xs font-medium text-[color:var(--topo-muted)]">
             Pass / fail within run
           </h2>
           <div className="mt-3">
@@ -210,7 +206,7 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
           </div>
         </div>
         <div className="bg-[color:var(--topo-panel)] p-3 sm:p-4">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <h2 className="text-xs font-medium text-[color:var(--topo-muted)]">
             Suite / folder breakdown
           </h2>
           <div className="mt-3">
@@ -218,10 +214,10 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
           </div>
         </div>
         <div className="bg-[color:var(--topo-panel)] p-3 sm:p-4">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <h2 className="text-xs font-medium text-[color:var(--topo-muted)]">
             Peer run trend
           </h2>
-          <p className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
+          <p className="mt-1 text-xs text-[color:var(--topo-muted)]">
             Recent runs for context — current report highlighted.
           </p>
           <div className="mt-3">
@@ -252,7 +248,7 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[40rem] text-left text-sm">
-              <thead className="border-b border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/40 font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
+              <thead className="border-b border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/40 font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
                 <tr>
                   <th className="px-3 py-2 font-medium">Case</th>
                   <th className="px-3 py-2 font-medium">Suite</th>
@@ -269,7 +265,7 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
                     className="align-top hover:bg-[color:var(--topo-chip)]/30"
                   >
                     <td className="px-3 py-2.5">
-                      <div className="font-mono text-[11px] text-[color:var(--topo-accent)]">
+                      <div className="font-mono text-xs text-[color:var(--topo-accent)]">
                         {row.caseKey}
                       </div>
                       <div className="mt-0.5 max-w-xs text-[color:var(--topo-ink)]">

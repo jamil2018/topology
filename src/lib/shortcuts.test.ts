@@ -108,7 +108,7 @@ describe("matchShortcut", () => {
     expect(matchShortcut(keyEvent("p", target), "/cases")).toBe("priority");
     expect(matchShortcut(keyEvent("s", target), "/cases")).toBe("status");
     expect(matchShortcut(keyEvent("e", target), "/cases")).toBe("edit");
-    expect(matchShortcut(keyEvent("Enter", target), "/cases")).toBe("open");
+    expect(matchShortcut(keyEvent("Enter", target), "/cases")).toBeNull();
     expect(matchShortcut(keyEvent("x", target), "/cases")).toBe("select");
     expect(matchShortcut(keyEvent("f", target), "/runs")).toBeNull();
     expect(matchShortcut(keyEvent("p", target), runPath)).toBe("pass");
@@ -191,4 +191,12 @@ describe("matchShortcut", () => {
       ),
     ).toBeNull();
   });
+});
+
+it("preserves Enter activation for disclosures and links while keeping list shortcuts", () => {
+  for (const tagName of ["SUMMARY", "A", "BUTTON"]) {
+    const target = { tagName, closest: () => null } as unknown as EventTarget;
+    expect(matchShortcut(keyEvent("Enter", target), "/settings")).toBeNull();
+  }
+  expect(matchShortcut(keyEvent("Enter"), "/cases")).toBe("open");
 });

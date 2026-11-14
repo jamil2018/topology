@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   buildTriageQueue,
   computeReliability,
@@ -377,12 +377,14 @@ export async function listSavedViews(
     where: and(
       eq(savedViews.workspaceId, workspaceId),
       eq(savedViews.entity, entity),
-      eq(savedViews.createdById, userId),
+      or(eq(savedViews.createdById, userId), eq(savedViews.visibility, "team")),
     ),
     orderBy: [desc(savedViews.updatedAt)],
   });
   return rows.map((row) => ({
     id: row.id,
+    visibility: row.visibility,
+    createdById: row.createdById,
     name: row.name,
     entity: row.entity,
     config:

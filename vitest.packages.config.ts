@@ -20,6 +20,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@topology/domain/client": path.resolve(__dirname, "./packages/domain/src/client.ts"),
       "@topology/domain": path.resolve(
         __dirname,
         "./packages/domain/src/index.ts",

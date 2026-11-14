@@ -238,17 +238,17 @@ export function ProjectsPanel() {
                   <p className="truncate font-medium text-[color:var(--topo-ink)]">
                     {project.name}
                     {isActive ? (
-                      <span className="ml-2 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-accent)]">
+                      <span className="ml-2 font-medium text-xs text-[color:var(--topo-accent)]">
                         active
                       </span>
                     ) : null}
                     {archived ? (
-                      <span className="ml-2 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+                      <span className="ml-2 font-medium text-xs text-[color:var(--topo-muted)]">
                         archived
                       </span>
                     ) : null}
                   </p>
-                  <p className="truncate font-mono text-[11px] text-[color:var(--topo-muted)]">
+                  <p className="truncate font-mono text-xs text-[color:var(--topo-muted)]">
                     {project.slug} · {project.role}
                   </p>
                 </div>

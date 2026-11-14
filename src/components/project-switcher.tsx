@@ -113,7 +113,7 @@ export function ProjectSwitcher({
                 onClick={() => select(project.id)}
               >
                 <span className="truncate font-medium">{project.name}</span>
-                <span className="truncate font-mono text-[10px] uppercase tracking-wide opacity-70">
+                <span className="truncate font-medium text-xs opacity-70">
                   {project.slug} · {project.role}
                 </span>
               </button>
@@ -123,7 +123,7 @@ export function ProjectSwitcher({
       ) : null}
 
       {error ? (
-        <p className="mt-1 px-1 text-[11px] text-red-600">{error}</p>
+        <p className="mt-1 px-1 text-xs text-red-600">{error}</p>
       ) : null}
     </div>
   );

@@ -32,15 +32,18 @@ export default async function LoginPage({
 
   return (
     <div className="topology-shell login-atmosphere relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 py-16 sm:px-8">
+      <a className="topo-skip-link" href="#login-content">Skip to sign in</a>
       <div className="absolute top-4 right-4 z-10 sm:top-6 sm:right-6">
         <ThemeToggle compact />
       </div>
+      <main id="login-content" tabIndex={-1}>
       <LoginForm
         oauth={{ github, google, oidc, oidcName: oidcProviderName() }}
         airGap={airGap}
         demoHint={process.env.NODE_ENV !== "production"}
         callbackUrl={safeCallbackPath(params.callbackUrl)}
       />
+      </main>
     </div>
   );
 }

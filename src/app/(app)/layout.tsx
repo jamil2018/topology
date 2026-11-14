@@ -1,8 +1,9 @@
+import { ProjectActionsProvider } from "@/components/project-actions";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { HubShell } from "@/components/hub-shell";
 import { projectShellProps } from "@/lib/project-shell";
-import { readPreferredProjectId, resolveActiveProject } from "@/lib/project";
+import { ctxCanAdmin, ctxCanWrite, readPreferredProjectId, resolveActiveProject } from "@/lib/project";
 
 /** Shared shell. `loading.tsx` fills `{children}` so the sidebar stays mounted. */
 export default async function AppLayout({
@@ -18,8 +19,10 @@ export default async function AppLayout({
   const ctx = await resolveActiveProject(session.user.id, preferredId);
 
   return (
+    <ProjectActionsProvider writable={ctx ? ctxCanWrite(ctx) : false} administrator={ctx ? ctxCanAdmin(ctx) : false} actions={ctx?.actions ?? []} projectId={ctx?.project.id ?? null} userId={session.user.id}>
     <HubShell userEmail={session.user.email} {...projectShellProps(ctx)}>
       {children}
     </HubShell>
+    </ProjectActionsProvider>
   );
 }

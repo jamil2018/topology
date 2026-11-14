@@ -1,4 +1,6 @@
 "use client";
+import { useProjectActions } from "./project-actions";
+import { useMutationFeedback } from "./use-mutation-feedback";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -22,10 +24,13 @@ export function RequirementsWorkspace({
   initial: RequirementRow[];
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [transitionPending, startTransition] = useTransition();
   const [items, setItems] = useState(initial);
   const [selected, setSelected] = useState<string | null>(initial[0]?.id ?? null);
   const [error, setError] = useState<string | null>(null);
+  const { can } = useProjectActions();
+  const { saving, submit } = useMutationFeedback(setError);
+  const pending = transitionPending || saving;
   const [draft, setDraft] = useState({
     key: "",
     title: "",
@@ -34,6 +39,8 @@ export function RequirementsWorkspace({
   });
 
   async function createRequirement() {
+    if (!can("requirements.create")) return;
+    return submit(async () => {
     if (!draft.key.trim() || !draft.title.trim()) return;
     setError(null);
     const res = await fetch("/api/requirements", {
@@ -54,6 +61,7 @@ export function RequirementsWorkspace({
     setItems((prev) => [{ ...row, coversIntentIds: [] }, ...prev]);
     setDraft({ key: "", title: "", description: "", criticality: "P2" });
     startTransition(() => router.refresh());
+    });
   }
 
   return (
@@ -76,39 +84,39 @@ export function RequirementsWorkspace({
           New requirement
         </h2>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <Input
+          <label className="topo-field"><span>Requirement key</span><Input
             aria-label="Requirement key"
             placeholder="REQ-AUTH-1"
             value={draft.key}
             onChange={(e) => setDraft((d) => ({ ...d, key: e.target.value }))}
-          />
-          <Input
+          /></label>
+          <label className="topo-field"><span>Criticality</span><Input
             aria-label="Criticality"
             value={draft.criticality}
             onChange={(e) =>
               setDraft((d) => ({ ...d, criticality: e.target.value }))
             }
-          />
+          /></label>
         </div>
-        <Input
-          className="mt-2"
+        <label className="topo-field"><span>Title</span><Input
+          className="w-full"
           aria-label="Title"
           placeholder="Account lockout policy"
           value={draft.title}
           onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-        />
-        <TextArea
-          className="mt-2"
+        /></label>
+        <label className="topo-field"><span>Description</span><TextArea
+          className="w-full"
           aria-label="Description"
           value={draft.description}
           onChange={(e) =>
             setDraft((d) => ({ ...d, description: e.target.value }))
           }
-        />
+        /></label>
         <Button
           className="mt-3"
           onPress={() => void createRequirement()}
-          isDisabled={pending}
+          isDisabled={pending || !can("requirements.create")}
         >
           Create requirement
         </Button>

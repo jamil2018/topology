@@ -37,9 +37,7 @@ export default async function RunsPage({ searchParams }: Props) {
     if (typeof value === "string") params.set(key, value);
   }
   const query = runListQueryFromSearchParams(params);
-  query.kind = "manual";
-  // Workspace still filters/paginates client-side; load the full matching set.
-  query.all = true;
+
   const [listed, views] = await Promise.all([
     listRuns(workspaceId, query),
     listSavedViews(workspaceId, "runs", session.user.id),
@@ -49,6 +47,7 @@ export default async function RunsPage({ searchParams }: Props) {
   return (
     <Suspense fallback={<RunsPageSkeleton />}>
       <RunsWorkspace
+          initialPage={listed}
           initialRuns={runs.map((r) => ({
             id: r.id,
             name: r.name,

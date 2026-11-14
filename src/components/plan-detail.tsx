@@ -1,4 +1,6 @@
 "use client";
+import { useProjectActions } from "./project-actions";
+import { useMutationFeedback } from "./use-mutation-feedback";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -36,8 +38,11 @@ export function PlanDetail({
   cases: PickerCase[];
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [transitionPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const { can } = useProjectActions();
+  const { saving, submit } = useMutationFeedback(setError);
+  const pending = transitionPending || saving;
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(plan.cases.map((c) => c.caseId)),
   );
@@ -55,6 +60,8 @@ export function PlanDetail({
   }, [cases, search]);
 
   async function saveCases() {
+    if (!can("runs.edit")) return;
+    return submit(async () => {
     setError(null);
     const res = await fetch(`/api/plans/${plan.id}`, {
       method: "PATCH",
@@ -67,9 +74,12 @@ export function PlanDetail({
       return;
     }
     startTransition(() => router.refresh());
+    });
   }
 
   async function launch() {
+    if (!can("runs.create")) return;
+    return submit(async () => {
     setError(null);
     const res = await fetch(`/api/plans/${plan.id}/launch`, { method: "POST" });
     const data = await res.json().catch(() => ({}));
@@ -79,6 +89,7 @@ export function PlanDetail({
     }
     const first = data.runs?.[0]?.id as string | undefined;
     startTransition(() => router.push(first ? `/runs/${first}` : "/runs"));
+    });
   }
 
   return (
@@ -106,7 +117,7 @@ export function PlanDetail({
             <Button
               size="sm"
               variant="primary"
-              isDisabled={pending || selected.size === 0}
+              isDisabled={pending || !can("runs.create") || selected.size === 0}
               onPress={() => void launch()}
             >
               Launch matrix
@@ -116,7 +127,7 @@ export function PlanDetail({
       />
 
       {error ? (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>
       ) : null}
 
       <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3 text-xs text-[color:var(--topo-muted)]">
@@ -138,7 +149,7 @@ export function PlanDetail({
             onChange={(e) => setSearch(e.target.value)}
             className="max-w-sm"
           />
-          <Button size="sm" variant="secondary" isDisabled={pending} onPress={() => void saveCases()}>
+          <Button size="sm" variant="secondary" isDisabled={pending || !can("runs.edit")} onPress={() => void saveCases()}>
             Save case list
           </Button>
         </div>
@@ -146,7 +157,7 @@ export function PlanDetail({
           {visible.map((c) => (
             <li key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm">
               <input
-                type="checkbox"
+                type="checkbox" disabled={!can("runs.edit")}
                 checked={selected.has(c.id)}
                 onChange={(e) =>
                   setSelected((prev) => {

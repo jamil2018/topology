@@ -2,9 +2,11 @@ import "dotenv/config";
 import {
   assertDemoSeedAllowed,
   seedIncludesDemoData,
+  seedIncludesE2eData,
 } from "../lib/seed-guard";
 import { bootstrapFirstAdmin } from "./seed-bootstrap";
 import { seedDemoWorkspace } from "./seed-demo";
+import { seedE2eFixtures } from "./seed-e2e";
 
 async function seed() {
   assertDemoSeedAllowed();
@@ -20,6 +22,9 @@ async function seed() {
   }
 
   const result = await seedDemoWorkspace({ workspaceId, user });
+  if (seedIncludesE2eData()) {
+    await seedE2eFixtures({ workspaceId, user });
+  }
   if (result.skipped) {
     console.log(
       result.graphSeeded

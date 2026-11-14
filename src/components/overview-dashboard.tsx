@@ -68,7 +68,7 @@ export function OverviewDashboard({
               <div className="mt-1 font-mono text-3xl font-semibold tabular-nums tracking-tight text-[color:var(--topo-ink)]">
                 {passRateLabel}
               </div>
-              <p className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
+              <p className="mt-1 text-xs text-[color:var(--topo-muted)]">
                 {pulse.results.passed} pass · {pulse.results.failed} fail
                 {flakeSuspects > 0 ? ` · ${flakeSuspects} flake` : ""}
               </p>
@@ -119,7 +119,7 @@ export function OverviewDashboard({
                 <div className="mt-2 font-mono text-2xl font-semibold tabular-nums text-[color:var(--topo-ink)]">
                   {milestone.readiness.score}
                 </div>
-                <div className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+                <div className="font-medium text-xs text-[color:var(--topo-muted)]">
                   score
                 </div>
               </div>
@@ -155,7 +155,7 @@ export function OverviewDashboard({
               /{pulse.cases.total}
             </span>
           </div>
-          <p className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
+          <p className="mt-1 text-xs text-[color:var(--topo-muted)]">
             {pulse.cases.blocked} blocked · {pulse.cases.draft} draft
           </p>
           {pulse.cases.total > 0 ? (
@@ -181,7 +181,7 @@ export function OverviewDashboard({
           <div className="mt-1.5 font-mono text-3xl font-semibold tabular-nums tracking-tight text-[color:var(--topo-ink)]">
             {pulse.runs.inProgress}
           </div>
-          <p className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
+          <p className="mt-1 text-xs text-[color:var(--topo-muted)]">
             {pulse.runs.automation ?? 0} CI · {pulse.runs.completed} done
           </p>
         </WidgetCard>
@@ -199,14 +199,14 @@ export function OverviewDashboard({
               {selectedRelease ? (
                 <Link
                   href={`/releases/${selectedRelease.id}`}
-                  className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
+                  className="font-medium text-xs text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
                 >
                   {selectedRelease.name}
                 </Link>
               ) : null}
               <Link
                 href="/journeys"
-                className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
+                className="font-medium text-xs text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
               >
                 Journeys
               </Link>
@@ -292,7 +292,7 @@ export function OverviewDashboard({
                           · {gap.title}
                         </span>
                       </div>
-                      <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+                      <p className="mt-0.5 font-medium text-xs text-[color:var(--topo-muted)]">
                         {gapLabel(gap.kind)}
                       </p>
                     </div>
@@ -316,7 +316,7 @@ export function OverviewDashboard({
             </h2>
             <Link
               href="/runs"
-              className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
+              className="font-medium text-xs text-[color:var(--topo-muted)] hover:text-[color:var(--topo-accent)]"
             >
               View all
             </Link>
@@ -342,7 +342,7 @@ export function OverviewDashboard({
                           {run.name}
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                          <span className="font-mono text-[10px] text-[color:var(--topo-muted)]">
+                          <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                             {run.id.slice(0, 8)}
                           </span>
                           {run.kind === "automation" ? (
@@ -351,7 +351,7 @@ export function OverviewDashboard({
                             <StatusChip>Manual</StatusChip>
                           )}
                           {executed > 0 ? (
-                            <span className="font-mono text-[10px] text-[color:var(--topo-muted)]">
+                            <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                               {passed}P / {failed}F
                             </span>
                           ) : null}
@@ -415,14 +415,14 @@ export function OverviewDashboard({
                     {item.runId ? (
                       <Link
                         href={`/runs/${item.runId}`}
-                        className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-accent)] hover:underline"
+                        className="shrink-0 font-medium text-xs text-[color:var(--topo-accent)] hover:underline"
                       >
                         Retest
                       </Link>
                     ) : (
                       <Link
                         href="/runs"
-                        className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-accent)] hover:underline"
+                        className="shrink-0 font-medium text-xs text-[color:var(--topo-accent)] hover:underline"
                       >
                         Start run
                       </Link>

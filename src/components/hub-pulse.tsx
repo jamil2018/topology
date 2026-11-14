@@ -85,14 +85,14 @@ export function HubPulse({
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Operating hub"
-        title={isOverview ? "Quality pulse" : "QA home"}
+        eyebrow=""
+        title={isOverview ? "Overview" : "Home"}
         description={
           isOverview
-            ? "Persona pulse, milestone gates, and optional graph coverage. Testers live on QA home."
+            ? "Review test results, coverage, and release readiness."
             : "Your assigned runs, work in progress, open failures, and the retest queue."
         }
-        meta={
+        meta={isOverview ? (
           <>
             <StatusChip tone={statusToneForRun(health)}>{health}</StatusChip>
             {(pulse.triageOpen ?? 0) > 0 ? (
@@ -114,33 +114,31 @@ export function HubPulse({
               <StatusChip mono>persona {persona}</StatusChip>
             ) : null}
           </>
-        }
+        ) : undefined}
         actions={
           <div className="flex flex-wrap gap-2">
             <div
-              role="tablist"
-              aria-label="Hub view"
+              role="group"
+              aria-label="Home view"
               className="flex flex-wrap items-center gap-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-0.5"
             >
               <button
                 type="button"
-                role="tab"
-                aria-selected={!isOverview}
+                aria-pressed={!isOverview}
                 onClick={() => setView("home")}
-                className={`rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wide transition ${
+                className={`rounded px-2 py-1 font-mono text-xs uppercase tracking-wide ${
                   !isOverview
                     ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
                     : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
                 }`}
               >
-                QA home
+                My work
               </button>
               <button
                 type="button"
-                role="tab"
-                aria-selected={isOverview}
+                aria-pressed={isOverview}
                 onClick={() => setView("overview")}
-                className={`rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wide transition ${
+                className={`rounded px-2 py-1 font-mono text-xs uppercase tracking-wide ${
                   isOverview
                     ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
                     : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
@@ -154,7 +152,7 @@ export function HubPulse({
                 <button
                   type="button"
                   onClick={() => setPersona(null)}
-                  className={`rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wide transition ${
+                  className={`rounded px-2 py-1 font-mono text-xs uppercase tracking-wide ${
                     persona == null
                       ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
                       : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
@@ -167,7 +165,7 @@ export function HubPulse({
                     key={p.id}
                     type="button"
                     onClick={() => setPersona(p.id)}
-                    className={`rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wide transition ${
+                    className={`rounded px-2 py-1 font-mono text-xs uppercase tracking-wide ${
                       persona === p.id
                         ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
                         : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
@@ -206,12 +204,7 @@ export function HubPulse({
             >
               Test cases
             </Link>
-            <Link
-              href="/settings?section=integrations#ci"
-              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
-            >
-              CI setup
-            </Link>
+
           </div>
         }
       />

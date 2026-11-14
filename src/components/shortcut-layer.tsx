@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { AnimatePresence, motion } from "motion/react";
+import { useProjectActions } from "./project-actions";
+import { Modal } from "@heroui/react";
 import {
   dispatchShortcut,
   GO_CHORD_MS,
@@ -39,6 +40,7 @@ export function useShortcut(
 }
 
 export function ShortcutLayer() {
+  const { can } = useProjectActions();
   const router = useRouter();
   const pathname = usePathname() ?? "/";
   const [open, setOpen] = useState(false);
@@ -93,6 +95,9 @@ export function ShortcutLayer() {
         dispatchShortcut(id);
         return;
       }
+      if (id === "create" && !can(pathname.startsWith("/runs") ? "runs.create" : "cases.create")) return;
+      if (["edit", "status", "priority"].includes(id) && !can("cases.edit")) return;
+      if (["pass", "fail", "blocked", "skipped", "assign"].includes(id) && !can("runs.edit")) return;
       event.preventDefault();
       if (id === "cheat-sheet") {
         setOpen(true);
@@ -118,40 +123,22 @@ export function ShortcutLayer() {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener(TOPOLOGY_OPEN_CHEATSHEET, onOpenEvent);
     };
-  }, [clearGo, close, open, pathname, router]);
+  }, [clearGo, close, open, pathname, router, can]);
 
   const groups = groupShortcuts();
 
   return (
-    <AnimatePresence>
-      {open ? (
-        <motion.div
-          className="fixed inset-0 z-[85] flex items-start justify-center bg-black/45 px-3 pt-[12vh]"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) close();
-          }}
-        >
-          <motion.div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            className="w-full max-w-lg overflow-hidden rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] shadow-2xl"
-            initial={{ opacity: 0, y: -10, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 420, damping: 32 }}
-          >
+    <Modal.Backdrop isOpen={open} onOpenChange={setOpen}>
+      <Modal.Container placement="center" size="lg">
+        <Modal.Dialog aria-labelledby={titleId} className="w-full overflow-hidden rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
             <div className="flex items-start justify-between gap-3 border-b border-[color:var(--topo-line)] px-4 py-3">
               <div>
-                <h2
+                <Modal.Heading
                   id={titleId}
                   className="text-sm font-semibold text-[color:var(--topo-ink)]"
                 >
                   Keyboard shortcuts
-                </h2>
+                </Modal.Heading>
                 <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
                   Single keys, plus G then a letter to go. Ignored while
                   typing in inputs. Press ? to close.
@@ -169,7 +156,7 @@ export function ShortcutLayer() {
             <div className="max-h-[min(24rem,55vh)] overflow-y-auto px-4 py-3">
               {groups.map((group) => (
                 <section key={group.name} className="mb-4 last:mb-0">
-                  <h3 className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+                  <h3 className="mb-1.5 text-xs font-medium text-[color:var(--topo-muted)]">
                     {group.name}
                   </h3>
                   <ul className="space-y-1">
@@ -185,7 +172,7 @@ export function ShortcutLayer() {
                           {item.keys.map((key) => (
                             <kbd
                               key={key}
-                              className="rounded border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)] px-1.5 py-0.5 font-mono text-[11px] text-[color:var(--topo-ink)]"
+                              className="rounded border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)] px-1.5 py-0.5 font-mono text-xs text-[color:var(--topo-ink)]"
                             >
                               {key}
                             </kbd>
@@ -200,7 +187,7 @@ export function ShortcutLayer() {
                             Command palette
                           </span>
                           <span className="flex gap-1">
-                            <kbd className="rounded border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)] px-1.5 py-0.5 font-mono text-[11px] text-[color:var(--topo-ink)]">
+                            <kbd className="rounded border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)] px-1.5 py-0.5 font-mono text-xs text-[color:var(--topo-ink)]">
                               ⌘K
                             </kbd>
                           </span>
@@ -210,7 +197,7 @@ export function ShortcutLayer() {
                             Toggle sidebar
                           </span>
                           <span className="flex gap-1">
-                            <kbd className="rounded border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)] px-1.5 py-0.5 font-mono text-[11px] text-[color:var(--topo-ink)]">
+                            <kbd className="rounded border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)] px-1.5 py-0.5 font-mono text-xs text-[color:var(--topo-ink)]">
                               ⌘B
                             </kbd>
                           </span>
@@ -234,10 +221,9 @@ export function ShortcutLayer() {
                 for navigation, import, and search.
               </p>
             </div>
-          </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   );
 }
 

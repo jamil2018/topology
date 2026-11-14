@@ -38,7 +38,7 @@ type Quality = {
 function DimRow({ label, dim }: { label: string; dim: Dimension }) {
   return (
     <div className="flex items-baseline justify-between gap-2 py-1.5">
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+      <span className="text-xs font-medium text-[color:var(--topo-muted)]">
         {label}
       </span>
       <span className="font-mono text-xs tabular-nums text-[color:var(--topo-ink)]">

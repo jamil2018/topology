@@ -11,7 +11,6 @@ import { RepositoriesPanel } from "./repositories-panel";
 import { WebhooksPanel } from "./webhooks-panel";
 import { useTheme, type ThemePreference } from "./theme-provider";
 import { useQualityGraph } from "./quality-graph-provider";
-import { StatusChip } from "./status-chip";
 import { WorkspaceMembersPanel } from "./workspace-members-panel";
 import { CustomRolesPanel } from "./custom-roles-panel";
 import { ProjectsPanel } from "./projects-panel";
@@ -75,16 +74,24 @@ export function SettingsWorkspace({
 
   // Scroll to in-page anchors from deep links / legacy redirects.
   useEffect(() => {
-    const hash =
-      typeof window !== "undefined" ? window.location.hash.slice(1) : "";
-    const anchor = hash || resolved.anchor;
-    if (!anchor) return;
-    const el = document.getElementById(anchor);
-    if (!el) return;
-    const frame = window.requestAnimationFrame(() => {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    return () => window.cancelAnimationFrame(frame);
+    let frame = 0;
+    function revealAnchor() {
+      const anchor = window.location.hash.slice(1) || resolved.anchor;
+      if (!anchor) return;
+      const el = document.getElementById(anchor);
+      if (!el) return;
+      if (el instanceof HTMLDetailsElement) el.open = true;
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        el.scrollIntoView({ block: "start" });
+      });
+    }
+    revealAnchor();
+    window.addEventListener("hashchange", revealAnchor);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("hashchange", revealAnchor);
+    };
   }, [page, resolved.anchor, searchParams]);
 
   useEffect(() => {
@@ -180,7 +187,7 @@ export function SettingsWorkspace({
         eyebrow="Account"
         title="Settings"
         description="Account, projects, access, and integrations for this Topology workspace."
-        meta={<StatusChip mono>topology</StatusChip>}
+
       />
 
       {loadError ? (
@@ -192,7 +199,7 @@ export function SettingsWorkspace({
           className="overflow-x-auto overscroll-x-contain [scrollbar-width:thin]"
           aria-label="Settings"
         >
-          <ul className="flex w-max min-w-full items-stretch gap-0 border-b border-[color:var(--topo-line)]">
+          <ul className="flex flex-wrap items-stretch gap-0 border-b border-[color:var(--topo-line)]">
             {SETTINGS_NAV.map((item) => {
               const active = page === item.id;
               return (
@@ -209,9 +216,7 @@ export function SettingsWorkspace({
                     <span className="font-medium whitespace-nowrap">
                       {item.label}
                     </span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.14em] opacity-70 whitespace-nowrap">
-                      {item.hint}
-                    </span>
+
                   </Link>
                 </li>
               );
@@ -464,17 +469,15 @@ export function SettingsWorkspace({
 
           {page === "integrations" ? (
             <>
-              <section
-                id="connections"
-                className="scroll-mt-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
-              >
+              <details id="connections" className="scroll-mt-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <summary className="cursor-pointer text-sm font-semibold">Connect an agent<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Set up an AI assistant to work with your tests.</span></summary>
+                <div className="mt-4">
                 <ConnectAgentPanel defaultUrl={defaultUrl} compact />
-              </section>
+              </div></details>
 
-              <section
-                id="ci"
-                className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
-              >
+              <details id="ci" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <summary className="cursor-pointer text-sm font-semibold">Import automated results<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Send test results from your CI pipeline.</span></summary>
+                <div className="mt-4">
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
                     CI ingest
@@ -484,12 +487,11 @@ export function SettingsWorkspace({
                   </p>
                 </div>
                 <CiSetupPanel />
-              </section>
+              </div></details>
 
-              <section
-                id="repositories"
-                className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
-              >
+              <details id="repositories" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <summary className="cursor-pointer text-sm font-semibold">Repositories<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Connect source code for change impact analysis.</span></summary>
+                <div className="mt-4">
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
                     Repositories
@@ -498,13 +500,12 @@ export function SettingsWorkspace({
                     Connect remotes, webhooks, and path rules for change impact.
                   </p>
                 </div>
-                <RepositoriesPanel />
-              </section>
+                <RepositoriesPanel defaultUrl={defaultUrl} />
+              </div></details>
 
-              <section
-                id="ai"
-                className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
-              >
+              <details id="ai" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <summary className="cursor-pointer text-sm font-semibold">AI drafting<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Optional assistance with writing test proposals.</span></summary>
+                <div className="mt-4">
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
                     AI (optional)
@@ -515,14 +516,13 @@ export function SettingsWorkspace({
                   </p>
                 </div>
                 <AiSettingsPanel />
-              </section>
+              </div></details>
 
-              <section
-                id="webhooks"
-                className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
-              >
+              <details id="webhooks" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <summary className="cursor-pointer text-sm font-semibold">Webhooks<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Notify other tools when testing activity changes.</span></summary>
+                <div className="mt-4">
                 <WebhooksPanel />
-              </section>
+              </div></details>
             </>
           ) : null}
 

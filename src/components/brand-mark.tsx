@@ -50,7 +50,7 @@ export function BrandMark({
             Topology
           </Word>
           {eyebrow ? (
-            <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+            <span className="shrink-0 text-xs font-medium text-[color:var(--topo-muted)]">
               {eyebrow}
             </span>
           ) : null}

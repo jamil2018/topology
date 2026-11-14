@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import { render } from "@/test/render";
 import { LoginForm } from "./login-form";
 import { safeCallbackPath } from "@/lib/safe-callback-path";
 

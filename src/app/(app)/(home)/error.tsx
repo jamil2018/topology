@@ -10,7 +10,7 @@ export default function HubError({
 }) {
   return (
     <RouteError
-      title="Hub failed to load"
+      title="Home failed to load"
       description="Unexpected error while loading the quality pulse."
       reset={reset}
     />

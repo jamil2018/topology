@@ -63,7 +63,7 @@ export function CaseStepsEditor({
           className="space-y-1.5 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] p-2"
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="font-mono text-[10px] text-[color:var(--topo-muted)]">
+            <span className="font-mono text-xs text-[color:var(--topo-muted)]">
               Step {index + 1}
               {step.sharedStepId ? " · shared" : ""}
             </span>
@@ -81,6 +81,7 @@ export function CaseStepsEditor({
           <Input
             aria-label={`Step ${index + 1} action`}
             placeholder="Action"
+            className="w-full"
             value={step.action}
             disabled={disabled || Boolean(step.sharedStepId)}
             onChange={(e) => update(index, { action: e.target.value })}
@@ -93,11 +94,12 @@ export function CaseStepsEditor({
                 value={step.expected}
                 disabled={disabled}
                 onChange={(e) => update(index, { expected: e.target.value })}
-                className="min-h-12"
+                className="w-full min-h-12"
               />
               <Input
                 aria-label={`Step ${index + 1} data`}
                 placeholder="Test data (optional)"
+                className="w-full"
                 value={step.data}
                 disabled={disabled}
                 onChange={(e) => update(index, { data: e.target.value })}

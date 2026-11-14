@@ -1,7 +1,8 @@
 "use client";
+import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Input,
@@ -125,9 +126,12 @@ export function CaseEditPanel({
   const { enabled: qualityGraphEnabled } = useQualityGraph();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [readOnly, setReadOnly] = useState(false);
+  const { can } = useProjectActions();
+  const [serverReadOnly, setReadOnly] = useState(false);
+  const readOnly = serverReadOnly || !can("cases.edit");
   const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [form, setForm] = useState<EditForm | null>(null);
   const [historyKey, setHistoryKey] = useState(0);
@@ -237,7 +241,8 @@ export function CaseEditPanel({
       : null;
 
   async function save() {
-    if (!form || !detail) return;
+    if (!form || !detail || readOnly || saveLock.current) return;
+    saveLock.current = true;
     setSaving(true);
     setSaveError(null);
     try {
@@ -330,7 +335,10 @@ export function CaseEditPanel({
         tags: nextDetail.tags,
         folder,
       });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Could not save. Your draft is preserved.");
     } finally {
+      saveLock.current = false;
       setSaving(false);
     }
   }
@@ -342,7 +350,7 @@ export function CaseEditPanel({
     <aside className="flex h-full max-h-[calc(100vh-6rem)] flex-col overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
       <div className="flex items-start justify-between gap-2 border-b border-[color:var(--topo-line)] px-3 py-2.5">
         <div className="min-w-0">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+          <p className="text-xs font-medium text-[color:var(--topo-muted)]">
             Edit case
           </p>
           <p className="truncate font-mono text-xs text-[color:var(--topo-accent)]">
@@ -352,7 +360,7 @@ export function CaseEditPanel({
             {headerTitle}
           </p>
           {qualityGraphEnabled && detail?.intent ? (
-            <p className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
+            <p className="mt-1 text-xs text-[color:var(--topo-muted)]">
               Intent{" "}
               <Link
                 href={`/intents?intent=${detail.intent.id}`}
@@ -362,7 +370,7 @@ export function CaseEditPanel({
               </Link>
             </p>
           ) : qualityGraphEnabled && detail?.intentId ? (
-            <p className="mt-1 text-[11px] text-[color:var(--topo-muted)]">
+            <p className="mt-1 text-xs text-[color:var(--topo-muted)]">
               Linked intent
             </p>
           ) : null}
@@ -643,11 +651,11 @@ export function CaseEditPanel({
                 Close
               </Button>
               {saveDisabledReason && !readOnly ? (
-                <p className="text-[11px] text-[color:var(--topo-muted)]">
+                <p className="text-xs text-[color:var(--topo-muted)]">
                   {saveDisabledReason}
                 </p>
               ) : dirty && !readOnly ? (
-                <p className="text-[11px] text-[color:var(--topo-muted)]">
+                <p className="text-xs text-[color:var(--topo-muted)]">
                   Unsaved changes
                 </p>
               ) : null}

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { render } from "@/test/render";
 import { ReportsWorkspace } from "./reports-workspace";
 import { emptyReportsDashboard } from "@/lib/report-dashboard";
 

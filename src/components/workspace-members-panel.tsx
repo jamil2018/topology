@@ -169,7 +169,7 @@ export function WorkspaceMembersPanel() {
         <p className="text-xs text-[color:var(--topo-muted)]">{msg}</p>
       ) : null}
       {lastAcceptUrl ? (
-        <p className="break-all rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-1.5 font-mono text-[11px] text-[color:var(--topo-ink)]">
+        <p className="break-all rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-1.5 font-mono text-xs text-[color:var(--topo-ink)]">
           {lastAcceptUrl}
         </p>
       ) : null}
@@ -189,7 +189,7 @@ export function WorkspaceMembersPanel() {
                 <div className="font-medium text-[color:var(--topo-ink)]">
                   {m.user.name ?? m.user.email}
                 </div>
-                <div className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+                <div className="font-mono text-xs text-[color:var(--topo-muted)]">
                   {m.user.email}
                 </div>
               </div>

@@ -1,4 +1,6 @@
 "use client";
+import { useProjectActions } from "./project-actions";
+import { useMutationFeedback } from "./use-mutation-feedback";
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
@@ -43,6 +45,8 @@ export function IntentsWorkspace({
   const [pending, startTransition] = useTransition();
   const [items, setItems] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const { can } = useProjectActions();
+  const { saving, submit } = useMutationFeedback(setError);
   const [selected, setSelected] = useState<string | null>(
     selectedId ?? initial[0]?.id ?? null,
   );
@@ -130,6 +134,8 @@ export function IntentsWorkspace({
   }
 
   async function createIntent() {
+    if (!can("intents.create")) return;
+    return submit(async () => {
     if (!draft.key.trim() || !draft.title.trim()) return;
     setError(null);
     setCreating(true);
@@ -169,6 +175,7 @@ export function IntentsWorkspace({
     } finally {
       setCreating(false);
     }
+    });
   }
 
   return (
@@ -388,7 +395,7 @@ export function IntentsWorkspace({
             <Button
               className="mt-3"
               onPress={() => void createIntent()}
-              isDisabled={creating || pending}
+              isDisabled={creating || pending || saving || !can("intents.create")}
             >
               Create intent
             </Button>
@@ -435,7 +442,7 @@ export function IntentsWorkspace({
               />
 
               <div className="mt-4">
-                <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+                <div className="text-xs font-medium text-[color:var(--topo-muted)]">
                   Implementations
                 </div>
                 {active.implementations.length === 0 ? (
@@ -454,7 +461,7 @@ export function IntentsWorkspace({
                         {impl.caseId ? (
                           <Link
                             href={`/cases?case=${impl.caseId}`}
-                            className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-accent)] hover:underline"
+                            className="font-medium text-xs text-[color:var(--topo-accent)] hover:underline"
                           >
                             Open case
                           </Link>

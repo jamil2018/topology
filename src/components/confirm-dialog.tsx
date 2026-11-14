@@ -26,8 +26,7 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   return (
-    <Modal.Root state={state}>
-      <Modal.Backdrop isDismissable={!pending}>
+    <Modal.Backdrop isOpen={state.isOpen} onOpenChange={state.setOpen} isDismissable={!pending}>
         <Modal.Container placement="center" size="sm">
           <Modal.Dialog className="outline-none">
             <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
@@ -64,6 +63,6 @@ export function ConfirmDialog({
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
-    </Modal.Root>
+
   );
 }

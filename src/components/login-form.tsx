@@ -279,11 +279,11 @@ export function LoginForm({
             </ol>
           </div>
         ) : demoHint && !oauthAvailable ? (
-          <p className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+          <p className="font-mono text-xs text-[color:var(--topo-muted)]">
             Local seed login: demo@topology.local / topology-demo
           </p>
         ) : demoHint && showEmail ? (
-          <p className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+          <p className="font-mono text-xs text-[color:var(--topo-muted)]">
             Local seed login: demo@topology.local / topology-demo
           </p>
         ) : null}

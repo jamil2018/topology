@@ -39,7 +39,7 @@ export const DEFAULT_NAV_GROUPS: NavGroupDef[] = [
   {
     id: "overview",
     label: "Overview",
-    items: [{ href: "/", label: "Hub", hint: "Pulse" }],
+    items: [{ href: "/", label: "Home", hint: "Your work" }],
   },
   {
     id: "testing",
@@ -84,7 +84,7 @@ export const QUALITY_GRAPH_NAV_GROUP: NavGroupDef = {
 
 /** Every destination the command palette must list, including quality-graph pages. */
 export const PALETTE_PAGES: NavItemDef[] = [
-  { href: "/", label: "Hub", hint: "Pulse" },
+  { href: "/", label: "Home", hint: "Your work" },
   { href: "/cases", label: "Test cases", hint: "Suites" },
   { href: "/plans", label: "Plans", hint: "Matrix" },
   { href: "/runs", label: "Test runs", hint: "Manual" },

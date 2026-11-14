@@ -10,7 +10,7 @@ import { ensureMembership } from "@/lib/workspace";
 import { loadCasesWorkspaceData } from "./cases-page-data";
 
 export const metadata: Metadata = {
-  title: "Test Cases · Topology",
+  title: "Test cases · Topology",
   description:
     "Organize suites in nested folders, author cases, and import or export CSV.",
 };
@@ -43,6 +43,10 @@ export default async function CasesPage({ searchParams }: Props) {
     <Suspense fallback={<CasesPageSkeleton />}>
       <CasesWorkspace
         initialCases={data.cases}
+        initialPage={data.initialPage}
+        suggestedKey={data.suggestedKey}
+        selectedCase={data.selectedCase}
+        counts={data.counts}
         folders={data.folders}
         initialViews={data.views}
         projectPrefix={data.projectPrefix}

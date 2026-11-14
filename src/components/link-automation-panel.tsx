@@ -40,7 +40,7 @@ export function LinkAutomationPanel({ intentId }: { intentId: string }) {
 
   return (
     <div className="mt-4 rounded-md border border-dashed border-[color:var(--topo-line)] p-3">
-      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+      <div className="text-xs font-medium text-[color:var(--topo-muted)]">
         Link automation
       </div>
       <p className="mt-1 text-xs text-[color:var(--topo-muted)]">

@@ -78,11 +78,11 @@ export function AuditLogPanel() {
                 <span className="text-xs text-[color:var(--topo-ink)]">
                   {event.actorEmail ?? "system"}
                 </span>
-                <span className="text-[11px] text-[color:var(--topo-muted)]">
+                <span className="text-xs text-[color:var(--topo-muted)]">
                   {formatWhen(event.createdAt)}
                 </span>
               </div>
-              <p className="mt-0.5 font-mono text-[11px] text-[color:var(--topo-muted)]">
+              <p className="mt-0.5 font-mono text-xs text-[color:var(--topo-muted)]">
                 {event.targetType ?? "—"}
                 {event.targetId ? ` ${event.targetId}` : ""}
                 {event.ip ? ` · ${event.ip}` : ""}

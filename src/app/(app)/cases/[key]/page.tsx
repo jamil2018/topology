@@ -67,6 +67,7 @@ export default async function CaseDetailPage({ params, searchParams }: Props) {
   for (const [key, value] of Object.entries(raw)) {
     if (typeof value === "string") query.set(key, value);
   }
+  query.set("case", selectedCaseKey);
   const data = await loadCasesWorkspaceData(
     ctx.project.id,
     session.user.id,
@@ -78,6 +79,10 @@ export default async function CaseDetailPage({ params, searchParams }: Props) {
     <Suspense fallback={<CasesPageSkeleton />}>
       <CasesWorkspace
         initialCases={data.cases}
+        initialPage={data.initialPage}
+        suggestedKey={data.suggestedKey}
+        selectedCase={data.selectedCase}
+        counts={data.counts}
         folders={data.folders}
         initialViews={data.views}
         projectPrefix={data.projectPrefix}

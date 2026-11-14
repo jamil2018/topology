@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { render } from "@/test/render";
 import { QaHome } from "./qa-home";
 import type { HubPulseData } from "./hub-types";
 
@@ -73,7 +74,7 @@ describe("QaHome", () => {
     );
     expect(screen.getByRole("link", { name: /HAR-12/i })).toHaveAttribute(
       "href",
-      "/triage",
+      "/triage#failure-triage-1",
     );
     expect(screen.getByText("Retest queue")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Retest" })).toHaveAttribute(

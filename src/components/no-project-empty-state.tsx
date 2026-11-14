@@ -7,7 +7,7 @@ export function NoProjectEmptyState({
 }) {
   return (
     <div className="mx-auto flex max-w-lg flex-col items-start gap-3 py-16">
-      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--topo-muted)]">
+      <p className="text-xs font-medium text-[color:var(--topo-muted)]">
         Projects
       </p>
       <h1 className="text-2xl font-semibold tracking-tight text-[color:var(--topo-ink)]">

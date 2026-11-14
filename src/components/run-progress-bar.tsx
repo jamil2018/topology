@@ -61,7 +61,7 @@ export function RunProgressBar({
   return (
     <div className={showLabel ? `space-y-1.5 ${className}` : className}>
       {showLabel ? (
-        <div className="flex justify-between font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+        <div className="flex justify-between font-medium text-xs text-[color:var(--topo-muted)]">
           <span>
             Progress {done}/{resolvedTotal}
           </span>

@@ -137,11 +137,11 @@ export async function replaceCaseSteps(input: {
   workspaceId: string;
   caseId: string;
   steps: readonly StepInput[];
-}): Promise<OrderedStep[]> {
+}, executor: Pick<typeof db, "query" | "insert" | "delete" | "update"> = db): Promise<OrderedStep[]> {
   const ordered = orderSteps(input.steps);
-  await db.delete(caseSteps).where(eq(caseSteps.caseId, input.caseId));
+  await executor.delete(caseSteps).where(eq(caseSteps.caseId, input.caseId));
   if (ordered.length > 0) {
-    await db.insert(caseSteps).values(
+    await executor.insert(caseSteps).values(
       ordered.map((step) => ({
         caseId: input.caseId,
         workspaceId: input.workspaceId,
@@ -154,7 +154,7 @@ export async function replaceCaseSteps(input: {
     );
   }
   const projected = projectStepsToText(ordered);
-  await db
+  await executor
     .update(cases)
     .set({
       steps: projected.steps,
@@ -162,7 +162,7 @@ export async function replaceCaseSteps(input: {
       updatedAt: new Date(),
     })
     .where(and(eq(cases.id, input.caseId), eq(cases.workspaceId, input.workspaceId)));
-  const saved = await db.query.caseSteps.findMany({
+  const saved = await executor.query.caseSteps.findMany({
     where: eq(caseSteps.caseId, input.caseId),
     orderBy: [asc(caseSteps.position)],
   });
@@ -388,12 +388,12 @@ export async function executableStepsForCase(input: {
   workspaceId: string;
   caseId: string;
   values?: Record<string, string>;
-}): Promise<OrderedStep[]> {
-  const row = await db.query.cases.findFirst({
+}, executor: Pick<typeof db, "query"> = db): Promise<OrderedStep[]> {
+  const row = await executor.query.cases.findFirst({
     where: and(eq(cases.id, input.caseId), eq(cases.workspaceId, input.workspaceId)),
   });
   if (!row) return [];
-  const stored = await db.query.caseSteps.findMany({
+  const stored = await executor.query.caseSteps.findMany({
     where: eq(caseSteps.caseId, input.caseId),
     orderBy: [asc(caseSteps.position)],
   });
@@ -414,7 +414,7 @@ export async function executableStepsForCase(input: {
   ];
   const sharedById = new Map<string, { action: string; expected: string; data: string; position: number }[]>();
   if (sharedIds.length > 0) {
-    const blocks = await db.query.sharedSteps.findMany({
+    const blocks = await executor.query.sharedSteps.findMany({
       where: and(
         eq(sharedSteps.workspaceId, input.workspaceId),
         inArray(sharedSteps.id, sharedIds),
@@ -439,12 +439,12 @@ export async function executableStepsForCase(input: {
   return applyParametersToSteps(expanded, input.values ?? {});
 }
 
-export async function loadCaseIterations(caseId: string) {
+export async function loadCaseIterations(caseId: string, executor: Pick<typeof db, "query"> = db) {
   const [parameters, datasets] = await Promise.all([
-    db.query.caseParameters.findMany({
+    executor.query.caseParameters.findMany({
       where: eq(caseParameters.caseId, caseId),
     }),
-    db.query.caseDatasetRows.findMany({
+    executor.query.caseDatasetRows.findMany({
       where: eq(caseDatasetRows.caseId, caseId),
       orderBy: [asc(caseDatasetRows.position)],
     }),

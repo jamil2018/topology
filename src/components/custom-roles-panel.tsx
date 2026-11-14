@@ -208,7 +208,7 @@ export function CustomRolesPanel() {
               <div className="min-w-0">
                 <div className="text-sm font-medium text-[color:var(--topo-ink)]">
                   {role.name}
-                  <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+                  <span className="ml-2 text-xs font-medium text-[color:var(--topo-muted)]">
                     system
                   </span>
                 </div>
@@ -217,7 +217,7 @@ export function CustomRolesPanel() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+                <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                   {role.memberCount} member{role.memberCount === 1 ? "" : "s"}
                 </span>
                 {canManage ? (
@@ -261,7 +261,7 @@ export function CustomRolesPanel() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+                <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                   {role.memberCount} member{role.memberCount === 1 ? "" : "s"}
                 </span>
                 {canManage ? (
@@ -349,7 +349,7 @@ export function CustomRolesPanel() {
                           <span className="block text-[color:var(--topo-ink)]">
                             {catalog.labels[action] ?? action}
                           </span>
-                          <span className="font-mono text-[10px] text-[color:var(--topo-muted)]">
+                          <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                             {action}
                           </span>
                         </span>
@@ -370,7 +370,7 @@ export function CustomRolesPanel() {
             >
               {saving ? "Saving…" : creating ? "Create role" : "Save changes"}
             </Button>
-            <span className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+            <span className="font-mono text-xs text-[color:var(--topo-muted)]">
               {form.actions.length} action{form.actions.length === 1 ? "" : "s"}
             </span>
           </div>

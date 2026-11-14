@@ -64,11 +64,13 @@ export default async function RunDetailPage({ params }: Props) {
         run={{
           id: run.id,
           name: run.name,
+          environment: run.environment,
           status: run.status,
           description: run.description,
           assigneeId: run.assigneeId,
           results: run.results.map((r) => ({
             id: r.id,
+            caseId: r.caseId,
             status: r.status,
             notes: r.notes,
             assigneeId: r.assigneeId,

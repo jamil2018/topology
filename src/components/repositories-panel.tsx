@@ -19,7 +19,7 @@ type PathRuleRow = {
   componentTitle: string | null;
 };
 
-export function RepositoriesPanel() {
+export function RepositoriesPanel({ defaultUrl }: { defaultUrl: string }) {
   const [pending, startTransition] = useTransition();
   const [repos, setRepos] = useState<RepositoryRow[]>([]);
   const [pathRules, setPathRules] = useState<PathRuleRow[]>([]);
@@ -34,10 +34,7 @@ export function RepositoriesPanel() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const webhookBase =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/api/webhooks/github`
-      : "/api/webhooks/github";
+  const webhookBase = `${defaultUrl.replace(/\/$/, "")}/api/webhooks/github`;
 
   const load = useCallback(async () => {
     const [repoRes, rulesRes] = await Promise.all([
@@ -146,7 +143,7 @@ export function RepositoriesPanel() {
           <code className="font-mono">x-topology-changed-files</code> on PR
           events (JSON array or comma-separated paths).
         </p>
-        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-[color:var(--topo-ink)]">
+        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-[color:var(--topo-ink)]">
           {webhookBase}?workspaceId=&lt;your-project-id&gt;
         </pre>
       </div>
@@ -170,7 +167,7 @@ export function RepositoriesPanel() {
               ) : (
                 <button
                   type="button"
-                  className="text-[11px] text-[color:var(--topo-muted)] underline-offset-2 hover:underline"
+                  className="text-xs text-[color:var(--topo-muted)] underline-offset-2 hover:underline"
                   onClick={() => {
                     const secret = window.prompt(
                       "GitHub webhook secret for this repository",
@@ -207,7 +204,7 @@ export function RepositoriesPanel() {
 
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="space-y-1">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             Remote URL
           </span>
           <Input
@@ -217,7 +214,7 @@ export function RepositoriesPanel() {
           />
         </label>
         <label className="space-y-1">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             Default branch
           </span>
           <Input
@@ -226,7 +223,7 @@ export function RepositoriesPanel() {
           />
         </label>
         <label className="space-y-1 sm:col-span-2">
-          <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+          <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             Webhook secret (optional)
           </span>
           <Input
@@ -294,7 +291,7 @@ export function RepositoriesPanel() {
 
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+            <span className="font-medium text-xs text-[color:var(--topo-muted)]">
               Pattern
             </span>
             <Input
@@ -304,7 +301,7 @@ export function RepositoriesPanel() {
             />
           </label>
           <label className="space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+            <span className="font-medium text-xs text-[color:var(--topo-muted)]">
               Component key
             </span>
             <Input

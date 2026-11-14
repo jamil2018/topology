@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { cases, runs } from "@/db/schema";
+import { cases, runs, notifications } from "@/db/schema";
 import { requireWorkspaceAssignee } from "@/lib/assignee";
 import { caseWriteError } from "@/lib/pg-error";
 import { requireProjectAccess } from "@/lib/project";
@@ -108,7 +108,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const [run] = await db
+    const run = await db.transaction(async (tx) => {
+    const [run] = await tx
       .insert(runs)
       .values({
         workspaceId,
@@ -128,6 +129,9 @@ export async function POST(request: Request) {
       workspaceId,
       runId: run.id,
       caseIds,
+    }, tx);
+    if (run.assigneeId && run.assigneeId !== session.user.id) await tx.insert(notifications).values({ workspaceId, userId: run.assigneeId, type: "assignment", title: `Run assigned: ${run.name}`, entityType: "run", entityId: run.id });
+    return run;
     });
 
     return NextResponse.json({ run }, { status: 201 });

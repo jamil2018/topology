@@ -37,7 +37,7 @@ function parseEvents(raw: string): Set<string> {
   );
 }
 
-function signBody(secret: string, body: string): string | null {
+export function signBody(secret: string, body: string): string | null {
   if (!secret) return null;
   return createHmac("sha256", secret).update(body).digest("hex");
 }

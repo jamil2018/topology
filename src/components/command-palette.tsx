@@ -1,8 +1,10 @@
 "use client";
+import { useProjectActions } from "./project-actions";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { AnimatePresence, motion } from "motion/react";
+import { FocusScope } from "react-aria";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   BugIcon,
   ChartBarIcon,
@@ -113,6 +115,8 @@ export function openCommandPalette() {
 }
 
 export function CommandPalette() {
+  const { can } = useProjectActions();
+  const reduceMotion = useReducedMotion();
   const router = useRouter();
   const pathname = usePathname() ?? "/";
   const { enabled: qualityGraphEnabled } = useQualityGraph();
@@ -273,6 +277,9 @@ export function CommandPalette() {
     }
 
     for (const action of contextual) {
+      if (action.id.startsWith("ctx-status") || action.id.startsWith("ctx-priority")) { if (!can("cases.edit")) continue; }
+      if (action.id === "ctx-start-run" && !can("runs.create")) continue;
+      if (action.id === "ctx-assign" && !can("runs.edit")) continue;
       if (
         !q ||
         action.label.toLowerCase().includes(q) ||
@@ -341,6 +348,10 @@ export function CommandPalette() {
     ];
 
     for (const action of actions) {
+      if (["action-new-case", "action-import-cases"].includes(action.id) && !can("cases.create")) continue;
+      if (action.id === "action-start-run" && !can("runs.create")) continue;
+      if (action.id === "action-file-issue" && !can("triage.manage")) continue;
+      if (action.id === "action-connect-ci" && !can("automation.manage")) continue;
       if (
         !q ||
         action.label.toLowerCase().includes(q) ||
@@ -417,7 +428,7 @@ export function CommandPalette() {
     }
 
     return list;
-  }, [close, focus, hits, pathname, qualityGraphEnabled, query, router, trimmedQuery]);
+  }, [can, close, focus, hits, pathname, qualityGraphEnabled, query, router, trimmedQuery]);
 
   const safeActive =
     items.length === 0 ? 0 : Math.min(active, items.length - 1);
@@ -442,22 +453,23 @@ export function CommandPalette() {
       {open ? (
         <motion.div
           className="fixed inset-0 z-[80] flex items-start justify-center bg-black/45 px-3 pt-[12vh] sm:pt-[14vh]"
-          initial={{ opacity: 0 }}
+          initial={reduceMotion ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) close();
           }}
         >
+          <FocusScope contain restoreFocus autoFocus>
           <motion.div
             role="dialog"
             aria-modal="true"
             aria-label="Command palette"
             className="w-full max-w-xl overflow-hidden rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] shadow-2xl"
-            initial={{ opacity: 0, y: -10, scale: 0.98 }}
+            initial={reduceMotion ? false : { opacity: 0, y: -10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 420, damping: 32 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
+            transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 32 }}
           >
             <div className="flex items-center gap-2 border-b border-[color:var(--topo-line)] px-3 py-2.5">
               <MagnifyingGlassIcon
@@ -476,7 +488,7 @@ export function CommandPalette() {
                 className="min-w-0 flex-1 bg-transparent text-sm text-[color:var(--topo-ink)] outline-none placeholder:text-[color:var(--topo-muted)]"
                 aria-label="Command search"
               />
-              <kbd className="hidden rounded border border-[color:var(--topo-line)] px-1.5 py-0.5 font-mono text-[10px] text-[color:var(--topo-muted)] sm:inline">
+              <kbd className="hidden rounded border border-[color:var(--topo-line)] px-1.5 py-0.5 font-mono text-xs text-[color:var(--topo-muted)] sm:inline">
                 esc
               </kbd>
             </div>
@@ -501,7 +513,7 @@ export function CommandPalette() {
                   return (
                     <li key={item.id}>
                       {showGroup ? (
-                        <p className="px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+                        <p className="px-3 pb-1 pt-2 text-xs font-medium text-[color:var(--topo-muted)]">
                           {item.group}
                         </p>
                       ) : null}
@@ -529,7 +541,7 @@ export function CommandPalette() {
                         />
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
                         {item.hint ? (
-                          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+                          <span className="shrink-0 font-medium text-xs text-[color:var(--topo-muted)]">
                             {item.hint}
                           </span>
                         ) : null}
@@ -540,6 +552,7 @@ export function CommandPalette() {
               )}
             </ul>
           </motion.div>
+          </FocusScope>
         </motion.div>
       ) : null}
     </AnimatePresence>

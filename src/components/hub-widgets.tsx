@@ -17,7 +17,7 @@ export function WidgetCard({
 }) {
   return (
     <motion.section
-      initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+      initial={false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: reduceMotion ? 0 : delay, duration: 0.28 }}
       className={`rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] ${className}`}
@@ -29,7 +29,7 @@ export function WidgetCard({
 
 export function WidgetLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+    <div className="text-xs font-medium text-[color:var(--topo-muted)]">
       {children}
     </div>
   );
@@ -48,7 +48,7 @@ export function CoverageBar({
   return (
     <Link href={href} className="block rounded-sm transition hover:bg-[color:var(--topo-chip)]/40">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+        <span className="text-xs font-medium text-[color:var(--topo-muted)]">
           {label}
         </span>
         <span className="font-mono text-xs tabular-nums text-[color:var(--topo-ink)]">
@@ -108,7 +108,7 @@ export function PassFailGraph({
 
   return (
     <div className="mt-4">
-      <div className="mb-2 flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-wide text-[color:var(--topo-muted)]">
+      <div className="mb-2 flex flex-wrap items-center gap-3 font-medium text-xs text-[color:var(--topo-muted)]">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-sm bg-[color:var(--topo-success)]" />
           Pass

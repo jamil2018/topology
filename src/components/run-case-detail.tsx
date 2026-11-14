@@ -123,7 +123,7 @@ export function RunCaseDetail({
           <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
             {result.case.title}
           </h2>
-          <p className="mt-0.5 text-[11px] text-[color:var(--topo-muted)]">
+          <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
             {assignee ?? "Unassigned"}
           </p>
         </div>
@@ -136,7 +136,7 @@ export function RunCaseDetail({
       </div>
 
       {result.iterationValuesJson ? (
-        <p className="mt-2 font-mono text-[11px] text-[color:var(--topo-muted)]">
+        <p className="mt-2 font-mono text-xs text-[color:var(--topo-muted)]">
           Iteration {result.iterationIndex ?? 0}: {result.iterationValuesJson}
         </p>
       ) : null}
@@ -154,12 +154,12 @@ export function RunCaseDetail({
                   {step.position + 1}. {step.action}
                 </p>
                 {step.expected ? (
-                  <p className="mt-0.5 text-[11px] text-[color:var(--topo-muted)]">
+                  <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
                     Expected: {step.expected}
                   </p>
                 ) : null}
                 {step.data ? (
-                  <p className="font-mono text-[11px] text-[color:var(--topo-muted)]">
+                  <p className="font-mono text-xs text-[color:var(--topo-muted)]">
                     Data: {step.data}
                   </p>
                 ) : null}
@@ -178,7 +178,7 @@ export function RunCaseDetail({
       ) : (
         <>
           {result.case.steps ? (
-            <pre className="mt-3 whitespace-pre-wrap rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] p-2.5 font-mono text-[11px] text-[color:var(--topo-muted)]">
+            <pre className="mt-3 whitespace-pre-wrap rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] p-2.5 font-mono text-xs text-[color:var(--topo-muted)]">
               {result.case.steps}
             </pre>
           ) : null}

@@ -106,6 +106,7 @@ export const cases = pgTable(
 );
 
 export const savedViews = pgTable("saved_views", {
+  visibility: text("visibility").$type<"private" | "team">().notNull().default("private"),
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: uuid("workspace_id")
     .notNull()

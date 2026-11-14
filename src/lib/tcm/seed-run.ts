@@ -9,11 +9,11 @@ export async function seedManualRunResults(input: {
   workspaceId: string;
   runId: string;
   caseIds: readonly string[];
-}) {
+}, executor: Pick<typeof db, "insert" | "query"> = db) {
   for (const caseId of input.caseIds) {
-    const iterations = await loadCaseIterations(caseId);
+    const iterations = await loadCaseIterations(caseId, executor);
     for (const iteration of iterations) {
-      const [result] = await db
+      const [result] = await executor
         .insert(runResults)
         .values({
           runId: input.runId,
@@ -30,9 +30,9 @@ export async function seedManualRunResults(input: {
         workspaceId: input.workspaceId,
         caseId,
         values: iteration.values,
-      });
+      }, executor);
       if (steps.length === 0) continue;
-      await db.insert(runStepResults).values(
+      await executor.insert(runStepResults).values(
         steps.map((step) => ({
           resultId: result.id,
           position: step.position,

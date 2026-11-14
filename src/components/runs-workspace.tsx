@@ -1,4 +1,9 @@
 "use client";
+import { formatDateTime } from "@/lib/format-date";
+import { RunTemplatesPanel } from "./run-templates-panel";
+import { useProjectActions } from "./project-actions";
+import { useListPage, useQueryState } from "./use-list-page";
+import type { PaginatedList } from "@/lib/list-pagination";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -34,12 +39,7 @@ function formatWhen(value: string | Date | null | undefined) {
   if (!value) return "—";
   const d = new Date(value);
   if (!Number.isFinite(d.getTime())) return "—";
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(d);
 }
 
 const runListSorts: { id: RunListSort; label: string }[] = [
@@ -51,28 +51,42 @@ const runListSorts: { id: RunListSort; label: string }[] = [
 
 export function RunsWorkspace({
   initialRuns,
+  initialPage,
   initialViews = [],
 }: {
   initialRuns: RunRow[];
+  initialPage?: PaginatedList<RunRow>;
   initialViews?: SavedViewRow[];
 }) {
+  const { can, userId } = useProjectActions();
   const router = useRouter();
-  const [runSearch, setRunSearch] = useState("");
-  const [runSort, setRunSort] = useState<RunListSort>("updated");
-  const [runPage, setRunPage] = useState(1);
+  const [runSearch, setRunSearch] = useQueryState("q", "", String);
+  const [runSort, setRunSort] = useQueryState<RunListSort>("sort", "updated", (value) => ["updated", "created", "name", "status"].includes(value) ? value as RunListSort : "updated");
+  const [runPage, setRunPage] = useQueryState("page", 1, (value) => Math.max(1, Number(value) || 1), false);
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [cursor, setCursor] = useState(0);
 
+  const [status, setStatus] = useQueryState("status", "all", String);
+  const [assignee, setAssignee] = useQueryState("assignee", "all", String);
+  const [environment, setEnvironment] = useQueryState("environment", "", String);
+  const [kind, setKind] = useQueryState("kind", "all", String);
+  const hasFilters = Boolean(runSearch || status !== "all" || assignee !== "all" || environment || kind !== "all");
+  function clearFilters() {
+    setRunSearch(""); setStatus("all"); setAssignee("all"); setEnvironment(""); setKind("all"); setRunPage(1); setActiveViewId(null);
+  }
+  const query = new URLSearchParams({ q: runSearch, sort: runSort, page: String(runPage), limit: String(RUN_LIST_PAGE_SIZE), status, assignee, environment, kind }).toString();
+  const remote = useListPage<RunRow>("/api/runs", query, initialPage, "runs");
   const filteredRuns = useMemo(
     () => filterAndSortRuns(initialRuns, runSearch, runSort),
     [initialRuns, runSearch, runSort],
   );
 
-  const runPageData = useMemo(
+  const localPage = useMemo(
     () => paginateRuns(filteredRuns, runPage, RUN_LIST_PAGE_SIZE),
     [filteredRuns, runPage],
   );
 
+  const runPageData = remote.data ?? localPage;
   const showRunListPagination = runPageData.total > RUN_LIST_PAGE_SIZE;
   const cursorIndex =
     runPageData.items.length === 0
@@ -103,6 +117,7 @@ export function RunsWorkspace({
     const config = parseRunViewConfig(JSON.stringify(view.config));
     setRunSearch(config.search);
     setRunSort(config.sort);
+    setStatus(config.status); setAssignee(config.assignee); setEnvironment(config.environment); setKind(config.kind);
     setRunPage(1);
     setActiveViewId(view.id);
   }
@@ -119,27 +134,35 @@ export function RunsWorkspace({
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow="Manual"
-        title="Test Runs"
-        description="Plan a pass, attach ready cases, and record results as you execute."
+        eyebrow="Testing"
+        title="Test runs"
+        description="Start a manual test run or review results from your automation."
         meta={
           <StatusChip mono>
-            {initialRuns.length} {initialRuns.length === 1 ? "run" : "runs"}
+            {runPageData.total} {runPageData.total === 1 ? "run" : "runs"}
           </StatusChip>
         }
-        actions={
+        actions={can("runs.create") ?
           <Link
             href="/runs/new"
             className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[color:var(--topo-accent)] px-3 text-sm font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
           >
             <PlayIcon size={14} weight="bold" aria-hidden />
             Start a run
-          </Link>
+          </Link> : undefined
         }
       />
 
+      {remote.error ? <div role="alert" className="topo-feedback">{remote.error} <button onClick={remote.retry}>Retry</button></div> : null}
+      {remote.loading ? <p role="status" className="text-xs text-[color:var(--topo-muted)]">Updating runs…</p> : null}
+      <div className="topo-toolbar">
+        <label>Status <select value={status} onChange={(e) => setStatus(e.target.value)}>{["all", "planned", "in_progress", "completed", "aborted"].map((value) => <option key={value} value={value}>{formatStatusLabel(value)}</option>)}</select></label>
+        <label>Assignee <select value={assignee} onChange={(e) => setAssignee(e.target.value)}><option value="all">Everyone</option><option value={userId ?? ""}>Assigned to me</option><option value="unassigned">Unassigned</option></select></label>
+        <label>Kind <select value={kind} onChange={(e) => setKind(e.target.value)}><option value="all">All runs</option><option value="manual">Manual</option><option value="automation">Automation</option></select></label>
+        <label>Environment <input value={environment} placeholder="Any environment" onChange={(e) => setEnvironment(e.target.value)} /></label>
+      </div>
       <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
-        {initialRuns.length > 0 ? (
+        {true ? (
           <div className="space-y-2 border-b border-[color:var(--topo-line)] p-2.5">
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2">
               <TextField name="run-list-search" className="min-w-0 flex-1">
@@ -198,23 +221,24 @@ export function RunsWorkspace({
               initialViews={initialViews}
               activeViewId={activeViewId}
               canSave
-              buildConfig={() => ({ search: runSearch, sort: runSort })}
+              buildConfig={() => ({ search: runSearch, sort: runSort, status, assignee, environment, kind })}
               onApply={applyRunView}
               onSaved={(view) => setActiveViewId(view.id)}
             />
           </div>
         ) : null}
 
-        {initialRuns.length === 0 ? (
+        {runPageData.total === 0 ? (
           <div className="space-y-3 border-dashed px-3 py-10 text-center">
-            <p className="text-sm text-[color:var(--topo-muted)]">No runs yet.</p>
+            <p className="text-sm text-[color:var(--topo-muted)]">{hasFilters ? "No runs match these filters." : "No runs yet."}</p>
+            {hasFilters ? <Button variant="secondary" onPress={clearFilters}>Clear filters</Button> : can("runs.create") ? (
             <Link
               href="/runs/new"
               className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[color:var(--topo-accent)] px-3 text-sm font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
             >
               <PlayIcon size={14} weight="bold" aria-hidden />
               Start a run
-            </Link>
+            </Link>) : null}
           </div>
         ) : runPageData.items.length === 0 ? (
           <p className="px-3 py-10 text-center text-sm text-[color:var(--topo-muted)]">
@@ -225,7 +249,7 @@ export function RunsWorkspace({
             {runPageData.items.map((run, i) => (
               <motion.li
                 key={run.id}
-                initial={{ opacity: 0, y: 4 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i, 10) * 0.02 }}
                 aria-current={cursorIndex === i ? "true" : undefined}
@@ -243,8 +267,7 @@ export function RunsWorkspace({
                     <div className="truncate font-medium text-[color:var(--topo-ink)]">
                       {run.name}
                     </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[color:var(--topo-muted)]">
-                      <span className="font-mono">{run.id.slice(0, 8)}</span>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[color:var(--topo-muted)]">
                       <span>{run.environment}</span>
                       <span>{run.assigneeName ?? "Unassigned"}</span>
                       <span>updated {formatWhen(run.updatedAt)}</span>
@@ -261,8 +284,8 @@ export function RunsWorkspace({
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                     {(run.passed ?? 0) > 0 || (run.failed ?? 0) > 0 ? (
-                      <span className="font-mono text-[11px] text-[color:var(--topo-muted)]">
-                        {run.passed ?? 0}P / {run.failed ?? 0}F
+                      <span className="font-mono text-xs text-[color:var(--topo-muted)]">
+                        {run.passed ?? 0} passed · {run.failed ?? 0} failed
                       </span>
                     ) : null}
                     <StatusChip tone={statusToneForRun(run.status)} mono>
@@ -303,6 +326,7 @@ export function RunsWorkspace({
           </div>
         ) : null}
       </div>
+      <RunTemplatesPanel />
     </div>
   );
 }

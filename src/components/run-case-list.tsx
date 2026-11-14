@@ -88,6 +88,7 @@ export function RunCaseList({
           role="group"
           aria-label="Filter cases"
         >
+          <button type="button" aria-pressed={statusFilter === "all"} onClick={() => onStatusFilter("all")} className={chipClass(statusFilter === "all")}>All {results.length}</button>
           {STATUS_CHIPS.map((chip) => {
             const active = statusFilter === chip.id;
             return (
@@ -95,14 +96,14 @@ export function RunCaseList({
                 key={chip.id}
                 type="button"
                 aria-pressed={active}
-                aria-label={chip.label}
+                aria-label={`${chip.label} ${counts[chip.id]}`}
                 onClick={() => onStatusFilter(active ? "all" : chip.id)}
                 className={chipClass(active)}
               >
-                {chip.label}
+                {chip.label}{" "}
                 <span
                   aria-hidden
-                  className="ml-1 font-mono text-[10px] text-[color:var(--topo-muted)]"
+                  className="ml-1 font-mono text-xs text-[color:var(--topo-muted)]"
                 >
                   {counts[chip.id]}
                 </span>
@@ -112,14 +113,14 @@ export function RunCaseList({
           <button
             type="button"
             aria-pressed={mineOnly}
-            aria-label="Mine"
+            aria-label={`Mine ${mineCount}`}
             onClick={() => onMineOnly(!mineOnly)}
             className={chipClass(mineOnly)}
           >
-            Mine
+            Mine{" "}
             <span
               aria-hidden
-              className="ml-1 font-mono text-[10px] text-[color:var(--topo-muted)]"
+              className="ml-1 font-mono text-xs text-[color:var(--topo-muted)]"
             >
               {mineCount}
             </span>
@@ -131,6 +132,7 @@ export function RunCaseList({
         {filtered.length === 0 ? (
           <p className="px-3 py-6 text-sm text-[color:var(--topo-muted)]">
             No cases match these filters.
+            <button type="button" className="mt-2 block underline" onClick={() => { onStatusFilter("all"); onMineOnly(false); onQueryChange(""); }}>Clear filters</button>
           </p>
         ) : (
           <ul
@@ -153,7 +155,6 @@ export function RunCaseList({
                 >
                   <button
                     type="button"
-                    aria-label={`${result.case.key} ${result.case.title}`}
                     aria-current={selected ? "true" : undefined}
                     onClick={() => onSelect(result.id)}
                     className={`flex h-full w-full items-start gap-2 px-2.5 py-1.5 text-left transition ${
@@ -168,14 +169,15 @@ export function RunCaseList({
                       className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${statusDotClass(result.status)}`}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block font-mono text-[11px] text-[color:var(--topo-muted)]">
-                        {result.case.key}
+                      <span className="block font-mono text-xs text-[color:var(--topo-muted)]">
+                        {result.case.key}{" "}
                       </span>
                       <span className="block truncate text-sm font-medium text-[color:var(--topo-ink)]">
-                        {result.case.title}
+                        {result.case.title}{" "}
                       </span>
-                      <span className="block truncate text-[11px] text-[color:var(--topo-muted)]">
+                      <span className="block truncate text-xs text-[color:var(--topo-muted)]">
                         {assignee ?? "Unassigned"}
+                        <span className="sr-only"> · {statusChipHint(result.status)}</span>
                       </span>
                     </span>
                   </button>

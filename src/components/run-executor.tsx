@@ -1,9 +1,13 @@
 "use client";
+import { RunProductivityActions } from "./run-productivity-actions";
+import { useRunResume } from "./use-run-resume";
+import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { Button, Modal, useOverlayState } from "@heroui/react";
 import { CheckIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
+import { formatStatusLabel } from "@/lib/format-labels";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
 import { isRunFrozen } from "@/lib/run-immutability";
@@ -42,12 +46,24 @@ export function RunExecutor({
   currentUserId?: string | null;
   currentUser?: { id: string; name: string | null; email: string } | null;
 }) {
+  const { can, projectId, userId } = useProjectActions();
+  const mutationQueue = useRef<Promise<boolean>>(Promise.resolve(true));
+  const mutationVersion = useRef(0);
+  const failedNoteSaves = useRef(new Set<string>());
+  const activeRunId = useRef(run.id);
+  useEffect(() => { activeRunId.current = run.id; }, [run.id]);
   const [pending, startTransition] = useTransition();
   const [runState, setRunState] = useState(run);
   const [focusedId, setFocusedId] = useState(() => initialFocusId(run.results));
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [mineOnly, setMineOnly] = useState(false);
   const [query, setQuery] = useState("");
+  useRunResume(`topology:run:${userId}:${projectId}:${run.id}`, run.results.map((result) => result.id), { focusedId, statusFilter, mineOnly, query }, (saved) => {
+    if (saved.focusedId !== undefined) setFocusedId(saved.focusedId);
+    if (saved.statusFilter !== undefined) setStatusFilter(saved.statusFilter);
+    if (saved.mineOnly !== undefined) setMineOnly(saved.mineOnly);
+    if (saved.query !== undefined) setQuery(saved.query);
+  });
   const [detailOpen, setDetailOpen] = useState(false);
   if (runState.id !== run.id) {
     setRunState(run);
@@ -119,38 +135,78 @@ export function RunExecutor({
     },
     [runState.id],
   );
-  useLiveUpdates(onLive, { runId: runState.id });
+  const liveStatus = useLiveUpdates(onLive, { runId: runState.id, onReconnect: async () => {
+    const runId = runState.id;
+    try {
+      // A reconnect snapshot must follow all queued writes. If another write
+      // arrives during the read, retry after it instead of installing old data.
+      while (activeRunId.current === runId) {
+        const queued = mutationQueue.current;
+        await queued;
+        if (queued !== mutationQueue.current) continue;
+        const version = mutationVersion.current;
+        const response = await fetch(`/api/runs/${runId}`);
+        if (!response.ok) throw new Error("Unable to refresh run");
+        const data = await response.json();
+        if (activeRunId.current !== runId) return;
+        if (version !== mutationVersion.current) continue;
+        setNotesDraft((drafts) => Object.fromEntries(Object.entries(drafts).map(([id, notes]) => {
+          const previous = runState.results.find((result) => result.id === id);
+          const fresh = data.run.results.find((result: { id: string; notes: string }) => result.id === id);
+          return [id, previous && fresh && notes === previous.notes ? fresh.notes : notes];
+        })));
+        setRunState((current) => current.id !== runId ? current : ({ ...current, status: data.run.status, assigneeId: data.run.assigneeId, results: current.results.map((result) => {
+          const fresh = data.run.results.find((item: { id: string }) => item.id === result.id);
+          return fresh ? { ...result, status: fresh.status, assigneeId: fresh.assigneeId, notes: fresh.notes, stepResults: fresh.stepResults ?? result.stepResults } : result;
+        }) }));
+        return;
+      }
+    } catch { if (activeRunId.current === runId) setError("Reconnected, but the latest results could not be loaded. Reload to retry; keep a copy of unsaved notes."); }
+  } });
 
-  async function patch(body: Record<string, unknown>, action?: RunAction) {
-    setError(null);
-    const resPromise = fetch(`/api/runs/${runState.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+  async function patch(body: Record<string, unknown>, action?: RunAction, background = false): Promise<boolean> {
+    const permission = body.action === "complete" ? "runs.complete" : body.action === "abort" ? "runs.delete" : "runs.edit";
+    if (!can(permission)) return false;
+    const runId = runState.id;
+    const previous = mutationQueue.current;
+    mutationVersion.current += 1;
+    const write = async () => {
+      await previous;
+      if (activeRunId.current !== runId) return false;
+      if ((body.action === "complete" || body.action === "abort") && [...failedNoteSaves.current].some(key => key.startsWith(`${runId}:`))) {
+        setError("Save your unsaved notes before completing or aborting this run.");
+        return false;
+      }
+      setError(null);
+      if (action && !background) addOptimisticRun(action);
+      try {
+        const response = await fetch(`/api/runs/${runId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "Update failed");
+        if (activeRunId.current !== runId) return false;
+        if (typeof body.notes === "string") failedNoteSaves.current.delete(`${runId}:${body.resultId}`);
+        if (action) setRunState((current) => current.id === runId ? applyRunAction(current, action) : current);
+        return true;
+      } catch (error) {
+        if (background) failedNoteSaves.current.add(`${runId}:${body.resultId}`);
+        if (activeRunId.current === runId) setError(error instanceof Error ? error.message : "Unable to save. Your draft is still here.");
+        return false;
+      }
+    };
+    // Autosave must not disable the control receiving the blur's next click.
+    // Explicit actions wait for it and remain ordered on the server.
+    const result = background ? write() : new Promise<boolean>((resolve) => {
+      startTransition(async () => { resolve(await write()); });
     });
-    if (action) {
-      startTransition(async () => {
-        addOptimisticRun(action);
-        const live = await resPromise;
-        if (live.ok) {
-          setRunState((current) => applyRunAction(current, action));
-        }
-      });
-    }
-    const res = await resPromise;
-    if (!res.ok) {
-      const data = (await res.json().catch(() => null)) as
-        | { error?: string }
-        | null;
-      setError(typeof data?.error === "string" ? data.error : "Update failed");
-      return false;
-    }
-    return true;
+    mutationQueue.current = result;
+    return result;
   }
 
   const recordStatus = useCallback(
-    (result: ResultRow, status: string) => {
-      void patch(
+    async (result: ResultRow, status: string) => {
+      const saved = await patch(
         {
           caseId: result.case.id,
           resultId: result.id,
@@ -159,7 +215,7 @@ export function RunExecutor({
         },
         { type: "result", resultId: result.id, status },
       );
-      if (status === "untested") return;
+      if (!saved || status === "untested") return;
       const preview = optimisticRun.results.map((row) =>
         row.id === result.id ? { ...row, status } : row,
       );
@@ -374,11 +430,11 @@ export function RunExecutor({
       <PageHeader
         eyebrow="Manual run"
         title={optimisticRun.name}
-        description={optimisticRun.description || "No description"}
+        description={optimisticRun.description || "Select a case, follow its steps, and record the result."}
         meta={
           <>
             <StatusChip tone={statusToneForRun(optimisticRun.status)} mono>
-              {optimisticRun.status}
+              {formatStatusLabel(optimisticRun.status)}
             </StatusChip>
             <StatusChip mono>
               {done}/{optimisticRun.results.length} ·{" "}
@@ -387,9 +443,7 @@ export function RunExecutor({
                 : Math.round((done / optimisticRun.results.length) * 100)}
               %
             </StatusChip>
-            <span className="font-mono text-[10px] text-[color:var(--topo-muted)]">
-              {optimisticRun.id.slice(0, 8)}
-            </span>
+
           </>
         }
         actions={
@@ -399,7 +453,7 @@ export function RunExecutor({
                 size="sm"
                 variant="primary"
                 className="gap-1.5"
-                isDisabled={pending}
+                isDisabled={pending || !can("runs.edit")}
                 onPress={() =>
                   void patch(
                     { action: "start" },
@@ -416,7 +470,7 @@ export function RunExecutor({
                 size="sm"
                 variant="secondary"
                 className="gap-1.5"
-                isDisabled={pending}
+                isDisabled={pending || !can("runs.complete")}
                 onPress={() => completeModal.open()}
               >
                 <CheckIcon size={14} weight="bold" aria-hidden />
@@ -424,16 +478,18 @@ export function RunExecutor({
               </Button>
             ) : null}
             {!frozen ? (
+              <details className="relative self-center text-sm"><summary className="cursor-pointer rounded-md border border-[color:var(--topo-line)] px-3 py-2">More actions</summary>
               <Button
                 size="sm"
                 variant="danger"
                 className="gap-1.5"
-                isDisabled={pending}
+                isDisabled={pending || !can("runs.delete")}
                 onPress={() => abortModal.open()}
               >
                 <StopIcon size={14} weight="bold" aria-hidden />
-                Abort
+                Abort run
               </Button>
+              </details>
             ) : null}
             {optimisticRun.status === "completed" ? (
               <Link
@@ -466,11 +522,12 @@ export function RunExecutor({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 text-xs">
-        <span className="text-[color:var(--topo-muted)]">Run assignee</span>
+        <label htmlFor="run-assignee" className="text-[color:var(--topo-muted)]">Run assignee</label>
         <select
+          id="run-assignee"
           className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-[color:var(--topo-ink)] accent-[color:var(--topo-accent)]"
           value={optimisticRun.assigneeId ?? ""}
-          disabled={pending}
+          disabled={pending || !can("runs.edit")}
           onChange={(e) =>
             void patch(
               {
@@ -491,9 +548,10 @@ export function RunExecutor({
       </div>
 
       <RunProgressBar results={optimisticRun.results} />
+      {liveStatus !== "live" ? <p role="status" className="text-xs text-[color:var(--topo-muted)]">{liveStatus === "reconnecting" ? "Reconnecting — results may be out of date" : "Connecting to live updates…"}</p> : null}
 
       {error ? (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>
       ) : null}
 
       <div className="grid h-[min(44rem,calc(100dvh-13rem))] min-h-[20rem] overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] md:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]">
@@ -523,8 +581,8 @@ export function RunExecutor({
           <RunCaseDetail
             result={focusedResult}
             members={members}
-            frozen={frozen}
-            pending={pending}
+            frozen={frozen || !can("runs.edit")}
+            pending={pending || !can("runs.edit")}
             issueBusy={issueBusy}
             uploading={uploadingId === focusedResult?.id}
             notes={
@@ -577,7 +635,10 @@ export function RunExecutor({
             onNotesBlur={() => {
               if (!focusedResult || frozen) return;
               const next = notesDraft[focusedResult.id] ?? "";
-              if (next === focusedResult.notes) return;
+              if (next === focusedResult.notes) {
+                failedNoteSaves.current.delete(`${runState.id}:${focusedResult.id}`);
+                return;
+              }
               void patch(
                 {
                   caseId: focusedResult.case.id,
@@ -586,6 +647,7 @@ export function RunExecutor({
                   notes: next,
                 },
                 { type: "result", resultId: focusedResult.id, notes: next },
+                true,
               );
             }}
             onCommentDraftChange={(value) => {
@@ -610,8 +672,7 @@ export function RunExecutor({
         </section>
       </div>
 
-      <Modal.Root state={abortModal}>
-        <Modal.Backdrop isDismissable={!pending}>
+      <Modal.Backdrop isOpen={abortModal.isOpen} onOpenChange={abortModal.setOpen} isDismissable={!pending}>
           <Modal.Container placement="center" size="sm">
             <Modal.Dialog className="outline-none">
               <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
@@ -634,7 +695,7 @@ export function RunExecutor({
                 </Button>
                 <Button
                   variant="danger"
-                  isDisabled={pending}
+                  isDisabled={pending || !can("runs.delete")}
                   onPress={() => void confirmAbort()}
                 >
                   {pending ? "Aborting…" : "Abort run"}
@@ -643,10 +704,9 @@ export function RunExecutor({
             </Modal.Dialog>
           </Modal.Container>
         </Modal.Backdrop>
-      </Modal.Root>
 
-      <Modal.Root state={completeModal}>
-        <Modal.Backdrop isDismissable={!pending}>
+
+      <Modal.Backdrop isOpen={completeModal.isOpen} onOpenChange={completeModal.setOpen} isDismissable={!pending}>
           <Modal.Container placement="center" size="sm">
             <Modal.Dialog className="outline-none">
               <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
@@ -669,7 +729,7 @@ export function RunExecutor({
                 </Button>
                 <Button
                   variant="primary"
-                  isDisabled={pending}
+                  isDisabled={pending || !can("runs.complete")}
                   onPress={() => void confirmComplete()}
                 >
                   {pending ? "Completing…" : "Complete run"}
@@ -678,7 +738,8 @@ export function RunExecutor({
             </Modal.Dialog>
           </Modal.Container>
         </Modal.Backdrop>
-      </Modal.Root>
+
+      <RunProductivityActions run={runState} />
     </div>
   );
 }

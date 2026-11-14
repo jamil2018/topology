@@ -316,3 +316,38 @@ CREATE INDEX IF NOT EXISTS "triage_items_run_id_idx" ON "triage_items" USING btr
 CREATE INDEX IF NOT EXISTS "triage_items_result_id_idx" ON "triage_items" USING btree ("result_id");
 
 ALTER TABLE "workspaces" ADD COLUMN IF NOT EXISTS "quality_graph_enabled" boolean DEFAULT false NOT NULL;
+
+-- Productivity additions for pre-journal installations.
+ALTER TABLE "saved_views" ADD COLUMN IF NOT EXISTS "visibility" text DEFAULT 'private' NOT NULL CHECK (visibility IN ('private', 'team'));
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "run_templates" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "workspace_id" uuid NOT NULL REFERENCES "workspaces"("id") ON DELETE CASCADE,
+  "created_by_id" uuid REFERENCES "users"("id") ON DELETE SET NULL,
+  "name" text NOT NULL,
+  "description" text DEFAULT '' NOT NULL,
+  "case_ids" uuid[] NOT NULL,
+  "environment" text DEFAULT 'local' NOT NULL,
+  "assignee_id" uuid REFERENCES "users"("id") ON DELETE SET NULL,
+  "created_at" timestamp DEFAULT now() NOT NULL,
+  "updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "run_templates_workspace_idx" ON "run_templates" ("workspace_id");
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "retest_sources" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "source_result_id" uuid NOT NULL REFERENCES "run_results"("id") ON DELETE CASCADE,
+  "result_id" uuid NOT NULL REFERENCES "run_results"("id") ON DELETE CASCADE,
+  UNIQUE ("source_result_id", "result_id")
+);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "retest_sources_result_idx" ON "retest_sources" ("result_id");
+
+ALTER TABLE "run_templates" DROP CONSTRAINT IF EXISTS "run_templates_assignee_id_fkey";
+CREATE TABLE IF NOT EXISTS "result_case_links" (
+  "result_id" uuid PRIMARY KEY REFERENCES "run_results"("id") ON DELETE CASCADE,
+  "case_id" uuid NOT NULL REFERENCES "cases"("id") ON DELETE CASCADE,
+  "created_by_id" uuid REFERENCES "users"("id") ON DELETE SET NULL,
+  "created_at" timestamp DEFAULT now() NOT NULL
+);

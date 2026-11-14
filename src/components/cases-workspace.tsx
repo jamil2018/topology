@@ -1,4 +1,9 @@
 "use client";
+import { CaseBrowserPanel } from "./case-browser-panel";
+import { ResponsiveInspector } from "./responsive-inspector";
+import { useListPage, useQueryState } from "./use-list-page";
+import type { PaginatedList } from "@/lib/list-pagination";
+import { useProjectActions } from "./project-actions";
 
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -50,7 +55,6 @@ import {
   CASE_STATUSES,
   CASE_WORKSPACE_PAGE_SIZE,
   caseFieldShortcutSelector,
-  caseHref,
   formatStatusLabel,
   nextCaseKey,
   selectionRangeIds,
@@ -76,33 +80,41 @@ import {
 
 export function CasesWorkspace({
   initialCases,
+  initialPage,
+  suggestedKey,
+  selectedCase = null,
+  counts,
   folders,
   initialViews = [],
   projectPrefix = "CASE",
   selectedCaseKey = null,
 }: {
   initialCases: CaseRow[];
+  initialPage?: PaginatedList<CaseRow>;
+  suggestedKey?: string;
+  selectedCase?: CaseRow | null;
+  counts?: { folderId: string | null; total: number }[];
   folders: Folder[];
   initialViews?: SavedViewRow[];
   projectPrefix?: string;
   selectedCaseKey?: string | null;
 }) {
+  const { can } = useProjectActions();
   const router = useRouter();
   const searchParams = useSearchParams();
   const paramsKey = searchParams.toString();
   const [pending, startTransition] = useTransition();
-  const [folderFilter, setFolderFilter] = useState<FolderTreeSelection>(
-    () => (searchParams.get("folder") as FolderTreeSelection | null) ?? "all",
-  );
+  const [folderFilter, setFolderFilter] = useQueryState<FolderTreeSelection>("folder", "all", (value) => value);
   const [treeCollapsed, setTreeCollapsed] = useState(true);
+  const [browserPanel, setBrowserPanel] = useState<"folders" | "cases" | null>(null);
   const [createParentId, setCreateParentId] = useState<string | null>(null);
   const [folderActionId, setFolderActionId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [priorityFilter, setPriorityFilter] = useState<string>("all");
-  const [sort, setSort] = useState<CaseListSort>("key");
-  const [sortDir, setSortDir] = useState<CaseListSortDir>("asc");
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useQueryState("q", "", String);
+  const [statusFilter, setStatusFilter] = useQueryState("status", "all", String);
+  const [priorityFilter, setPriorityFilter] = useQueryState("priority", "all", String);
+  const [sort, setSort] = useQueryState<CaseListSort>("sort", "key", (value) => ["key", "title", "folder", "priority", "status"].includes(value) ? value as CaseListSort : "key");
+  const [sortDir, setSortDir] = useQueryState<CaseListSortDir>("dir", "asc", (value) => value === "desc" ? "desc" : "asc");
+  const [page, setPage] = useQueryState("page", 1, (value) => Math.max(1, Number(value) || 1), false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(
     () => searchParams.get("new") === "1",
@@ -113,6 +125,7 @@ export function CasesWorkspace({
   const [bulkTags, setBulkTags] = useState("");
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [historyCase, setHistoryCase] = useState<CaseRow | null>(() => {
+    if (selectedCase) return selectedCase;
     if (selectedCaseKey) {
       return initialCases.find((row) => row.key === selectedCaseKey) ?? null;
     }
@@ -123,43 +136,48 @@ export function CasesWorkspace({
       null
     );
   });
+  const lastOpenKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (historyCase) { lastOpenKey.current = historyCase.key; return; }
+    const key = lastOpenKey.current;
+    if (!key) return;
+    lastOpenKey.current = null;
+    const frame = requestAnimationFrame(() => {
+      const opener = [...document.querySelectorAll<HTMLButtonElement>('[data-case-key]')]
+        .find(button => button.dataset.caseKey === key && button.getClientRects().length > 0);
+      (opener ?? document.querySelector<HTMLInputElement>('[aria-label="Search cases"]'))?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [historyCase]);
+  const [inspectorContainer, setInspectorContainer] = useState<HTMLDialogElement | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
   const [pendingCase, setPendingCase] = useState<CaseRow | null>(null);
+  const query = new URLSearchParams({ folder: folderFilter, q: search, status: statusFilter, priority: priorityFilter, sort, dir: sortDir, page: String(page), limit: "50" }).toString();
+  const remote = useListPage<CaseRow>("/api/cases", query, initialPage, "cases");
+  const listedCases = remote.data?.items ?? initialCases;
   const [caseOverrides, setCaseOverrides] = useState<Record<string, CaseRow>>(
     {},
   );
   const [removedCaseIds, setRemovedCaseIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [lastListed, setLastListed] = useState(listedCases);
+  if (lastListed !== listedCases) { setLastListed(listedCases); setCaseOverrides({}); }
   const displayCases = useMemo(() => {
-    const known = new Set(initialCases.map((row) => row.id));
-    const merged = initialCases.map((row) => {
+    const known = new Set(listedCases.map((row) => row.id));
+    const merged = listedCases.map((row) => {
       const over = caseOverrides[row.id];
       return over ? { ...row, ...over } : row;
     });
     const extras = Object.values(caseOverrides).filter((row) => !known.has(row.id));
-    const combined = extras.length > 0 ? [...extras, ...merged] : merged;
+    const combined = !initialPage && extras.length > 0 ? [...extras, ...merged] : merged;
     return combined.filter((row) => !removedCaseIds.has(row.id));
-  }, [initialCases, caseOverrides, removedCaseIds]);
+  }, [initialPage, listedCases, caseOverrides, removedCaseIds]);
   const [optimisticCases, addOptimisticCases] = useOptimistic(
     displayCases,
     (current, patch: BulkPatch & { ids: string[] }) =>
       applyBulkPatch(current, patch.ids, patch, folders),
   );
-  const [appliedParams, setAppliedParams] = useState(paramsKey);
-  if (appliedParams !== paramsKey) {
-    setAppliedParams(paramsKey);
-    if (searchParams.get("new") === "1") setShowCreate(true);
-    const folderParam = searchParams.get("folder");
-    if (folderParam) setFolderFilter(folderParam);
-    const caseParam = searchParams.get("case");
-    if (caseParam) {
-      const found = initialCases.find(
-        (row) => row.id === caseParam || row.key === caseParam,
-      );
-      if (found) setHistoryCase(found);
-    }
-  }
   const [folderModalMode, setFolderModalMode] = useState<"create" | "rename">(
     "create",
   );
@@ -177,6 +195,29 @@ export function CasesWorkspace({
   const deleteModal = useOverlayState();
   const caseDeleteModal = useOverlayState();
   const unsavedModal = useOverlayState();
+  const [visitedCases, setVisitedCases] = useState(new Map<string, CaseRow>());
+  const [appliedParams, setAppliedParams] = useState(paramsKey);
+  if (appliedParams !== paramsKey) {
+    const previousCase = new URLSearchParams(appliedParams).get("case");
+    setAppliedParams(paramsKey);
+    if (searchParams.get("new") === "1") setShowCreate(true);
+    const caseParam = searchParams.get("case");
+    const candidates = [...(selectedCase ? [selectedCase] : []), ...listedCases, ...visitedCases.values()];
+    const target = caseParam ? candidates.find((row) => row.id === caseParam || row.key === caseParam) : null;
+    if (caseParam !== previousCase && (target || !caseParam)) {
+      if (editorDirty && historyCase?.id !== target?.id) {
+        setPendingCase(target ?? null);
+        unsavedModal.open();
+      } else setHistoryCase(target ?? null);
+    }
+  }
+  function keepEditing() {
+    setPendingCase(null);
+    unsavedModal.close();
+    const query = new URLSearchParams(window.location.search);
+    if (historyCase) query.set("case", historyCase.key); else query.delete("case");
+    window.history.replaceState(null, "", `/cases${query.size ? `?${query}` : ""}`);
+  }
   const [caseToDelete, setCaseToDelete] = useState<CaseRow | null>(null);
   const [caseDeletePending, setCaseDeletePending] = useState(false);
   const [folderName, setFolderName] = useState("");
@@ -185,17 +226,18 @@ export function CasesWorkspace({
   const csvFileInputRef = useRef<HTMLInputElement>(null);
 
   const folderCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+    if (counts) return new Map(counts.filter((item) => item.folderId).map((item) => [item.folderId!, item.total]));
+    const result = new Map<string, number>();
     for (const row of optimisticCases) {
       if (!row.folder?.id) continue;
-      counts.set(row.folder.id, (counts.get(row.folder.id) ?? 0) + 1);
+      result.set(row.folder.id, (result.get(row.folder.id) ?? 0) + 1);
     }
-    return counts;
-  }, [optimisticCases]);
+    return result;
+  }, [optimisticCases, counts]);
 
   const unfiledCount = useMemo(
-    () => optimisticCases.filter((row) => !row.folder).length,
-    [optimisticCases],
+    () => counts?.find((row) => row.folderId === null)?.total ?? optimisticCases.filter((row) => !row.folder).length,
+    [optimisticCases, counts],
   );
 
   const flatFolders = useMemo(
@@ -250,11 +292,13 @@ export function CasesWorkspace({
     ],
   );
 
-  const pageData = useMemo(
+  const localPage = useMemo(
     () => paginateCases(filteredSorted, page, CASE_WORKSPACE_PAGE_SIZE),
     [filteredSorted, page],
   );
 
+  const pageData = remote.data ? { ...remote.data, items: optimisticCases } : localPage;
+  const totalCases = counts ? counts.reduce((sum, item) => sum + item.total, 0) : initialCases.length;
   const hasSearch = search.trim().length > 0;
   const pageIds = pageData.items.map((row) => row.id);
   const [cursor, setCursor] = useState(0);
@@ -266,15 +310,16 @@ export function CasesWorkspace({
   const focusedRow = pageData.items[cursorIndex] ?? null;
 
   const generatedKey = useMemo(
-    () => nextCaseKey(projectPrefix, displayCases.map((row) => row.key)),
-    [projectPrefix, displayCases],
+    () => suggestedKey ?? nextCaseKey(projectPrefix, displayCases.map((row) => row.key)),
+    [suggestedKey, projectPrefix, displayCases],
   );
 
   const openCreate = useCallback(() => {
+    if (!can("cases.create")) return;
     setCreateKey(generatedKey);
     setShowCreate(true);
     folderModal.close();
-  }, [folderModal, generatedKey]);
+  }, [can, folderModal, generatedKey]);
 
   const openFocused = useCallback(() => {
     if (focusedRow) requestOpen(focusedRow);
@@ -285,7 +330,11 @@ export function CasesWorkspace({
     const node = document.querySelector<HTMLElement>(
       caseFieldShortcutSelector(focusedRow.id, field),
     );
-    node?.click();
+    if (!can("cases.edit")) return;
+    node?.focus();
+    if (node instanceof HTMLSelectElement) {
+      try { node.showPicker?.(); } catch { /* Keyboard arrows remain available. */ }
+    } else node?.click();
   }
 
   function extendSelection(delta: number) {
@@ -377,14 +426,6 @@ export function CasesWorkspace({
     pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
   const someSelected = selectedIds.size > 0;
 
-  const listFilterKey = `${folderFilter}|${search}|${sort}|${sortDir}|${statusFilter}|${priorityFilter}`;
-  const [pageFilterKey, setPageFilterKey] = useState(listFilterKey);
-  if (pageFilterKey !== listFilterKey) {
-    setPageFilterKey(listFilterKey);
-    if (page !== 1) setPage(1);
-  } else if (page !== pageData.page) {
-    setPage(pageData.page);
-  }
 
   const rangeStart =
     pageData.total === 0
@@ -442,17 +483,24 @@ export function CasesWorkspace({
   }
 
   function commitOpen(row: CaseRow | null) {
+    setBrowserPanel(null);
+    if (row) setVisitedCases((previous) => new Map(previous).set(row.key, row));
     setHistoryCase(row);
     setEditorDirty(false);
     setPendingCase(null);
-    if (row) {
-      startTransition(() => router.push(caseHref(row.key)));
-    } else {
-      startTransition(() => router.push("/cases"));
-    }
+    const query = new URLSearchParams(window.location.search);
+    if (row) query.set("case", row.key); else query.delete("case");
+    // Keep the workspace mounted: route navigation can discard an edit begun
+    // while the server response for the inspector is still in flight.
+    window.history.pushState(null, "", `/cases${query.size ? `?${query}` : ""}`);
   }
 
   function requestOpen(row: CaseRow) {
+    setBrowserPanel(null);
+    if (historyCase?.id === row.id) {
+      inspectorContainer?.querySelector<HTMLButtonElement>('[aria-label="Close case editor"]')?.focus({ preventScroll: true });
+      return;
+    }
     if (historyCase && editorDirty && historyCase.id !== row.id) {
       setPendingCase(row);
       unsavedModal.open();
@@ -470,71 +518,60 @@ export function CasesWorkspace({
     commitOpen(null);
   }
 
+  const mutationLocks = useRef(new Set<string>());
   async function bulkUpdate(patch: BulkPatch) {
-    if (selectedIds.size === 0) return;
+    if (!can("cases.edit") || selectedIds.size === 0 || mutationLocks.current.size) return;
     const ids = Array.from(selectedIds);
+    mutationLocks.current.add("bulk");
     setBulkPending(true);
     setError(null);
-    const resPromise = fetch("/api/cases", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        caseIds: ids,
-        ...patch,
-      }),
-    });
     startTransition(async () => {
       addOptimisticCases({ ...patch, ids });
-      const res = await resPromise;
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(
-          typeof data.error === "string" ? data.error : "Bulk update failed",
-        );
+      try {
+        const response = await fetch("/api/cases", {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ caseIds: ids, ...patch }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "Bulk update failed");
+        setCaseOverrides((previous) => {
+          const next = { ...previous };
+          for (const row of applyBulkPatch(displayCases, ids, patch, folders)) {
+            if (ids.includes(row.id)) next[row.id] = row;
+          }
+          return next;
+        });
+        setSelectedIds(new Set());
+        setBulkTags("");
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Could not save changes. Try again.");
+      } finally {
+        mutationLocks.current.delete("bulk");
         setBulkPending(false);
-        return;
       }
-      setCaseOverrides((prev) => {
-        const source = [...displayCases, ...Object.values(prev)];
-        const applied = applyBulkPatch(source, ids, patch, folders);
-        const next = { ...prev };
-        for (const row of applied) {
-          if (ids.includes(row.id)) next[row.id] = row;
-        }
-        return next;
-      });
-      setSelectedIds(new Set());
-      setBulkTags("");
-      setBulkPending(false);
     });
   }
 
   async function inlinePatch(id: string, patch: CaseInlinePatch) {
+    if (!can("cases.edit") || mutationLocks.current.has(id) || mutationLocks.current.has("bulk")) return;
+    mutationLocks.current.add(id);
     setError(null);
-    const ids = [id];
-    startTransition(() => {
-      addOptimisticCases({ ...patch, ids });
+    startTransition(async () => {
+      addOptimisticCases({ ...patch, ids: [id] });
+      try {
+        const response = await fetch(`/api/cases/${id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to update case");
+        const row = applyBulkPatch(displayCases, [id], patch, folders).find((item) => item.id === id);
+        if (row) setCaseOverrides((previous) => ({ ...previous, [id]: row }));
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Could not save changes. Try again.");
+      } finally {
+        mutationLocks.current.delete(id);
+      }
     });
-    setCaseOverrides((prev) => {
-      const source = displayCases;
-      const applied = applyBulkPatch(source, ids, patch, folders);
-      const next = { ...prev };
-      const row = applied.find((item) => item.id === id);
-      if (row) next[id] = row;
-      return next;
-    });
-    const res = await fetch(`/api/cases/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(
-        typeof data.error === "string" ? data.error : "Failed to update case",
-      );
-      startTransition(() => router.refresh());
-    }
   }
 
   useEffect(() => {
@@ -569,6 +606,7 @@ export function CasesWorkspace({
   });
 
   async function submitFolder() {
+    if (!can("folders.manage")) return;
     const name = folderName.trim();
     if (!name) {
       setFolderError("Folder name is required");
@@ -640,6 +678,7 @@ export function CasesWorkspace({
   }
 
   async function deleteFolder() {
+    if (!can("folders.manage")) return;
     if (!actionFolder) return;
     setError(null);
     setFolderPending(true);
@@ -668,6 +707,7 @@ export function CasesWorkspace({
   }
 
   function openCreateFolder(parentId: string | null = null) {
+    if (!can("folders.manage")) return;
     setShowCreate(false);
     setFolderModalMode("create");
     setCreateParentId(parentId);
@@ -678,6 +718,7 @@ export function CasesWorkspace({
   }
 
   function openRenameFolder(folderId?: string) {
+    if (!can("folders.manage")) return;
     const target =
       (folderId ? folders.find((folder) => folder.id === folderId) : null) ??
       selectedFolder;
@@ -692,6 +733,7 @@ export function CasesWorkspace({
   }
 
   function openDeleteFolder(folderId?: string) {
+    if (!can("folders.manage")) return;
     const target =
       (folderId ? folders.find((folder) => folder.id === folderId) : null) ??
       selectedFolder;
@@ -701,12 +743,14 @@ export function CasesWorkspace({
   }
 
   function openDeleteCase(row: CaseRow) {
+    if (!can("cases.delete")) return;
     setError(null);
     setCaseToDelete(row);
     caseDeleteModal.open();
   }
 
   async function deleteCase() {
+    if (!can("cases.delete")) return;
     if (!caseToDelete) return;
     const target = caseToDelete;
     setError(null);
@@ -749,6 +793,9 @@ export function CasesWorkspace({
   }
 
   async function importCsv(file: File) {
+    if (!can("cases.create") || mutationLocks.current.has("import")) return;
+    mutationLocks.current.add("import");
+    try {
     setError(null);
     const body = new FormData();
     body.append("file", file);
@@ -759,17 +806,19 @@ export function CasesWorkspace({
       return;
     }
     startTransition(() => router.refresh());
+    } catch { setError("Could not confirm the import. Check the case list before retrying."); }
+    finally { mutationLocks.current.delete("import"); }
   }
 
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow="Suites"
-        title="Test Cases"
-        description="Organize suites in folders, author cases, and import from CSV or other TCM tools."
+        eyebrow=""
+        title="Test cases"
+        description="Write test cases and organize them into folders."
         meta={
           <StatusChip mono>
-            {initialCases.length} cases · {folders.length} folders
+            {totalCases} cases · {folders.length} folders
           </StatusChip>
         }
         actions={
@@ -778,6 +827,7 @@ export function CasesWorkspace({
               size="sm"
               variant="primary"
               className="gap-1.5"
+              isDisabled={!can("cases.create")}
               onPress={openCreate}
             >
               <PlusIcon size={14} weight="bold" />
@@ -787,6 +837,7 @@ export function CasesWorkspace({
               size="sm"
               variant="secondary"
               className="gap-1.5"
+              isDisabled={!can("folders.manage")}
               onPress={() => openCreateFolder(null)}
             >
               <FolderPlusIcon size={14} weight="bold" />
@@ -795,7 +846,7 @@ export function CasesWorkspace({
             <Dropdown.Root>
               <Dropdown.Trigger className="button button--sm button--secondary inline-flex items-center gap-1.5">
                 <FileCsvIcon size={14} weight="bold" />
-                CSV
+                Import / export
                 <CaretDownIcon size={12} weight="bold" />
               </Dropdown.Trigger>
               <Dropdown.Popover placement="bottom end" className="min-w-[12.5rem]">
@@ -830,7 +881,7 @@ export function CasesWorkspace({
                     Export CSV
                   </Dropdown.Item>
                   <Dropdown.Item
-                    id="import"
+                    id="import" isDisabled={!can("cases.create")}
                     textValue="Import CSV"
                     className="gap-2"
                   >
@@ -838,7 +889,7 @@ export function CasesWorkspace({
                     Import CSV
                   </Dropdown.Item>
                   <Dropdown.Item
-                    id="vendors"
+                    id="vendors" isDisabled={!can("cases.create")}
                     textValue="Import from TestRail, Qase, Zephyr, Xray"
                     className="gap-2"
                   >
@@ -871,8 +922,7 @@ export function CasesWorkspace({
         </p>
       ) : null}
 
-      <Modal.Root state={folderModal}>
-        <Modal.Backdrop isDismissable={!folderPending}>
+      <Modal.Backdrop isOpen={folderModal.isOpen} onOpenChange={folderModal.setOpen} isDismissable={!folderPending}>
           <Modal.Container placement="center" size="sm">
             <Modal.Dialog className="outline-none">
               <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
@@ -947,10 +997,9 @@ export function CasesWorkspace({
             </Modal.Dialog>
           </Modal.Container>
         </Modal.Backdrop>
-      </Modal.Root>
 
-      <Modal.Root state={deleteModal}>
-        <Modal.Backdrop isDismissable={!folderPending}>
+
+      <Modal.Backdrop isOpen={deleteModal.isOpen} onOpenChange={deleteModal.setOpen} isDismissable={!folderPending}>
           <Modal.Container placement="center" size="sm">
             <Modal.Dialog className="outline-none">
               <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
@@ -997,10 +1046,9 @@ export function CasesWorkspace({
             </Modal.Dialog>
           </Modal.Container>
         </Modal.Backdrop>
-      </Modal.Root>
 
-      <Modal.Root state={caseDeleteModal}>
-        <Modal.Backdrop isDismissable={!caseDeletePending}>
+
+      <Modal.Backdrop isOpen={caseDeleteModal.isOpen} onOpenChange={caseDeleteModal.setOpen} isDismissable={!caseDeletePending}>
           <Modal.Container placement="center" size="sm">
             <Modal.Dialog className="outline-none">
               <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
@@ -1035,44 +1083,10 @@ export function CasesWorkspace({
             </Modal.Dialog>
           </Modal.Container>
         </Modal.Backdrop>
-      </Modal.Root>
 
-      <Modal.Root state={unsavedModal}>
-        <Modal.Backdrop>
-          <Modal.Container placement="center" size="sm">
-            <Modal.Dialog className="outline-none">
-              <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
-                <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
-                  Discard unsaved changes?
-                </Modal.Heading>
-                <p className="text-sm text-[color:var(--topo-muted)]">
-                  This case has edits that have not been saved.
-                </p>
-              </Modal.Header>
-              <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
-                <Button
-                  variant="tertiary"
-                  onPress={() => {
-                    setPendingCase(null);
-                    unsavedModal.close();
-                  }}
-                >
-                  Keep editing
-                </Button>
-                <Button
-                  variant="danger"
-                  onPress={() => {
-                    unsavedModal.close();
-                    commitOpen(pendingCase);
-                  }}
-                >
-                  Discard
-                </Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal.Root>
+
+
+
 
       <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
         <div className="flex flex-wrap items-end gap-2">
@@ -1181,8 +1195,10 @@ export function CasesWorkspace({
         ) : null}
       </AnimatePresence>
 
+      {remote.error ? <div role="alert" className="topo-feedback">{remote.error} <button onClick={remote.retry}>Retry</button></div> : null}
+      {remote.loading ? <p role="status" className="text-xs text-[color:var(--topo-muted)]">Updating cases…</p> : null}
       <AnimatePresence>
-        {showCreate ? (
+        {showCreate && can("cases.create") ? (
           <CaseCreateDialog
             folders={folders}
             flatFolders={flatFolders}
@@ -1202,35 +1218,37 @@ export function CasesWorkspace({
       </AnimatePresence>
 
       <div
-        className={`grid gap-3 ${
-          historyCase
-            ? "lg:grid-cols-[15rem_minmax(0,1fr)_minmax(20rem,26rem)]"
-            : "lg:grid-cols-[15rem_minmax(0,1fr)]"
-        }`}
+        className={`topo-cases-grid grid gap-3${historyCase ? " topo-cases-grid--inspecting" : ""}`}
       >
-        <div className="lg:sticky lg:top-3 lg:self-start">
+        <CaseBrowserPanel kind="folders" collapsed={Boolean(historyCase)} open={browserPanel === "folders"} onOpenChange={(open) => setBrowserPanel(current => open ? "folders" : current === "folders" ? null : current)}>
           <FolderTreePane
             folders={folders}
             folderCounts={folderCounts}
             unfiledCount={unfiledCount}
-            totalCount={optimisticCases.length}
+            totalCount={totalCases}
             selected={activeFolderFilter}
             collapsed={treeCollapsed}
+            inline={Boolean(historyCase)}
             onToggleCollapsed={() => setTreeCollapsed((value) => !value)}
             onSelect={(id) => {
               setActiveViewId(null);
               setFolderFilter(id);
               setTreeCollapsed(true);
+              if (historyCase) {
+                setBrowserPanel("cases");
+                requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[aria-label="Search cases"]')?.focus({ preventScroll: true }));
+              }
             }}
             onCreateRoot={() => openCreateFolder(null)}
             onCreateSubfolder={(parentId) => openCreateFolder(parentId)}
             onRename={(folderId) => openRenameFolder(folderId)}
             onDelete={(folderId) => openDeleteFolder(folderId)}
           />
-        </div>
+        </CaseBrowserPanel>
+        <CaseBrowserPanel kind="cases" collapsed={Boolean(historyCase)} open={browserPanel === "cases"} onOpenChange={(open) => setBrowserPanel(current => open ? "cases" : current === "cases" ? null : current)}>
         <CasesTable
           cases={pageData.items}
-          totalCases={optimisticCases.length}
+          totalCases={totalCases}
           folders={folders}
           flatFolders={flatFolders}
           search={search}
@@ -1260,8 +1278,10 @@ export function CasesWorkspace({
           onInlinePatch={(id, patch) => void inlinePatch(id, patch)}
           onPageChange={setPage}
         />
+        </CaseBrowserPanel>
 
         {historyCase ? (
+          <ResponsiveInspector onContainer={setInspectorContainer} label={`Case ${historyCase.key}`} onClose={requestClosePeek}>
           <CaseEditPanel
             key={historyCase.id}
             caseId={historyCase.id}
@@ -1286,6 +1306,38 @@ export function CasesWorkspace({
               );
             }}
           />
+      <Modal.Backdrop UNSTABLE_portalContainer={inspectorContainer ?? undefined} isOpen={unsavedModal.isOpen} onOpenChange={(open) => { if (open) unsavedModal.open(); else keepEditing(); }}>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog className="outline-none">
+              <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+                <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                  Discard unsaved changes?
+                </Modal.Heading>
+                <p className="text-sm text-[color:var(--topo-muted)]">
+                  This case has edits that have not been saved.
+                </p>
+              </Modal.Header>
+              <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
+                <Button
+                  variant="tertiary"
+                  onPress={keepEditing}
+                >
+                  Keep editing
+                </Button>
+                <Button
+                  variant="danger"
+                  onPress={() => {
+                    unsavedModal.close();
+                    commitOpen(pendingCase);
+                  }}
+                >
+                  Discard
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+          </ResponsiveInspector>
         ) : null}
       </div>
     </div>

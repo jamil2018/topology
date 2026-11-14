@@ -59,7 +59,7 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const ok = await markNotificationRead(session.user.id, parsed.data.id);
+  const ok = await markNotificationRead(session.user.id, parsed.data.id, access.ctx.project.id);
   if (!ok) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

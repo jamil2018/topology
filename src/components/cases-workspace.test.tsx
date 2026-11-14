@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
+import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import { CasesWorkspace } from "./cases-workspace";
 import {
@@ -35,6 +36,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   refresh.mockClear();
   push.mockClear();
+  window.history.replaceState(null, "", "/cases");
 });
 
 describe("case key helpers", () => {
@@ -128,7 +130,7 @@ describe("CasesWorkspace authoring", () => {
 
     await user.click(screen.getAllByRole("button", { name: "AUTO-a::one" })[0]);
 
-    expect(push).toHaveBeenCalledWith("/cases/AUTO-a%3A%3Aone");
+    expect(new URLSearchParams(window.location.search).get("case")).toBe("AUTO-a::one");
   });
 
   it("auto-fills the next key from the project prefix", async () => {
@@ -237,9 +239,8 @@ describe("CasesWorkspace authoring", () => {
     );
 
     const table = screen.getAllByRole("table")[0];
-    const trigger = within(table).getByRole("button", { name: /draft/i });
-    await user.click(trigger);
-    await user.click(screen.getByRole("option", { name: /ready/i }));
+    const trigger = within(table).getByRole("combobox", { name: `Status for ${sampleCase.key}` });
+    await user.selectOptions(trigger, "ready");
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(`/api/cases/${caseId}`, {
@@ -268,7 +269,7 @@ describe("CasesWorkspace authoring", () => {
     act(() => {
       dispatchShortcut("open");
     });
-    expect(push).toHaveBeenCalledWith("/cases/AUTO-a%3A%3Aone");
+    expect(new URLSearchParams(window.location.search).get("case")).toBe("AUTO-a::one");
 
     act(() => {
       dispatchShortcut("select");
@@ -331,5 +332,26 @@ describe("CasesWorkspace authoring", () => {
       dispatchShortcut("escape");
     });
     expect(screen.getByText(/Discard unsaved changes/i)).toBeInTheDocument();
+  });
+});
+
+describe("CasesWorkspace permissions and recovery", () => {
+  it("blocks viewer creation, inline edits, deletion and dispatched create", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    render(<CasesWorkspace initialCases={[sampleCase]} folders={[]} />, { actions: ["cases.view"] });
+    expect(screen.getByRole("button", { name: "New case" })).toBeDisabled();
+    for (const button of screen.getAllByRole("button", { name: `Delete ${sampleCase.key}` })) expect(button).toBeDisabled();
+    act(() => dispatchShortcut("create"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("rolls back an optimistic inline edit on a rejected network request", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network unavailable")));
+    render(<CasesWorkspace initialCases={[sampleCase]} folders={[]} />);
+    const status = screen.getAllByRole("combobox", { name: `Status for ${sampleCase.key}` })[0];
+    await user.selectOptions(status, "ready");
+    await waitFor(() => expect(screen.getByText("Network unavailable")).toBeInTheDocument());
+    await waitFor(() => expect(status).toHaveValue("draft"));
   });
 });

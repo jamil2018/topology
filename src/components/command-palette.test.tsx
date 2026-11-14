@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import {
   CommandPalette,
@@ -45,7 +46,7 @@ describe("CommandPalette coverage", () => {
       .getAllByRole("option")
       .map((el) => el.querySelector("span.min-w-0")?.textContent?.trim());
     for (const label of [
-      "Hub",
+      "Home",
       "Test cases",
       "Plans",
       "Test runs",

@@ -15,11 +15,11 @@ export function PageHeader({
     <div className="flex flex-col gap-3 border-b border-[color:var(--topo-line)] pb-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0 space-y-1">
         {eyebrow ? (
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--topo-muted)]">
+          <p className="text-xs font-medium text-[color:var(--topo-muted)]">
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="text-xl font-semibold tracking-tight text-[color:var(--topo-ink)] sm:text-2xl">
+        <h1 className="text-2xl font-semibold tracking-tight text-[color:var(--topo-ink)] sm:text-2xl">
           {title}
         </h1>
         {description ? (

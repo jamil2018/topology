@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import { HubPulse } from "./hub-pulse";
 import { QualityGraphProvider } from "./quality-graph-provider";
@@ -75,14 +76,14 @@ describe("HubPulse default QA home", () => {
   it("opens on QA home instead of the persona pulse", () => {
     renderHub(false);
 
-    expect(screen.getByRole("heading", { name: "QA home" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Home" })).toBeInTheDocument();
     expect(screen.getByText("My assigned runs")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Failing now" })).toHaveAttribute(
       "href",
       "/triage",
     );
-    expect(screen.getByRole("tab", { name: "QA home" })).toHaveAttribute(
-      "aria-selected",
+    expect(screen.getByRole("button", { name: "My work" })).toHaveAttribute(
+      "aria-pressed",
       "true",
     );
     expect(screen.queryByText("Graph coverage")).not.toBeInTheDocument();
@@ -100,7 +101,7 @@ describe("HubPulse graph containment", () => {
     expect(screen.queryByText("Graph coverage")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Intents" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Milestones" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "CI setup" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "CI setup" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Test cases" })).toBeInTheDocument();
   });
 
@@ -122,8 +123,8 @@ describe("HubPulse graph containment", () => {
     const user = userEvent.setup();
     renderHub(false);
 
-    await user.click(screen.getByRole("tab", { name: "Overview" }));
-    expect(screen.getByRole("heading", { name: "Quality pulse" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Overview" }));
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "EM" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /HAR-12/i })).toHaveAttribute(
       "href",

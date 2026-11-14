@@ -13,7 +13,7 @@ import {
   toStepTable,
   toTraditionalSteps,
   type StructuredRepresentation,
-} from "@topology/domain";
+} from "@topology/domain/client";
 
 export const REPRESENTATION_VIEWS = [
   "traditional",
@@ -271,7 +271,7 @@ export function IntentRepresentationPanel({
   return (
     <div className="mt-4 border-t border-[color:var(--topo-line)] pt-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+        <div className="text-xs font-medium text-[color:var(--topo-muted)]">
           Representation
         </div>
         <div
@@ -334,7 +334,7 @@ export function IntentRepresentationPanel({
             </p>
           )}
           <div>
-            <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
+            <div className="mb-1 font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
               Steps
             </div>
             <TextArea
@@ -349,7 +349,7 @@ export function IntentRepresentationPanel({
             />
           </div>
           <div>
-            <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--topo-muted)]">
+            <div className="mb-1 font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
               Expected result
             </div>
             <TextArea
@@ -421,7 +421,7 @@ export function IntentRepresentationPanel({
           </div>
           {!empty ? (
             <pre
-              className="whitespace-pre-wrap rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] p-3 font-mono text-[11px] text-[color:var(--topo-ink)]"
+              className="whitespace-pre-wrap rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] p-3 font-mono text-xs text-[color:var(--topo-ink)]"
               data-testid="representation-bdd"
             >
               {toGherkin(liveStructured, { scenario: intentTitle })}
@@ -445,10 +445,10 @@ export function IntentRepresentationPanel({
           <StructuredClauseList kind="When" items={liveStructured.when} />
           <StructuredClauseList kind="Then" items={liveStructured.then} />
           <details className="text-xs text-[color:var(--topo-muted)]">
-            <summary className="cursor-pointer font-mono uppercase tracking-[0.12em]">
+            <summary className="cursor-pointer font-medium tracking-[0.12em]">
               Steps table
             </summary>
-            <ol className="mt-2 list-decimal space-y-1 pl-5 font-mono text-[11px] text-[color:var(--topo-ink)]">
+            <ol className="mt-2 list-decimal space-y-1 pl-5 font-mono text-xs text-[color:var(--topo-ink)]">
               {toStepTable(liveStructured).map((row) => (
                 <li key={`${row.order}-${row.kind}`}>
                   <span className="uppercase text-[color:var(--topo-muted)]">
@@ -483,7 +483,7 @@ function StructuredClauseList({
   if (items.length === 0) return null;
   return (
     <div>
-      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--topo-muted)]">
+      <div className="text-xs font-medium text-[color:var(--topo-muted)]">
         {kind}
       </div>
       <ul className="mt-1 space-y-1">

@@ -1,4 +1,6 @@
 "use client";
+import { useProjectActions } from "./project-actions";
+import { useMutationFeedback } from "./use-mutation-feedback";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -33,8 +35,11 @@ export function PlansWorkspace({
   environments: EnvOption[];
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { can } = useProjectActions();
+  const [transitionPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const { saving, submit } = useMutationFeedback(setError);
+  const pending = transitionPending || saving;
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [browsers, setBrowsers] = useState<string[]>(["Chrome"]);
@@ -66,6 +71,8 @@ export function PlansWorkspace({
   }
 
   async function createPlan() {
+    if (!can("runs.create")) return;
+    return submit(async () => {
     if (!name.trim()) return;
     setError(null);
     const res = await fetch("/api/plans", {
@@ -94,6 +101,7 @@ export function PlansWorkspace({
       return;
     }
     startTransition(() => router.refresh());
+    });
   }
 
   return (
@@ -101,10 +109,10 @@ export function PlansWorkspace({
       <PageHeader
         eyebrow="Test management"
         title="Plans"
-        description="Group cases into a plan, then fan out runs across a browser × OS × environment matrix."
+        description="Group cases to test across different browsers, operating systems, and environments."
         meta={<StatusChip mono>{initialPlans.length} plans</StatusChip>}
         actions={
-          <Button size="sm" variant="primary" onPress={() => dialog.open()}>
+          <Button size="sm" variant="primary" isDisabled={!can("runs.create")} onPress={() => dialog.open()}>
             New plan
           </Button>
         }
@@ -112,14 +120,14 @@ export function PlansWorkspace({
 
       {initialPlans.length === 0 ? (
         <p className="border border-dashed border-[color:var(--topo-line)] px-3 py-8 text-center text-sm text-[color:var(--topo-muted)]">
-          No plans yet. Create one, attach cases, then launch the matrix.
+          No plans yet. Create a plan, add cases, then start its test runs.
         </p>
       ) : (
         <ul className="space-y-2">
           {initialPlans.map((plan, i) => (
             <motion.li
               key={plan.id}
-              initial={{ opacity: 0, y: 6 }}
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: Math.min(i, 8) * 0.03 }}
             >
@@ -144,8 +152,7 @@ export function PlansWorkspace({
         </ul>
       )}
 
-      <Modal.Root state={dialog}>
-        <Modal.Backdrop isDismissable={!pending}>
+      <Modal.Backdrop isOpen={dialog.isOpen} onOpenChange={dialog.setOpen} isDismissable={!pending}>
           <Modal.Container placement="center" size="md">
             <Modal.Dialog className="outline-none">
               <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
@@ -159,15 +166,17 @@ export function PlansWorkspace({
               </Modal.Header>
               <Modal.Body className="space-y-3 px-4 py-4">
                 {error ? (
-                  <p className="text-sm text-[color:var(--topo-danger)]">{error}</p>
+                  <p role="alert" className="text-sm text-[color:var(--topo-danger)]">{error}</p>
                 ) : null}
-                <Input
+                <label htmlFor="plan-name" className="block text-sm">Plan name (required)</label>
+                <Input id="plan-name"
                   aria-label="Plan name"
                   placeholder="Release 2.4 checkout"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
-                <TextArea
+                <label htmlFor="plan-description" className="block text-sm">Description (optional)</label>
+                <TextArea id="plan-description"
                   aria-label="Description"
                   placeholder="Description"
                   value={description}
@@ -226,6 +235,7 @@ export function PlansWorkspace({
                   {previewCount === 1 ? "" : "s"}.
                 </p>
               </Modal.Body>
+              {!name.trim() ? <p role="status" className="px-4 text-sm text-[color:var(--topo-muted)]">Enter a plan name to continue.</p> : null}
               <Modal.Footer className="flex justify-end gap-2 border-t border-[color:var(--topo-line)] px-4 py-3">
                 <Button
                   size="sm"
@@ -238,7 +248,7 @@ export function PlansWorkspace({
                 <Button
                   size="sm"
                   variant="primary"
-                  isDisabled={pending || !name.trim()}
+                  isDisabled={pending || !can("runs.create") || !name.trim()}
                   onPress={() => void createPlan()}
                 >
                   Create plan
@@ -247,7 +257,7 @@ export function PlansWorkspace({
             </Modal.Dialog>
           </Modal.Container>
         </Modal.Backdrop>
-      </Modal.Root>
+
     </div>
   );
 }
@@ -320,7 +330,7 @@ function TagInput({
               type="button"
               disabled={selected}
               onClick={() => add(preset)}
-              className={`rounded-md px-2 py-0.5 text-[11px] ${
+              className={`rounded-md px-2 py-0.5 text-xs ${
                 selected
                   ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
                   : "border border-[color:var(--topo-line)] text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"

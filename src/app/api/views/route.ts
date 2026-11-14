@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
@@ -17,16 +17,19 @@ import {
 const createSchema = z.discriminatedUnion("entity", [
   z.object({
     name: z.string().trim().min(1).max(80),
+    visibility: z.enum(["private", "team"]).default("private"),
     entity: z.literal("cases"),
     config: caseViewConfigSchema,
   }),
   z.object({
     name: z.string().trim().min(1).max(80),
+    visibility: z.enum(["private", "team"]).default("private"),
     entity: z.literal("runs"),
     config: runViewConfigSchema,
   }),
   z.object({
     name: z.string().trim().min(1).max(80),
+    visibility: z.enum(["private", "team"]).default("private"),
     entity: z.literal("intents"),
     config: intentViewConfigSchema,
   }),
@@ -60,11 +63,11 @@ export async function GET(request: Request) {
       ? and(
           eq(savedViews.workspaceId, workspaceId),
           eq(savedViews.entity, entityParsed.data),
-          eq(savedViews.createdById, session.user.id),
+          or(eq(savedViews.createdById, session.user.id), eq(savedViews.visibility, "team")),
         )
       : and(
           eq(savedViews.workspaceId, workspaceId),
-          eq(savedViews.createdById, session.user.id),
+          or(eq(savedViews.createdById, session.user.id), eq(savedViews.visibility, "team")),
         ),
     orderBy: [desc(savedViews.updatedAt)],
   });
@@ -72,6 +75,8 @@ export async function GET(request: Request) {
   return NextResponse.json({
     views: rows.map((row) => ({
       id: row.id,
+      visibility: row.visibility,
+      createdById: row.createdById,
       name: row.name,
       entity: row.entity,
       config:
@@ -121,6 +126,7 @@ export async function POST(request: Request) {
       .insert(savedViews)
       .values({
         workspaceId,
+        visibility: parsed.data.visibility,
         name: parsed.data.name,
         entity: parsed.data.entity,
         configJson: JSON.stringify(parsed.data.config),
@@ -132,6 +138,8 @@ export async function POST(request: Request) {
       {
         view: {
           id: created.id,
+          visibility: created.visibility,
+          createdById: created.createdById,
           name: created.name,
           entity: created.entity,
           config: parsed.data.config,
