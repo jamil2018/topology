@@ -61,7 +61,9 @@ export async function startManualRun(
 
   const start = page.getByRole("button", { name: "Start", exact: true });
   if (await start.isVisible()) {
+    const started = page.waitForResponse(response => response.request().method() === "PATCH" && response.request().postDataJSON()?.action === "start");
     await start.click();
+    expect((await started).ok()).toBeTruthy();
     await expect(start).toBeHidden({ timeout: 15_000 });
   }
 }

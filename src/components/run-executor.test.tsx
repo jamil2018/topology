@@ -483,7 +483,7 @@ it("allows retrying Complete after a failed lifecycle request", async () => {
   await user.click(screen.getByRole("button", {name:"Complete"}));
   await user.click(screen.getByRole("button", {name:"Complete run"}));
   await screen.findByText("Temporary outage");
-  await user.click(screen.getByRole("button", {name:"Complete run"}));
+  await user.click(await screen.findByRole("button", {name:"Complete run"}));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(screen.getByText(/completed and locked/i)).toBeVisible());
 });

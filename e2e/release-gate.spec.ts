@@ -24,7 +24,7 @@ test("release gate: login → hub → case → run → fail → mock issue → t
   await expect(
     page.getByRole("heading", { name: "Home" }),
   ).toBeVisible();
-  await expect(page.getByText("My assigned runs")).toBeVisible();
+  await expect(page.getByRole("heading", {name:"My assigned runs",exact:true})).toBeVisible();
 
   // Cases
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", {
