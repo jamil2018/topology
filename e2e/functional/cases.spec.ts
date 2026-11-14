@@ -22,13 +22,13 @@ test("search, filter, create, edit, folder, saved view, and bulk tag", async ({
   ).toBeVisible();
 
   await page.getByLabel("Status", { exact: true }).click();
-  await page.getByRole("option", { name: "Deprecated", exact: true }).click();
+  await page.getByRole("listbox").getByRole("option", { name: "Deprecated", exact: true }).click();
   await expect(
     page.getByText("No cases match this search or folder."),
   ).toBeVisible();
 
   await page.getByLabel("Status", { exact: true }).click();
-  await page.getByRole("option", { name: "Ready", exact: true }).click();
+  await page.getByRole("listbox").getByRole("option", { name: "Ready", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Shopper can open the storefront home" }),
   ).toBeVisible();

@@ -110,7 +110,7 @@ test.describe("logged out", () => {
       stage,
       `tab order did not reach email, password, and submit\n${trail.join("\n")}`,
     ).toBe(3);
-    await expect(page.getByText("Operating hub")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("heading", {name:"Home",exact:true})).toBeVisible({ timeout: 15_000 });
   });
 });
 
