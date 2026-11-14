@@ -84,7 +84,9 @@ test("execution reflows with accessible actions in both themes", async ({ page }
   expect(response.ok()).toBe(true);
   const { runs } = await response.json();
   expect(runs.length).toBeGreaterThan(0);
+  const settings = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'GET');
   await page.goto(`/runs/${runs[0].id}`);
+  expect((await settings).ok()).toBeTruthy();
   await expect(page.locator("main h1")).toBeVisible();
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });

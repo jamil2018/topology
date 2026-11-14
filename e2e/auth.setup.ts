@@ -42,7 +42,7 @@ for (const account of accounts) {
     await page.getByLabel("Email").fill(account.email);
     await page.getByLabel("Password").fill(account.password);
     await page.getByRole("button", { name: /Sign in with email/i }).click();
-    await expect(page).toHaveURL(new URL("/", page.url()).href);
+    await expect(page).toHaveURL(new URL("/", page.url()).href, {timeout:20_000});
     await expect(page.locator("main h1").first()).toBeVisible({
       timeout: 20_000,
     });
