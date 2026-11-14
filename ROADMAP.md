@@ -1,29 +1,21 @@
 # Roadmap
 
-Topology is pre-1.0. This is the public adoption sequence, not a release calendar.
+Topology is pre-1.0. Implementation and release qualification are separate: a feature listed below does not imply production-host or external-provider certification.
 
-## Secure by default
+## Implemented foundation
 
-Remove development-only auth shortcuts from production, add scoped API tokens with revoke, fail closed on unsigned GitHub webhooks, gate demo seed data, and add first-run admin setup, login rate limiting, generic OIDC, and an audit log.
+- Scoped tokens, workspace/custom roles, login protections, OIDC configuration, audit history, and guarded seed modes.
+- Standalone deployment configuration, journaled migrations, local/S3 attachment adapters, and operations documentation.
+- Structured and shared steps, case versions and data iterations, matrix plans, custom fields, and vendor import preview/dry-run workflows.
+- Compact navigation with an opt-in quality graph, command palette, keyboard shortcuts, and live run/triage updates.
+- Server pagination for cases and runs, result indexes, and disposable scale fixtures.
 
-## Production self-hosting
+## Refinement cycle
 
-Ship a standalone container image, a production Compose file, journaled migrations on boot, S3-compatible attachment storage, and operations docs for TLS, backup, restore, and upgrades.
+The current cycle adds capability-aware controls, mutation recovery, accessible overlays, responsive cases/execution, private/team views, run templates, reviewed retests with immutable source lineage, and assignment notifications. See [the implementation and verification record](docs/refinement.md) for evidence and open gates. These changes are not yet a published release.
 
-## Test management parity
+## Remaining adoption work
 
-Add structured steps with per-step results, shared steps, case versions, test plans with a configuration matrix, custom fields, and importers for TestRail, Qase, Zephyr Scale, and Xray (mapping preview and dry run). Export run and milestone reports.
+Qualify production deployment, backups/restores, S3-compatible providers, and actual issue-provider installations. Continue large-data and cross-browser measurement using isolated fixtures. Publish and validate versioned CLI/MCP/reporter distributions, evaluate additional runner reporters, and decide the supported plugin SDK surface before a public resettable demo.
 
-## Linear-grade UX
-
-Optimistic updates on hot paths, a complete keyboard shortcut system, a command palette that covers every destination, live run/triage updates, a quieter default nav with the quality graph opt-in, and guided empty states.
-
-## Scale
-
-Server-side pagination and filtering, indexes on run results, set-based queries in place of N+1 paths, and a large fixture benchmark.
-
-## Ecosystem
-
-Publish the CLI, MCP, and Playwright packages, add reporters for other runners, finish or drop the unused plugin SDK, sync issues outbound, and host a resettable public demo.
-
-Shipped work is recorded in [CHANGELOG.md](CHANGELOG.md).
+Shipped release history remains in [CHANGELOG.md](CHANGELOG.md).
