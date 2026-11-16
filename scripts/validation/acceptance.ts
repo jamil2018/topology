@@ -7,6 +7,7 @@ const commit = git("rev-parse", "HEAD");
 const output = path.resolve("test-results/acceptance-final.json");
 const results: { suite: string; manifest: string; status: string }[] = [];
 mkdirSync(path.dirname(output), { recursive: true });
+async function main() {
 for (const [index, suite] of ["sanity", "sanity", "sanity", "release"].entries()) {
   if (git("status", "--porcelain") || git("rev-parse", "HEAD") !== commit) throw new Error("Final acceptance requires an unchanged, clean commit");
   const before = new Set(readdirSync("test-results"));
@@ -32,3 +33,6 @@ for (const [index, suite] of ["sanity", "sanity", "sanity", "release"].entries()
   if (!passed) { process.exitCode = 1; break; }
 }
 if (git("status", "--porcelain") || git("rev-parse", "HEAD") !== commit) throw new Error("Repository changed during final acceptance");
+
+}
+void main().catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
