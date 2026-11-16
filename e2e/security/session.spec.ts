@@ -18,12 +18,10 @@ test.describe("logged out", () => {
     const session = (await page.context().cookies()).find((cookie) =>
       cookie.name.includes("session-token"),
     );
-    if (!session) return;
-    expect(session.httpOnly).toBe(true);
-    expect(["Lax", "Strict"]).toContain(session.sameSite);
-    if (page.url().startsWith("https:")) {
-      expect(session.secure).toBe(true);
-    }
+    expect(session, "Email login must issue a session cookie").toBeDefined();
+    expect(session!.httpOnly).toBe(true);
+    expect(["Lax", "Strict"]).toContain(session!.sameSite);
+    expect(session!.secure).toBe(page.url().startsWith("https:"));
   });
 });
 
@@ -37,4 +35,19 @@ test.describe("logout", () => {
     await signOut.click();
     await expect(page).toHaveURL(/\/login/);
   });
+});
+
+
+test("SEC-HEADERS-001: production HTML and API responses enforce the baseline policy", async ({ page }) => {
+  for (const path of ["/login", "/", "/api/health"]) {
+    const response = await page.request.get(path);
+    expect(response.status()).toBe(200);
+    const headers = response.headers();
+    expect(headers["content-security-policy"]).toContain("default-src 'self'");
+    expect(headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(headers["x-frame-options"]).toBe("DENY");
+    expect(headers["x-content-type-options"]).toBe("nosniff");
+    expect(headers["referrer-policy"]).toBe("no-referrer");
+    expect(headers["strict-transport-security"]).toBeUndefined(); // HTTP is not an HSTS qualification.
+  }
 });

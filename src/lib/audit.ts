@@ -10,6 +10,7 @@ export const AUDIT_ACTIONS = [
   "role.change",
   "token.create",
   "token.revoke",
+  "report.share.revoke",
   "webhook.create",
   "webhook.update",
   "webhook.delete",

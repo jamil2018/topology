@@ -201,47 +201,33 @@ async function deliverToEndpoint(
     headers["X-Topology-Signature"] = `sha256=${signature}`;
   }
 
-  const firstCheck = await assertSafeWebhookDestination(endpoint.url);
-  if (!firstCheck.ok) {
-    return { ok: false, status: null };
+  let status: number | null = null;
+  let ok = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    // Validate again before every attempt; redirects are never followed.
+    const destination = await assertSafeWebhookDestination(endpoint.url);
+    if (!destination.ok) break;
+    try {
+      const response = await fetch(endpoint.url, {
+        method: "POST", headers, body, redirect: "manual",
+        signal: AbortSignal.timeout(8_000),
+      });
+      status = response.status;
+      ok = response.ok;
+      await response.body?.cancel();
+      if (ok || !(status === 408 || status === 429 || status >= 500)) break;
+    } catch {
+      status = null;
+    }
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 100 * 3 ** attempt));
   }
+  if (persist && endpoint.id !== "env") {
+    await db.update(webhookEndpoints).set({
+      lastDeliveredAt: new Date(), lastStatus: status ?? 0, updatedAt: new Date(),
+    }).where(eq(webhookEndpoints.id, endpoint.id));
+  }
+  return { ok, status };
 
-  try {
-    const recheck = await assertSafeWebhookDestination(endpoint.url);
-    if (!recheck.ok) {
-      return { ok: false, status: null };
-    }
-    const res = await fetch(endpoint.url, {
-      method: "POST",
-      headers,
-      body,
-      redirect: "manual",
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (persist && endpoint.id !== "env") {
-      await db
-        .update(webhookEndpoints)
-        .set({
-          lastDeliveredAt: new Date(),
-          lastStatus: res.status,
-          updatedAt: new Date(),
-        })
-        .where(eq(webhookEndpoints.id, endpoint.id));
-    }
-    return { ok: res.ok, status: res.status };
-  } catch {
-    if (persist && endpoint.id !== "env") {
-      await db
-        .update(webhookEndpoints)
-        .set({
-          lastDeliveredAt: new Date(),
-          lastStatus: 0,
-          updatedAt: new Date(),
-        })
-        .where(eq(webhookEndpoints.id, endpoint.id));
-    }
-    return { ok: false, status: null };
-  }
 }
 
 /**

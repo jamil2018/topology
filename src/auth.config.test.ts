@@ -33,6 +33,11 @@ describe("authConfig.authorized", () => {
     expect(authorized("/api/webhooks/github", null)).toBe(true);
   });
 
+  it("allows exact CLI bearer endpoints while keeping neighboring session APIs private", () => {
+    for (const route of ["/api/affected", "/api/coverage", "/api/query", "/api/git/ingest"]) expect(authorized(route, null)).toBe(true);
+    for (const route of ["/api/coverage/snapshots", "/api/query/admin", "/api/git/repositories"]) expect(authorized(route, null)).toBe(false);
+  });
+
   it("allows only signed-report page and export routes to validate their tokens", () => {
     expect(authorized("/share/reports/signed-token", null)).toBe(true);
     expect(authorized("/api/share/reports/signed-token/export", null)).toBe(true);

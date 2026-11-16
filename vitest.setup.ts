@@ -1,8 +1,10 @@
 import { config } from "dotenv";
 import path from "node:path";
 
-config({ path: path.resolve(process.cwd(), ".env.local") });
-config({ path: path.resolve(process.cwd(), ".env") });
+if (process.env.TOPOLOGY_VALIDATION !== "1") {
+  config({ path: path.resolve(process.cwd(), ".env.local"), quiet: true });
+  config({ path: path.resolve(process.cwd(), ".env"), quiet: true });
+}
 
 if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL =

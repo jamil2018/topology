@@ -3,16 +3,16 @@
 import { RouteError } from "@/components/route-error";
 
 export default function HubError({
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   return (
     <RouteError
       title="Home failed to load"
       description="Unexpected error while loading the quality pulse."
-      reset={reset}
+      retry={retry}
     />
   );
 }

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import AxeBuilder from "@axe-core/playwright";
 
 for (const theme of ["light", "dark"] as const) {
@@ -11,19 +11,16 @@ for (const theme of ["light", "dark"] as const) {
     const saved = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH');
     await page.getByRole('button', {name: theme === 'dark' ? 'Dark theme' : 'Light theme',exact:true}).click();
     expect((await saved).ok()).toBeTruthy();
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
     for (const route of ["/", "/cases", "/runs", "/runs/new", "/plans", "/triage", "/automation", "/reports", "/settings", "/requirements", "/releases", "/cases/import", "/intents", "/journeys", "/components", "/risks", "/milestones"]) {
       await page.goto(route);
       await expect(page.locator("main h1")).toBeVisible();
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /dark/ : /^(?!.*dark).*$/);
       await page.screenshot({caret: "initial",  path: info.outputPath(`${route.replaceAll("/", "-") || "home"}-${theme}.png`), fullPage: true });
-      const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
       expect.soft(audit.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? "")), `${route} ${theme}`).toEqual([]);
       expect.soft(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${route} overflow`).toBeLessThanOrEqual(1);
     }
-    expect(errors).toEqual([]);
   });
 }
 
@@ -98,6 +95,7 @@ test("execution reflows with accessible actions in both themes", async ({ page }
       await page.setViewportSize({ width, height: 1000 });
       expect.soft(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `execution ${theme} ${width}`).toBeLessThanOrEqual(1);
     }
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
     expect(audit.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
     await page.screenshot({caret: "initial",  path: info.outputPath(`execution-${theme}.png`), fullPage: true });

@@ -42,6 +42,7 @@ export const environments = pgTable(
 );
 
 export const runs = pgTable("runs", {
+  shareGeneration: integer("share_generation").default(0).notNull(),
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: uuid("workspace_id")
     .notNull()

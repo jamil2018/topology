@@ -1,34 +1,9 @@
-# UX and responsive gaps
+# UX qualification boundaries
 
-No `toHaveScreenshot` specs are included. There are no baselines yet, and a missing snapshot would fail CI.
+The release suite compares 18 inspected light/dark Linux snapshots covering home, cases (including a long title and editor), runs, reports, empty results and an actual server error. Fixture UUIDs and dates are deterministic; no broad masking hides data. See `e2e/visual.spec.ts` and `tasks/validation/README.md`.
 
-## Visual baselines to add later
+`e2e/ux/errors.spec.ts` temporarily renames the cases table only after checking the disposable ownership marker, restores it in finally and exercises the actual production segment boundary and server retry. No production failure endpoint exists.
 
-Capture these at `desktop-1440` in both light and dark. Mask dynamic case keys, run names, counts, dates, ids, and chart values.
+`e2e/ux/network.spec.ts` controls pending/rejected/aborted saves and HTTP 401 responses, verifies draft retention and unchanged persisted data, then retries and reloads. A simulated HTTP 401 does not qualify actual session expiry during editing. Theme hydration races have a controlled asynchronous component regression. `e2e/functional/live.spec.ts` exercises two-session updates and reconnect catch-up after connection loss.
 
-- `/` (QA home)
-- `/cases`
-- `/cases` with the command palette open
-- `/cases` with the shortcut cheat sheet open
-- `/cases` after a search that matches nothing
-- `/runs`
-- `/runs/[id]` (run executor)
-- `/plans`
-- `/triage`
-- `/reports`
-- `/settings`
-- `/automation`
-
-## UX-ERR-001
-
-`/cases` loads through the server component `loadCasesWorkspaceData`. `src/app/(app)/cases/error.tsx` (alert heading “Test cases couldn’t load”, retry button “Try again”, same button name as `RouteError`) renders only when that segment throws during render.
-
-`page.route` can abort or 500 the browser GET for `/cases`, but that response never becomes the segment error boundary. The cases workspace also does not GET `/api/cases` on load, so failing that endpoint does not show the alert. Next.js treats a non-OK RSC payload as a full document navigation.
-
-`e2e/ux/errors.spec.ts` is `test.fixme` with the intended steps. Re-enable it when a failed cases GET mounts that boundary. Do not delete seeded data to force the state.
-
-## Not asserted
-
-- J/K on `/cases` moves the list cursor (`aria-current` on the row in `cases-table.tsx`). It does not move DOM focus. The shortcut is registered for the whole cases workspace and is ignored while an editable control is focused. The spec asserts cursor movement.
-- The primary nav does collapse. Below Tailwind `lg` (1024px), `hub-shell.tsx` hides the sidebar (`hidden lg:block`) and shows “Open sidebar” (`lg:hidden`), which opens the drawer. That covers widths under 768. UX-NAV-001 does not apply.
-- Plan items not covered by these specs: optimistic rollback when a mutation returns 500, loading skeletons, toast consistency, slow-network and offline recovery, and SSE reconnect. Section 6 items not covered here: dialog fit, table or virtual-list scrolling, and tablet orientation change.
+Automated axe checks enforce serious/critical violations; lower-impact annotations remain available for human review. Native zoom, real screen readers, touch-device ergonomics and human discoverability are explicit unqualified checks. Keyboard cursor movement on J/K is intentional and distinct from DOM focus.

@@ -169,7 +169,7 @@ export function CaseCreateDialog({
         <CaseStepsEditor steps={steps} onChange={setSteps} disabled={busy} />
       </div>
       <details className="rounded-md border border-[color:var(--topo-line)] p-3">
-        <summary className="cursor-pointer text-sm font-medium">Case details <span className="text-[color:var(--topo-muted)]">· {form.key || "Key required"} · {formatStatusLabel(form.status)} · {form.priority}</span></summary>
+        <summary className="cursor-pointer text-sm font-medium text-[color:var(--topo-ink)]">Case details <span className="text-[color:var(--topo-muted)]">· {form.key || "Key required"} · {formatStatusLabel(form.status)} · {form.priority}</span></summary>
         <p className="my-2 text-sm text-[color:var(--topo-muted)]">A key is suggested for you. Adjust priority, status, folder, and tags here.</p>
         <TextField name="key" className="w-full">
           <Label>Key</Label>

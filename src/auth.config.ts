@@ -16,6 +16,7 @@ export const authConfig = {
         pathname.startsWith("/api/auth");
       // These endpoints verify their signed, expiring report token themselves.
       const isSharedReport = /^\/share\/reports\/[^/]+$/.test(pathname) || /^\/api\/share\/reports\/[^/]+\/export$/.test(pathname);
+      const isBearerApi = ["/api/affected", "/api/coverage", "/api/query", "/api/git/ingest"].includes(pathname);
       const isCiApi = pathname.startsWith("/api/ci");
       const isAgentApi = pathname.startsWith("/api/agent");
       const isExecutionsApi = pathname.startsWith("/api/executions");
@@ -29,6 +30,7 @@ export const authConfig = {
         isAuthRoute ||
         isSharedReport ||
         isCiApi ||
+        isBearerApi ||
         isAgentApi ||
         isExecutionsApi ||
         isReleasesApi ||

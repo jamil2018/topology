@@ -3,16 +3,16 @@
 import { RouteError } from "@/components/route-error";
 
 export default function PlansError({
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   return (
     <RouteError
       title="Plans failed to load"
       description="Unexpected error while loading test plans."
-      reset={reset}
+      retry={retry}
       backHref="/"
       backLabel="Back to hub"
     />

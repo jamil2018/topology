@@ -2,7 +2,11 @@
 
 import Image from "next/image";
 import { signIn } from "next-auth/react";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+
+const subscribeHydration = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
 import { Button, Input, Label, TextField } from "@heroui/react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password";
@@ -26,6 +30,7 @@ export function LoginForm({
   demoHint?: boolean;
   callbackUrl?: string;
 }) {
+  const hydrated = useSyncExternalStore(subscribeHydration, clientReady, serverReady);
   const next = safeCallbackPath(callbackUrl);
   const oauthAvailable = oauth.github || oauth.google || Boolean(oauth.oidc);
   const [showEmail, setShowEmail] = useState(!oauthAvailable || setup);
@@ -191,6 +196,7 @@ export function LoginForm({
                 <TextField name="name" className="w-full">
                   <Label>Name</Label>
                   <Input
+                    disabled={!hydrated}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="w-full"
@@ -201,6 +207,7 @@ export function LoginForm({
               <TextField name="email" type="email" className="w-full">
                 <Label>Email</Label>
                 <Input
+                    disabled={!hydrated}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full"
@@ -210,6 +217,7 @@ export function LoginForm({
               <TextField name="password" type="password" className="w-full">
                 <Label>Password</Label>
                 <Input
+                    disabled={!hydrated}
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -225,6 +233,7 @@ export function LoginForm({
                 >
                   <Label>Confirm password</Label>
                   <Input
+                    disabled={!hydrated}
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
@@ -244,7 +253,7 @@ export function LoginForm({
               <Button
                 className="w-full"
                 variant={oauthAvailable && !setup ? "secondary" : "primary"}
-                isDisabled={loading}
+                isDisabled={loading || !hydrated}
                 onPress={() => void (setup ? onSetup() : onCredentials())}
               >
                 {loading

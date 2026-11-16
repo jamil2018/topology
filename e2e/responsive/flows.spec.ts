@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../fixtures";
 
 /** Desktop sidebar vs drawer. See `hub-shell.tsx` (`lg` / 1024px). */
 const SIDEBAR_BREAKPOINT = 1024;
@@ -24,7 +24,7 @@ test("cases and runs stay usable @responsive", async ({ page }) => {
   const firstRun = page
     .locator("main a[href^='/runs/']:not([href='/runs/new'])")
     .first();
-  if ((await firstRun.count()) === 0) return;
+  await expect(firstRun).toBeVisible();
 
   await firstRun.click();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

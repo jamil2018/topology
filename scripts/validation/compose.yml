@@ -1,0 +1,35 @@
+# Only the validation runner uses this file. Volumes belong to its unique project
+# and are removed with down --volumes, including after failures.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: validation
+      POSTGRES_PASSWORD: validation-local-only
+      POSTGRES_DB: postgres
+    ports: ["127.0.0.1::5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U validation -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  minio:
+    build:
+      context: .
+      dockerfile: Minio.Dockerfile
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: validation
+      MINIO_ROOT_PASSWORD: validation-local-only
+    ports: ["127.0.0.1::9000"]
+    volumes: ["s3data:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata: {}
+  s3data: {}

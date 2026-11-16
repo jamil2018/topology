@@ -159,94 +159,6 @@ async function resolveImplementationIdsForRun(
   return [...ids];
 }
 
-async function loadHistoryForImplementation(
-  executor: StatsDb,
-  implementationId: string,
-  since: Date,
-): Promise<RollupHistoryPoint[]> {
-  const impl = await executor.query.testImplementations.findFirst({
-    where: eq(testImplementations.id, implementationId),
-    columns: { caseId: true },
-  });
-
-  const identityFilter = impl?.caseId
-    ? or(
-        eq(runResults.implementationId, implementationId),
-        and(
-          eq(runResults.caseId, impl.caseId),
-          sql`${runResults.implementationId} is null`,
-        ),
-      )
-    : eq(runResults.implementationId, implementationId);
-
-  const rows = (await executor
-    .select({
-      id: runResults.id,
-      status: runResults.status,
-      at: sql<Date>`coalesce(${runResults.executedAt}, ${runResults.createdAt})`,
-      durationMs: runResults.durationMs,
-    })
-    .from(runResults)
-    .where(
-      and(
-        identityFilter,
-        gte(
-          sql`coalesce(${runResults.executedAt}, ${runResults.createdAt})`,
-          since,
-        ),
-      ),
-    )) as {
-    id: string;
-    status: string;
-    at: Date;
-    durationMs: number | null;
-  }[];
-
-  return rows.map((row) => ({
-    status: row.status,
-    at: row.at,
-    durationMs: row.durationMs,
-  }));
-}
-
-async function upsertRollupRow(
-  executor: StatsDb,
-  implementationId: string,
-  windowDays: number,
-  rollup: ImplementationRollup,
-) {
-  const existing = await executor.query.implementationStats.findFirst({
-    where: and(
-      eq(implementationStats.implementationId, implementationId),
-      eq(implementationStats.windowDays, windowDays),
-    ),
-  });
-
-  const values = {
-    passRate: rollup.passRate,
-    flakeProbability: rollup.flakeProbability,
-    durationP50: rollup.durationP50,
-    durationP95: rollup.durationP95,
-    lastRunAt: rollup.lastRunAt,
-    lastStatus: rollup.lastStatus,
-    updatedAt: new Date(),
-  };
-
-  if (existing) {
-    await executor
-      .update(implementationStats)
-      .set(values)
-      .where(eq(implementationStats.id, existing.id));
-    return;
-  }
-
-  await executor.insert(implementationStats).values({
-    implementationId,
-    windowDays,
-    ...values,
-  });
-}
-
 /**
  * Recompute and upsert implementation_stats for every implementation touched
  * by a completed run (default 7- and 30-day windows).
@@ -264,19 +176,48 @@ export async function refreshImplementationStatsForRun(
     return { implementationIds: [] };
   }
 
+  if (!windows.length) return { implementationIds };
   const now = Date.now();
-
-  for (const implementationId of implementationIds) {
-    for (const windowDays of windows) {
-      const since = new Date(now - windowDays * 24 * 60 * 60 * 1000);
-      const history = await loadHistoryForImplementation(
-        executor,
-        implementationId,
-        since,
-      );
-      const rollup = computeImplementationRollup(history);
-      await upsertRollupRow(executor, implementationId, windowDays, rollup);
+  const earliest = new Date(now - Math.max(...windows) * 24 * 60 * 60 * 1000);
+  for (let offset = 0; offset < implementationIds.length; offset += 500) {
+    const ids = implementationIds.slice(offset, offset + 500);
+    const implementations = await executor.query.testImplementations.findMany({
+      where: inArray(testImplementations.id, ids), columns: { id: true, caseId: true },
+    }) as { id: string; caseId: string | null }[];
+    const byCase = new Map<string, string[]>();
+    for (const impl of implementations) {
+      if (impl.caseId) byCase.set(impl.caseId, [...(byCase.get(impl.caseId) ?? []), impl.id]);
     }
+    const history = await executor.select({
+      implementationId: runResults.implementationId, caseId: runResults.caseId,
+      status: runResults.status, durationMs: runResults.durationMs,
+      at: sql<Date>`coalesce(${runResults.executedAt}, ${runResults.createdAt})`,
+    }).from(runResults).where(and(
+      or(inArray(runResults.implementationId, ids), byCase.size ? and(
+        sql`${runResults.implementationId} is null`, inArray(runResults.caseId, [...byCase.keys()]),
+      ) : undefined),
+      gte(sql`coalesce(${runResults.executedAt}, ${runResults.createdAt})`, earliest.toISOString()),
+    )) as { implementationId: string | null; caseId: string | null; status: string; durationMs: number | null; at: Date }[];
+    const grouped = new Map<string, RollupHistoryPoint[]>();
+    for (const row of history) {
+      const targets = row.implementationId ? [row.implementationId] : byCase.get(row.caseId ?? "") ?? [];
+      for (const id of targets) {
+        const points = grouped.get(id) ?? [];
+        points.push({ status: row.status, at: row.at, durationMs: row.durationMs });
+        grouped.set(id, points);
+      }
+    }
+    const values = ids.flatMap((implementationId) => windows.map((windowDays) => ({
+      implementationId, windowDays, updatedAt: new Date(now),
+      ...computeImplementationRollup((grouped.get(implementationId) ?? []).filter((point) =>
+        new Date(point.at).getTime() >= now - windowDays * 24 * 60 * 60 * 1000)),
+    })));
+    await executor.insert(implementationStats).values(values).onConflictDoUpdate({
+      target: [implementationStats.implementationId, implementationStats.windowDays],
+      set: { passRate: sql`excluded.pass_rate`, flakeProbability: sql`excluded.flake_probability`,
+        durationP50: sql`excluded.duration_p50`, durationP95: sql`excluded.duration_p95`,
+        lastRunAt: sql`excluded.last_run_at`, lastStatus: sql`excluded.last_status`, updatedAt: sql`excluded.updated_at` },
+    });
   }
 
   return { implementationIds };

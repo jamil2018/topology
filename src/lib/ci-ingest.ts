@@ -13,6 +13,8 @@ import { upsertFailureSignature } from "@/lib/failure-signature-persist";
 import { refreshImplementationStatsForRun } from "@/lib/implementation-stats";
 import { immutableMessageFor, isRunFrozen } from "@/lib/run-immutability";
 
+import { resolveExternalLinks } from "./ci-ingest-batch";
+
 const INT4_MIN = -2_147_483_648;
 const INT4_MAX = 2_147_483_647;
 const CASE_KEY_LIMIT = 80;
@@ -242,28 +244,19 @@ async function replaceExternalResults(
     .delete(runResults)
     .where(and(eq(runResults.runId, runId), isNotNull(runResults.externalKey)));
 
-  for (const result of deduped) {
-    const { caseId, implementationId } = await findOrCreateCaseForExternal(
-      result,
-      userId,
-      workspaceId,
-      tx,
-    );
-    await tx.insert(runResults).values({
-      runId,
-      caseId,
-      implementationId,
-      externalKey: result.externalKey,
-      classname: result.classname,
-      title: result.name,
-      status: result.status,
-      notes: result.notes,
-      errorMessage: result.errorMessage?.trim() || null,
-      stack: result.stack?.trim() || null,
-      durationMs: clampDurationMs(result.durationMs),
-      executedById: userId,
-      executedAt: new Date(),
-    });
+  const links = await resolveExternalLinks(tx, deduped, workspaceId, userId, automationCaseKey);
+  const executedAt = new Date();
+  for (let offset = 0; offset < deduped.length; offset += 500) {
+    await tx.insert(runResults).values(deduped.slice(offset, offset + 500).map((result) => {
+      const link = links.get(automationCaseKey(result.externalKey));
+      if (!link) throw new CiIngestError(500, { error: "Missing imported case link" });
+      return {
+        runId, ...link, externalKey: result.externalKey, classname: result.classname,
+        title: result.name, status: result.status, notes: result.notes,
+        errorMessage: result.errorMessage?.trim() || null, stack: result.stack?.trim() || null,
+        durationMs: clampDurationMs(result.durationMs), executedById: userId, executedAt,
+      };
+    }));
   }
 
   return tx.query.runResults.findMany({

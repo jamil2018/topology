@@ -13,6 +13,7 @@ export function ReportExportActions({
   shareable?: boolean;
 }) {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { can } = useProjectActions();
   const { saving, submit } = useMutationFeedback(setError);
@@ -20,14 +21,26 @@ export function ReportExportActions({
   async function share() {
     if (!can("reports.create")) return;
     return submit(async () => {
-    setError(null);
-    const res = await fetch(`/api/reports/${runId}/share`, { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(typeof data.error === "string" ? data.error : "Could not share");
-      return;
-    }
-    setShareUrl(typeof data.url === "string" ? data.url : data.path);
+      setError(null);
+      setNotice(null);
+      const res = await fetch(`/api/reports/${runId}/share`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof data.error === "string" ? data.error : "Could not share");
+        return;
+      }
+      setShareUrl(typeof data.url === "string" ? data.url : data.path);
+    });
+  }
+
+  async function revoke() {
+    if (!can("reports.create")) return;
+    return submit(async () => {
+      setNotice(null);
+      const res = await fetch(`/api/reports/${runId}/share`, { method: "DELETE" });
+      if (!res.ok) { setError("Could not revoke share links. Try again."); return; }
+      setShareUrl(null);
+      setNotice("All earlier share links revoked.");
     });
   }
 
@@ -43,9 +56,14 @@ export function ReportExportActions({
         </a>
       ))}
       {shareable ? (
-        <Button size="sm" variant="secondary" isDisabled={saving || !can("reports.create")} onPress={() => void share()}>
-          Share link
-        </Button>
+        <>
+          <Button size="sm" variant="secondary" isDisabled={saving || !can("reports.create")} onPress={() => void share()}>
+            Share link
+          </Button>
+          <Button size="sm" variant="secondary" isDisabled={saving || !can("reports.create")} onPress={() => void revoke()}>
+            Revoke all share links
+          </Button>
+        </>
       ) : null}
       {shareUrl ? (
         <input
@@ -56,6 +74,7 @@ export function ReportExportActions({
           onFocus={(e) => e.currentTarget.select()}
         />
       ) : null}
+      {notice ? <span role="status" className="text-xs">{notice}</span> : null}
       {error ? (
         <span className="text-xs text-red-600 dark:text-red-300">{error}</span>
       ) : null}

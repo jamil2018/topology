@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 // desktop-1440 injects the admin session. /login then redirects home, so the
 // gate never reaches the email form it is asserting.
@@ -61,10 +61,9 @@ test("release gate: login → hub → case → run → fail → mock issue → t
 
   // Execute: start → fail first case → create mock issue
   const startBtn = page.getByRole("button", { name: "Start" });
-  if (await startBtn.isVisible()) {
-    await startBtn.click();
-    await expect(startBtn).toBeHidden({ timeout: 15_000 });
-  }
+  await expect(startBtn).toBeVisible();
+  await startBtn.click();
+  await expect(startBtn).toBeHidden({ timeout: 15_000 });
 
   await page.getByRole("button", { name: /Mark .+ as failed/ }).first().click();
   // Auto-advance leaves the next untested case focused. Wait for the

@@ -8,6 +8,8 @@
  *   npm run db:perf-bench
  */
 import "dotenv/config";
+import { writeFileSync } from "node:fs";
+import { cpus, totalmem } from "node:os";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db";
 import { workspaces } from "../src/db/schema";
@@ -41,6 +43,27 @@ async function main() {
   }
   const workspaceId = await resolveWorkspaceId();
   console.log(`Benchmarking workspace ${workspaceId}`);
+
+  // Ten warm-ups followed by 100 independent, measured page queries.
+  const fixture = await listCasesPage(workspaceId, { page: 1, limit: 50, sort: "key" });
+  if (process.env.TOPOLOGY_VALIDATION === "1" && fixture.total !== 50_000) {
+    throw new Error(`Performance gate requires exactly 50,000 cases; found ${fixture.total}`);
+  }
+  for (let i = 0; i < 10; i++) await listCasesPage(workspaceId, { page: 1, limit: 50, sort: "key" });
+  const samples: number[] = [];
+  for (let i = 0; i < 100; i++) {
+    const started = performance.now();
+    const page = await listCasesPage(workspaceId, { page: 1 + i % 10, limit: 50, sort: "key" });
+    samples.push(performance.now() - started);
+    if (page.items.length > 50) throw new Error("Cases list exceeded requested page size");
+  }
+  const sorted = [...samples].sort((a, b) => a - b);
+  const p95Ms = sorted[Math.ceil(sorted.length * 0.95) - 1];
+  const evidence = { scope: "database listCasesPage query (HTTP latency is a separate qualification)", cases: fixture.total,
+    warmups: 10, samples, p95Ms, budgetMs: 500, cpu: cpus()[0]?.model, memoryBytes: totalmem(), node: process.version };
+  if (process.env.PERF_OUTPUT) writeFileSync(process.env.PERF_OUTPUT, JSON.stringify(evidence, null, 2));
+  console.log(JSON.stringify(evidence));
+  if (p95Ms >= 500) throw new Error(`Cases list p95 ${p95Ms.toFixed(1)} ms exceeds 500 ms budget`);
 
   const page1 = await time("listCasesPage page=1 limit=10", () =>
     listCasesPage(workspaceId, { page: 1, limit: 10, sort: "key" }),

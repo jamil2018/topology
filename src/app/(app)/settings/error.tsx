@@ -3,16 +3,16 @@
 import { RouteError } from "@/components/route-error";
 
 export default function SettingsError({
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   return (
     <RouteError
       title="Settings failed to load"
       description="Unexpected error while loading workspace settings."
-      reset={reset}
+      retry={retry}
       backHref="/"
       backLabel="Back to hub"
     />

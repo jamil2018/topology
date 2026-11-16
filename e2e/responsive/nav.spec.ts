@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../fixtures";
 
 /**
  * `hub-shell.tsx` hides the desktop sidebar below Tailwind `lg` (1024px)

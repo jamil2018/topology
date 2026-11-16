@@ -1,38 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
-/**
- * Exact default
- * -------------
- * `npm run test:e2e` runs `playwright test --project=chromium` only.
- * `chromium` is Desktop Chrome, has no storageState, does not depend on
- * `setup`, and collects only `e2e/smoke.spec.ts` and
- * `e2e/release-gate.spec.ts`. Functional and other release specs stay out
- * of `npm run test:e2e` so that job keeps the demo-only seed
- * (`TOPOLOGY_SEED_MODE` unset).
- *
- * Release harness (needs `npm run db:seed:e2e` or `TOPOLOGY_SEED_MODE=e2e`
- * so member, viewer, and custom logins exist):
- *   playwright test --project=setup --project=desktop-1440
- * `setup` writes `e2e/.auth/{admin,member,viewer,custom}.json`.
- * `desktop-1440` is Desktop Chrome at 1440×900, uses the admin storageState,
- * depends on `setup`, and runs every spec except `auth.setup.ts`.
- * `grepInvert` `@responsive` keeps mobile-only tests off this project.
- * `@a11y` still runs here unless a test is also tagged `@responsive`.
- *
- * Viewport projects are not part of `npm run test:e2e`. Opt in with
- * `--project=<name>`. Each depends on `setup`, uses the admin storageState,
- * and runs only tests tagged `@responsive` or `@a11y`:
- *   mobile-390 (390×844), tablet-834 (834×1194), tablet-1194 (1194×834),
- *   laptop-1366 (1366×768), desktop-1920 (1920×1080).
- *
- * A bare `playwright test` (no `--project`) runs every project, including
- * `setup` and the viewport projects.
- */
-
+// Release validation uses a production build and owned fixtures. Development
+// execution is opt-in with PLAYWRIGHT_DEV_SERVER=1 for debugging only.
 const port = process.env.PORT ?? "4317";
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
 const adminStorageState = "e2e/.auth/admin.json";
-const ignoreAuthSetup = /auth\.setup\.ts/;
+const ignoreAuthSetup = /auth\.setup\.ts|onboarding\.spec\.ts|performance\.spec\.ts|visual\.spec\.ts|lighthouse\.spec\.ts/;
 const responsiveOrA11y = /@responsive|@a11y/;
 
 function taggedViewport(name: string, width: number, height: number) {
@@ -51,28 +24,55 @@ function taggedViewport(name: string, width: number, height: number) {
 
 export default defineConfig({
   testDir: "e2e",
+  snapshotPathTemplate: `{testDir}/{testFilePath}-snapshots/{arg}-{projectName}-${process.env.PLAYWRIGHT_SNAPSHOT_PLATFORM ?? process.platform}{ext}`,
+  outputDir: process.env.PLAYWRIGHT_OUTPUT_DIR ?? "test-results/browser",
   // Suites share seeded accounts, project selection, and saved preferences.
   fullyParallel: false,
   workers: 1,
-  forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 2 : 0,
+  forbidOnly: true,
+  retries: 0,
+  reporter: [["list"], ["html", { open: "never", outputFolder: process.env.PLAYWRIGHT_HTML_OUTPUT_DIR ?? "playwright-report" }], ["json", { outputFile: process.env.PLAYWRIGHT_JSON_OUTPUT_NAME ?? "test-results/playwright.json" }]],
   use: {
     baseURL,
-    trace: "on-first-retry",
+    connectOptions: process.env.PLAYWRIGHT_WS_ENDPOINT ? { wsEndpoint: process.env.PLAYWRIGHT_WS_ENDPOINT, exposeNetwork: "<loopback>" } : undefined,
+    trace: { mode: "retain-on-failure", screenshots: false, snapshots: true, sources: true },
+    screenshot: "off",
   },
   projects: [
+    {
+      name: "lighthouse",
+      testMatch: /lighthouse\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "visual",
+      dependencies: ["setup"],
+      testMatch: /visual\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: adminStorageState },
+    },
+    {
+      name: "performance",
+      dependencies: ["setup"],
+      testMatch: /performance\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], storageState: adminStorageState },
+    },
+    {
+      name: "onboarding",
+      testMatch: /onboarding\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
     {
       name: "setup",
       testMatch: /auth\.setup\.ts/,
     },
     {
-      name: "chromium",
+      name: "smoke",
       testMatch: [/smoke\.spec\.ts$/, /release-gate\.spec\.ts$/],
       testIgnore: ignoreAuthSetup,
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      name: "desktop-1440",
+      name: "chromium",
       dependencies: ["setup"],
       testIgnore: ignoreAuthSetup,
       grepInvert: /@responsive/,
@@ -82,6 +82,12 @@ export default defineConfig({
         storageState: adminStorageState,
       },
     },
+    ...(["firefox", "webkit"] as const).map((browserName) => ({
+      name: `${browserName}-core`,
+      dependencies: ["setup"],
+      testMatch: [/release-gate\.spec\.ts$/, /refinement\.spec\.ts$/, /functional\/reports\.spec\.ts$/],
+      use: { browserName, storageState: adminStorageState },
+    })),
     taggedViewport("mobile-390", 390, 844),
     taggedViewport("tablet-834", 834, 1194),
     taggedViewport("tablet-1194", 1194, 834),
@@ -91,9 +97,13 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
     ? undefined
     : {
-        command: `npm run dev -- --port ${port}`,
+        command: process.env.PLAYWRIGHT_DEV_SERVER === "1"
+          ? `npx next dev --webpack --port ${port} --hostname 127.0.0.1`
+          : process.env.PLAYWRIGHT_BUILD_READY === "1"
+            ? "node scripts/validation/start-production.mjs"
+            : "npm run build -- --webpack && node scripts/validation/start-production.mjs",
         url: baseURL,
-        reuseExistingServer: !process.env.CI,
-        timeout: 120_000,
+        reuseExistingServer: process.env.PLAYWRIGHT_DEV_SERVER === "1",
+        timeout: 300_000,
       },
 });

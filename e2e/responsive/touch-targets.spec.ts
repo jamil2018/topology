@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../fixtures";
 
 /**
  * WCAG 2.5.8 minimum on the primary shell header (`hub-shell.tsx`).

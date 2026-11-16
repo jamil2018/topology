@@ -213,7 +213,7 @@ export function StartRunWorkspace({
           </TextField>
         </div>
         <details open={optionsOpen} onToggle={(event) => setOptionsOpen(event.currentTarget.open)} className="rounded-md border border-[color:var(--topo-line)] p-3">
-          <summary className="cursor-pointer text-sm font-medium">Run options · {environment || "Environment required"} · {members.find((member) => member.id === assigneeId)?.label ?? (unavailableAssignee ? "Unavailable assignee" : "Unassigned")}</summary>
+          <summary className="cursor-pointer text-sm font-medium text-[color:var(--topo-ink)]">Run options · {environment || "Environment required"} · {members.find((member) => member.id === assigneeId)?.label ?? (unavailableAssignee ? "Unavailable assignee" : "Unassigned")}</summary>
           <div className="mt-3 space-y-3">
           <TextField name="run-notes" className="w-full">
             <Label>Notes</Label>

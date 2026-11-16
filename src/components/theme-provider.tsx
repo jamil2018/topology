@@ -127,6 +127,7 @@ async function persistThemeToServer(next: ThemePreference) {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { status } = useSession();
   const hydratedFromServer = useRef(false);
+  const userChoseTheme = useRef(false);
 
   const preference = useSyncExternalStore(
     subscribe,
@@ -141,6 +142,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       applyTheme(next);
       emit();
       if (options?.syncServer !== false && status === "authenticated") {
+        userChoseTheme.current = true;
         void persistThemeToServer(next);
       }
     },
@@ -154,7 +156,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [setPreference]);
 
   useEffect(() => {
-    if (status !== "authenticated" || hydratedFromServer.current) return;
+    if (status !== "authenticated") {
+      hydratedFromServer.current = false;
+      userChoseTheme.current = false;
+      return;
+    }
+    if (hydratedFromServer.current) return;
     hydratedFromServer.current = true;
     let cancelled = false;
     (async () => {
@@ -164,13 +171,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const data = (await res.json()) as {
           preferences?: { themePreference?: ThemePreference };
         };
+        // A delayed read must not replace a choice made while it was pending.
+        if (cancelled || userChoseTheme.current) return;
         const serverTheme = data.preferences?.themePreference;
         if (
           serverTheme === "light" ||
           serverTheme === "dark" ||
           serverTheme === "system"
         ) {
-          // Server wins for logged-in users; keep localStorage in sync
+          // Hydrate the persisted preference when no newer choice was made.
           setPreference(serverTheme, { syncServer: false });
         }
       } catch {

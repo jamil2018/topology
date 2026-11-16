@@ -1,0 +1,26 @@
+# Validation commands and evidence
+
+Run from the repository root with Node 22, Python 3 with pytest, Docker Compose v2 and Playwright browser binaries installed. The first run builds pinned upstream MinIO from source; it requires registry and Go module access. `npx playwright install chromium firefox webkit` installs the required browsers.
+
+- `npm run test:acceptance`: refuse a dirty/changed commit, run three consecutive sanity gates then release, and save `test-results/acceptance-final.json`.
+- `npm run test:sanity`: unit/component suites and critical Chromium smoke/release-gate journeys.
+- `npm run test:regression` (`test:all`): all deterministic unit/component, real PostgreSQL/MinIO handler integrations, Python and comprehensive Chromium.
+- `npm run test:e2e`: comprehensive Chromium; `test:e2e:smoke` preserves the old narrow selection.
+- `npm run test:core`: Firefox/WebKit core journeys.
+- `npm run test:release`: regression, cross-browser core, responsive/accessibility, visual, operations, Lighthouse and performance. See outstanding qualifications in todo.md before claiming acceptance.
+- `npm run test:live`: reads an existing sandbox issue for explicitly selected providers; without configuration it reports unqualified and exits nonzero. Set `TOPOLOGY_LIVE_PROVIDERS=github,jira,linear,gitlab`, each `TOPOLOGY_LIVE_<PROVIDER>_TOKEN` and `_ISSUE_ID`, plus `_REPO` for GitHub/GitLab and `_BASE_URL`/`_EMAIL` for Jira. OAuth, writes and AI remain separate qualifications.
+- `npm run test:inventory`: regenerate the coverage inventory and assertion-audit candidates. This does not mark coverage passed.
+- `npm run test:e2e:debug`: explicit development-server mode with automatically provisioned disposable services; it intentionally shares its debug fixture and is not release evidence.
+
+Each harness invocation provisions a random Compose project with loopback-only dynamic ports, owned disposable volumes (deleted on teardown); its container browser mounts only node_modules read-only. It creates distinct seeded/onboarding/migration/visual/Lighthouse/performance/restore databases and a temporary attachment directory. Cleanup runs in finally and on graceful interruption. SIGKILL/host crashes cannot run cleanup; remove the named `topology-validation-<id>` project with `docker compose -f scripts/validation/compose.yml -p <exact-project> down --volumes` after inspecting ownership. No developer database is reset. Each integration file and seeded browser test receives a pristine database clone. Browser tests also get a separate production-server process; the auth setup uses the phase server. Fixtures create unique projects/cases and remove them even on failure.
+
+`test-results/validation-<id>/summary.json` records commit, dirty state, environment, command timings, failures and retries; numbered logs redact generated credentials. Playwright records masked failure screenshots, failure traces without embedded screenshots, per-phase JSON and HTML. Textual artifacts and trace archives are redacted before completion; passwords, bearer/cookie headers, generated API tokens and signed share tokens are removed. Only disposable credentials are used. New artifact shapes still require review before external distribution. All reports contain synthetic data. Never run this harness against production services.
+
+Integration boundaries: most existing tests call route handlers directly with mocked session identity. Those are persistence/handler checks. Real login/cookies and public report access are exercised by Playwright. Automated axe checks do not qualify screen-reader or native zoom behavior. Visual baselines need human inspection before acceptance. Optional live checks are never silently treated as passed.
+
+
+Visual fixtures use deterministic UUID defaults and fixed UTC dates in an owned database, a fixed browser clock, explicit themes and reduced motion. Reports select all time so their contents remain populated and stable as the real authentication clock advances. `test:visual` and `test:visual:linux` use the matching official Playwright Noble container and loopback forwarding on every host. Release evaluation uses that same renderer. Generate candidates with `-- --update-snapshots`, inspect every candidate and then run without that flag to compare. The inspected baseline set is Linux-only so host OS font differences do not change the reference.
+
+Useful focused commands: `npm run test:e2e -- e2e/functional/reports.spec.ts e2e/ux/errors.spec.ts`, `npm run test:onboarding`, `npm run test:ops`, `npm run test:performance`, `npm run test:lighthouse`, `npm run test:container`.
+
+`test:core` and the release browser matrix use the pinned Linux browser service, avoiding host Firefox profile and font differences. Linux/WebKit is engine evidence, not native Safari certification. Runtime HSTS is conditional on an HTTPS AUTH_URL; actual TLS termination and production Compose require the deployment manual qualification. Webhook delivery is best-effort in-process with three bounded transient retries (100/300 ms delay); it is not a durable background queue. Configured HMAC signs every identical delivery attempt; receivers should deduplicate X-Topology-Delivery. Empty-secret endpoints retain optional unsigned compatibility.

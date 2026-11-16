@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "../fixtures";
 
 /** `THEME_STORAGE_KEY` in `src/components/theme-provider.tsx`. */
 const THEME_STORAGE_KEY = "topology-theme";

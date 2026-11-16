@@ -24,20 +24,10 @@ async function focusedInsideDialog(page: Page): Promise<boolean> {
   });
 }
 
-/**
- * Assert a skip link when the product renders one.
- * Absence is A11Y-SKIP-001 in `e2e/a11y/GAPS.md` and does not fail the test.
- */
+/** The first tab stop must bypass repeated navigation. */
 async function assertSkipLinkIfPresent(page: Page, route: string) {
   const skip = page.getByRole("link", { name: /skip/i });
-  if ((await skip.count()) === 0) {
-    test.info().annotations.push({
-      type: "A11Y-SKIP-001",
-      description: `No skip link on ${route}. See e2e/a11y/GAPS.md.`,
-    });
-    return;
-  }
-
+  await expect(skip, `Missing skip link on ${route}`).toHaveCount(1);
   const link = skip.first();
   await page.keyboard.press("Tab");
   await expect(link).toBeFocused();

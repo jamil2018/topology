@@ -3,12 +3,19 @@ import { ReportDetail } from "@/components/report-detail";
 import { getRunReport } from "@/lib/queries";
 import { verifyShareToken } from "@/lib/tcm/share-token";
 
+import { isReportShareActive } from "@/lib/tcm/report-share";
+
+// Public links must consult persisted revocation state on every request.
+export const dynamic = "force-dynamic";
+
 type Props = { params: Promise<{ token: string }> };
 
 export default async function SharedReportPage({ params }: Props) {
   const { token } = await params;
   const verified = verifyShareToken(decodeURIComponent(token));
   if (!verified.ok || verified.payload.kind !== "run") notFound();
+
+  if (!(await isReportShareActive(verified.payload))) notFound();
 
   const report = await getRunReport(
     verified.payload.workspaceId,

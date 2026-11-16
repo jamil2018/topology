@@ -13,10 +13,7 @@ test("logged-out login page offers email sign-in", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "Topology" })).toBeVisible();
 
-  const oauth = page.getByRole("button", { name: /Continue with / });
-  if ((await oauth.count()) > 0) {
-    await expect(oauth.first()).toBeVisible();
-  }
+  await expect(page.getByRole("button", { name: /Continue with / })).toHaveCount(0);
 
   await revealEmailForm(page);
   await expect(page.getByLabel("Password")).toBeVisible();
@@ -52,4 +49,24 @@ test("sign out returns to the login page", async ({ asAdmin }) => {
   await expect(asAdmin.getByLabel("Email")).toBeVisible();
 });
 
-test.fixme("first-run /setup redirects to /login while any user exists, so admin creation cannot run without destroying the seeded database", async () => {});
+test("completed setup redirects a guest to login", async ({ page }) => {
+  await page.goto("/setup");
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+
+test("login fields wait for hydration before accepting input", async ({ page }) => {
+  let release!: () => void;
+  const scripts = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/_next/static/**/*.js", async (route) => { await scripts; await route.continue(); });
+  try {
+    await page.goto("/login", { waitUntil: "commit" });
+    await expect(page.getByLabel("Email")).toBeDisabled();
+    await expect(page.getByLabel("Password")).toBeDisabled();
+  } finally { release(); }
+  await expect(page.getByLabel("Email")).toBeEnabled();
+  await page.getByLabel("Email").fill(USERS.admin.email);
+  await page.getByLabel("Password").fill(USERS.admin.password);
+  await page.getByRole("button", { name: "Sign in with email" }).click();
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
+});
