@@ -1,3 +1,4 @@
+import { strFromU8, unzipSync } from "fflate";
 /**
  * Security guards that do not need a browser or a running dev server.
  *
@@ -91,8 +92,9 @@ describe("CSV formula injection", () => {
       [{ key: "title", header: "Title" }],
       [{ title: "=cmd" }],
     );
-    expect(sheet).toContain('ss:Type="String">=cmd');
-    expect(sheet).not.toContain("ss:Formula");
+    const xml = strFromU8(unzipSync(sheet)["xl/worksheets/sheet1.xml"]);
+    expect(xml).toContain('t="inlineStr"><is><t xml:space="preserve">=cmd');
+    expect(xml).not.toContain("<f>");
   });
 });
 

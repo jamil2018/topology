@@ -148,35 +148,47 @@ describe.skipIf(!hasDb)("outbound webhooks (integration)", () => {
     expect(urls.some((target) => target.includes("::1"))).toBe(false);
   });
 
-  it("sends an unsigned body when the secret is empty and does not retry a 500", async () => {
-    const url = "http://8.8.8.4/hooks/topology-unsigned";
-    await insertEndpoint({
-      url,
-      secret: "",
-      events: "run.completed",
-    });
-
-    const fetchImpl = vi.fn(async () => new Response("nope", { status: 500 }));
+  it("retries transient failures with the same signed delivery and persists success", async () => {
+    const url = "http://8.8.8.4/hooks/retry";
+    const endpoint = await insertEndpoint({ url, secret: "retry-secret", events: "run.completed" });
+    let count = 0;
+    const fetchImpl = vi.fn(async () => new Response("response", { status: ++count < 3 ? 500 : 200 }));
     installFetch(fetchImpl as unknown as typeof fetch);
     const { dispatchWebhook } = await import("@/lib/webhooks");
-    const payload = await dispatchWebhook(
-      "run.completed",
-      { run: { id: "unsigned" } },
-      workspaceId,
-    );
-    await vi.waitFor(() => {
-      expect(callsTo(fetchImpl, url).length).toBe(1);
+    const payload = await dispatchWebhook("run.completed", { run: { id: "retry" } }, workspaceId);
+    const { db } = await import("@/db");
+    const { webhookEndpoints } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+    await vi.waitFor(async () => {
+      expect((await db.query.webhookEndpoints.findFirst({ where: eq(webhookEndpoints.id, endpoint.id) }))?.lastStatus).toBe(200);
     });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(callsTo(fetchImpl, url)).toHaveLength(1);
-    const headers = callsTo(fetchImpl, url)[0]?.[1]?.headers as Record<
-      string,
-      string
-    >;
-    expect(headers["X-Topology-Signature"]).toBeUndefined();
-    expect(headers["X-Topology-Event"]).toBe("run.completed");
-    expect(String(callsTo(fetchImpl, url)[0]?.[1]?.body ?? "")).toContain(
-      payload.id,
-    );
+    const calls = callsTo(fetchImpl, url);
+    expect(calls).toHaveLength(3);
+    expect(new Set(calls.map((call) => call[1]?.body)).size).toBe(1);
+    for (const call of calls) {
+      const body = String(call[1]?.body);
+      const headers = call[1]?.headers as Record<string, string>;
+      expect(headers["X-Topology-Delivery"]).toBe(payload.id);
+      expect(headers["X-Topology-Signature"]).toBe(`sha256=${createHmac("sha256", "retry-secret").update(body).digest("hex")}`);
+      expect(call[1]?.redirect).toBe("manual");
+    }
   });
+
+  for (const status of [404, 500]) {
+    it(`bounds retries for HTTP ${status} and records the final failure`, async () => {
+      const url = `http://8.8.8.4/hooks/failure-${status}`;
+      const endpoint = await insertEndpoint({ url, secret: "failure-secret", events: "run.completed" });
+      const fetchImpl = vi.fn(async () => new Response("failed", { status }));
+      installFetch(fetchImpl as unknown as typeof fetch);
+      const { dispatchWebhook } = await import("@/lib/webhooks");
+      await dispatchWebhook("run.completed", {}, workspaceId);
+      const { db } = await import("@/db");
+      const { webhookEndpoints } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+      await vi.waitFor(async () => {
+        expect((await db.query.webhookEndpoints.findFirst({ where: eq(webhookEndpoints.id, endpoint.id) }))?.lastStatus).toBe(status);
+      });
+      expect(callsTo(fetchImpl, url)).toHaveLength(status === 404 ? 1 : 3);
+    });
+  }
 });

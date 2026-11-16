@@ -23,61 +23,25 @@ Demo credentials (air-gap / OAuth unset): `demo@topology.local` / `topology-demo
 
 ## Tests
 
+Validation requires Node 22, Python 3 + pytest, Docker Compose v2, and Playwright browsers (`npx playwright install chromium firefox webkit`). The harness provisions disposable PostgreSQL/MinIO services and temporary attachments, and cleans up its own resources after failures. Never reset the developer database for tests.
+
 | Layer | Command | Notes |
 | --- | --- | --- |
-| Unit | `npm run test:unit` | Vitest (`vitest.packages.config.ts`) — domain, roles, CSV, packages |
-| Unit watch | `npm run test:watch` | Same config |
-| UI | `npm run test:ui` | Vitest + Testing Library component tests |
-| Integration | `npm run test:integration` | Vitest API/DB/CLI/MCP (needs Postgres on :54329). RBAC in this suite needs `npm run db:seed:e2e`. |
-| E2E smoke | `npm run test:e2e` | Playwright `--project=chromium` (`e2e/smoke.spec.ts`, `e2e/release-gate.spec.ts`) with the demo seed. Start `npm run dev` first, or let Playwright boot the app. |
-| All | `npm run test:all` | unit + integration + ui + e2e smoke |
+| Unit | `npm run test:unit` | Deterministic business rules and package contracts |
+| Components | `npm run test:ui` | Interactions, validation, focus and rollback |
+| Integration | `npm run test:integration` | All PostgreSQL/MinIO handler, CLI and MCP checks; no missing-service skips |
+| Comprehensive browser | `npm run test:e2e` | Chromium with real authentication on a production standalone server |
+| Smoke | `npm run test:e2e:smoke` | Original two-spec smoke/release-gate selection |
+| Sanity | `npm run test:sanity` | Unit/component and critical Chromium journeys |
+| Regression / all | `npm run test:regression` / `test:all` | Unit/component/integration/Python and comprehensive Chromium |
+| Release | `npm run test:release` | Regression, Firefox/WebKit core, responsive/a11y, visual, operations, Lighthouse and measured scale |
+| Optional live | `npm run test:live` | Explicit sandbox-provider read qualification |
 
-### Release gate
+`test:e2e:debug` is the explicit development-server option against a separately prepared disposable database. Release checks never reuse a development server and never retry failed tests. A selected suite with skipped or retry-only browser outcomes fails its gate.
 
-The GitHub Actions job `release-gate` in `.github/workflows/ci.yml` is the umbrella check on every push and pull request to `main`. It exits 0 when lint, typecheck, build, unit, integration, `api-security`, Playwright desktop (`e2e`), and Playwright viewports (`e2e-viewport`) all succeed. A failed dependency fails the gate.
+CI runs lint, typecheck, inventory, deterministic regression and cross-browser core on pull requests. Scheduled/manual evaluation adds the heavier release gates. `release-gate` requires every selected job to succeed. Reports are uploaded on success and failure and include commit, dirty state, environment, command timing, skips and retry history. High/critical production dependency advisories fail the checks job; the integration suite checks the built client bundle for secret assignments.
 
-Run this before tagging a release (and keep it green on `main`):
-
-```bash
-docker compose up -d   # or the documented postgres:16 container on :54329
-cp .env.example .env.local
-npm install
-npm run db:migrate && npm run db:seed
-
-npm run lint
-npm run typecheck
-npm run build
-
-npm run test:unit
-npm run test:ui
-npm run test:e2e
-```
-
-`npm run test:e2e` is the chromium smoke project and uses the demo user from `npm run db:seed`. Release Playwright and the RBAC integration file need the e2e seed. `npm run db:seed:e2e` sets `TOPOLOGY_SEED_MODE=e2e` and adds member, viewer, custom, and the extra projects on top of the demo data.
-
-```bash
-npm run db:seed:e2e
-npm run test:integration
-npx playwright test --project=setup --project=desktop-1440
-npx playwright test --project=setup \
-  --project=mobile-390 \
-  --project=tablet-834 \
-  --project=tablet-1194 \
-  --project=laptop-1366 \
-  --project=desktop-1920
-```
-
-`setup` writes `e2e/.auth/{admin,member,viewer,custom}.json`. `desktop-1440` runs the release specs. The viewport projects `mobile-390`, `tablet-834`, `tablet-1194`, `laptop-1366`, and `desktop-1920` run tests tagged `@responsive` or `@a11y`. CI shards those five projects across two runners (`--shard=1/2` and `--shard=2/2`) and uploads the Playwright HTML report and traces when a Playwright job fails.
-
-CI's integration job keeps `npm run db:migrate` and the demo seed (`npm run db:seed`), then runs `npm run test:integration` with `tests/integration/rbac.integration.test.ts` excluded. The `api-security` job uses the same Postgres service on port 54329, runs `npm run db:seed:e2e`, and runs that RBAC file together with the security integration tests, the unauthenticated route sweep, and the webhook, CLI, and MCP integration tests in one Vitest invocation. After `next build`, CI greps `.next/static` for assigned `JIRA_API_TOKEN`, `AUTH_GITHUB_SECRET`, `LINEAR_API_KEY`, and `GITLAB_TOKEN`. The build job also runs `npm audit --omit=dev --audit-level=high` and writes high and critical advisories to the job summary for triage. Issue providers stay on `TOPOLOGY_ISSUE_PROVIDER=mock`; OAuth IdPs are not contacted in CI.
-
-CI should keep unit tests green on every PR. Postgres in CI is the workflow service container.
-
-### Auth in tests
-
-- Unit tests do not hit live OAuth.
-- E2E smoke uses the email/password demo path (OAuth buttons only appear when env secrets are set).
-- Release Playwright `--project=setup` signs in as the e2e admin, member, viewer, and custom users from `npm run db:seed:e2e`.
+See [validation commands and evidence](tasks/validation/README.md), [release plan](docs/test-plan.md), and [remaining qualifications](tasks/todo.md). Initial/changed visual baselines require inspection. Native zoom, screen-reader behavior and live provider writes require separate recorded qualifications. Three clean retry-free sanity runs and a complete release evaluation on the final revision are required for acceptance.
 
 ## Env secrets
 

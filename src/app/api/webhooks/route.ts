@@ -5,10 +5,14 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { webhookEndpoints } from "@/db/schema";
 import { readJsonBody } from "@/lib/http-errors";
-import { roleHasAction } from "@/lib/permissions";
 import { requireProjectAccess } from "@/lib/project";
 import { recordAuditEvent } from "@/lib/audit";
 import { dispatchWebhook, webhookUrlError } from "@/lib/webhooks";
+
+function publicEndpoint(row: typeof webhookEndpoints.$inferSelect) {
+  const { secret, ...rest } = row;
+  return { ...rest, hasSecret: Boolean(secret) };
+}
 
 const webhookUrl = z.string().refine((value) => webhookUrlError(value) === null, {
   message:
@@ -32,13 +36,8 @@ export async function GET(request: Request) {
     orderBy: [desc(webhookEndpoints.createdAt)],
   });
 
-  const includeSecret = roleHasAction(access.ctx.actions, "webhooks.manage");
   return NextResponse.json({
-    endpoints: endpoints.map((row) => {
-      if (includeSecret) return row;
-      const { secret: _secret, ...rest } = row;
-      return rest;
-    }),
+    endpoints: endpoints.map(publicEndpoint),
     envFallback: Boolean(process.env.TOPOLOGY_WEBHOOK_URL?.trim()),
   });
 }
@@ -133,7 +132,7 @@ export async function POST(request: Request) {
     metadata: { url: row.url, events: row.events },
   });
 
-  return NextResponse.json({ endpoint: row });
+  return NextResponse.json({ endpoint: publicEndpoint(row) });
 }
 
 const patchSchema = z.object({
@@ -198,7 +197,7 @@ export async function PATCH(request: Request) {
     targetId: updated.id,
     request,
   });
-  return NextResponse.json({ endpoint: updated });
+  return NextResponse.json({ endpoint: publicEndpoint(updated) });
 }
 
 const deleteSchema = z.object({

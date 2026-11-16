@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { expect, test as setup } from "@playwright/test";
+import { expect, test as setup } from "./fixtures";
 import {
   E2E_DEMO_USER,
   E2E_STORAGE_STATE,

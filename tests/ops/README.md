@@ -1,6 +1,6 @@
 # Ops checks
 
-These checks need Docker, MinIO, a browser, or a large database. They are not part of `npm test` or `npm run test:integration`. Opt-in scripts exit successfully unless the flag named below is set. Do not run the performance commands in CI.
+Current automated operational gates are `npm run test:ops`, `test:performance` and `test:lighthouse`, included in `test:release` and scheduled/manual CI. They provision disposable owned services. The historical standalone/manual recipes below are retained for reference; they are not permission to reset a developer database. See [current commands and evidence](../../tasks/validation/README.md).
 
 Database for local integration tests:
 
@@ -112,7 +112,7 @@ npx vitest run --config vitest.integration.config.ts tests/integration/s3-attach
 
 ## Performance budgets
 
-Do not run these as part of CI or `npm run test:all`. The bench script prints timings. It does not fail the process when a budget is missed.
+`test:release` runs measured performance against an isolated 50k-case database. `scripts/perf-bench.ts` records raw samples and enforces the cases-list p95 budget; `e2e/performance.spec.ts` enforces HTTP list, executor and ingest budgets. Heavy performance is excluded from deterministic `test:all` and runs in scheduled/manual release CI.
 
 Seed and measure:
 

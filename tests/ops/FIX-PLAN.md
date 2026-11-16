@@ -1,5 +1,8 @@
 # Fix plan
 
+> Historical 2026-11-06 record retained below. Current implementation/evidence is tracked in `tasks/validation/findings.md`, `tasks/validation/feature-families.md` and the final acceptance manifests. The old fixme/seed/a11y/image status is not a statement about the current tree. Webhook retry and missing headers were re-confirmed and repaired in this revision; optional empty-secret HMAC remains an explicit compatibility contract. Native/TLS/live qualifications remain separate.
+
+
 No-go. The previously failing P0 defects were not cleared. WebKit reproduced SEED-DEMO-001, RBAC-VIEW-001, and RUN-POINTER-001. Lighthouse Accessibility was under 100 on `/cases` and the run page. The production image did not build. Do not weaken tests. Leave the three `test.fixme` specs as fixme.
 
 Retest the Chromium release gate with:

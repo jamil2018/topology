@@ -42,7 +42,7 @@ export function runExportResponse(input: {
     const body = buildXlsx(input.title, RUN_EXPORT_COLUMNS, input.rows);
     return fileResponse(
       `${base}.xlsx`,
-      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       body,
     );
   }
@@ -78,7 +78,7 @@ export function milestoneExportResponse(input: {
   if (input.format === "xlsx") {
     return fileResponse(
       `${base}.xlsx`,
-      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       buildXlsx("Milestones", MILESTONE_EXPORT_COLUMNS, input.rows),
     );
   }

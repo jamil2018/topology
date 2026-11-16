@@ -4,7 +4,7 @@ import path from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
-    setupFiles: ["./vitest.setup.ts"],
+    setupFiles: ["./vitest.setup.ts", "./tests/integration/setup.ts"],
     include: [
       "tests/integration/**/*.integration.test.ts",
       "src/**/*.integration.test.ts",

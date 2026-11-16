@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../fixtures";
 import { SHORTCUTS } from "../../src/lib/shortcuts";
 
 async function blurEditable(page: import("@playwright/test").Page) {

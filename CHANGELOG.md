@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add isolated production validation with explicit sanity, regression, release and optional live-provider commands, stable visual references, operations and measured scale gates.
+- Add audited report share revocation, real XLSX workbooks and paginated PDF exports.
+- Batch automation ingestion and rolling statistics, repair server-boundary retry, theme/login hydration races, and production reconciliation packaging.
+- Add response security headers and runtime HTTPS-origin HSTS through the Next proxy convention; keep webhook secrets write-only and retry transient deliveries at most three times.
+- Let documented CLI coverage, impact, query and git-ingest bearer requests reach their scoped handlers without a session redirect.
+
+
 ### Added
 
 - TestRail, Qase, Zephyr Scale, and Xray case importers with mapping preview and dry run ([docs/import.md](docs/import.md))

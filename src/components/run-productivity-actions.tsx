@@ -41,7 +41,7 @@ export function RunProductivityActions({ run }: { run: RunDetail }) {
     finally { saveLock.current = false; setSaving(false); }
   }
   return <details className="rounded-lg border border-[color:var(--topo-line)] p-3">
-    <summary className="cursor-pointer text-sm font-medium">Reuse this run · Retest history{failures.length ? ` · ${failures.length} failures or blockers` : ""}</summary>
+    <summary className="cursor-pointer text-sm font-medium text-[color:var(--topo-ink)]">Reuse this run · Retest history{failures.length ? ` · ${failures.length} failures or blockers` : ""}</summary>
     {can("runs.create") ? <div className="mt-3 space-y-3">
       <div className="topo-toolbar"><label>Template name <input value={name} onChange={(event) => setName(event.target.value)} /></label><Button size="sm" variant="secondary" isDisabled={saving || unavailableCases.length > 0 || !name.trim() || !run.results.length} onPress={() => void save()}>Save as template</Button></div>
       {unavailableCases.length ? <p className="text-sm">{unavailableCases.length} results have no executable case. Create a reviewed retest and link those failures before saving a reusable selection.</p> : null}

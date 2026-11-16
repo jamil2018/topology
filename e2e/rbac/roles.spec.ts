@@ -9,10 +9,7 @@ const roleStorageReady = (["member", "viewer", "custom"] as const).every(
 
 test.describe("role access", () => {
   test.beforeEach(() => {
-    test.skip(
-      !roleStorageReady,
-      "Role storage states are written by the Playwright setup project",
-    );
+    expect(roleStorageReady, "Role storage states must be written by the required setup project").toBe(true);
   });
 
   test("viewer loads test cases without a usable create control", async ({

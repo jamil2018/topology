@@ -4,7 +4,7 @@ Open-source, self-hosted TestRail alternative with a Linear-grade UX and AI-nati
 
 ## Screenshot
 
-Product screenshots are not in the repository yet. After the quickstart below, the app is at [http://127.0.0.1:4317](http://127.0.0.1:4317).
+Controlled light/dark regression snapshots are in [the visual baseline directory](e2e/visual.spec.ts-snapshots/). They use synthetic fixture data. After the quickstart below, the app is at [http://127.0.0.1:4317](http://127.0.0.1:4317).
 
 ## Why Topology vs TestRail / Qase / Kiwi
 
@@ -102,6 +102,11 @@ Tracker tokens stay server-side. Do not put them in the browser or in the MCP pr
 | `npm run dev` | Next.js on port 4317 |
 | `npm run build` | Production build |
 | `npm run lint` | ESLint |
+| `npm run test:sanity` | Unit/component checks and critical Chromium journeys in disposable services |
+| `npm run test:regression` / `test:all` | Deterministic unit/component, integration, Python and comprehensive Chromium |
+| `npm run test:e2e` / `test:e2e:smoke` | Comprehensive Chromium / narrow smoke selection |
+| `npm run test:release` | Regression, core Firefox/WebKit, responsive/a11y, visual, operational and measured scale gates |
+| `npm run test:live` | Opt-in sandbox issue-provider read qualification |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run db:migrate` | Apply journaled Drizzle migrations (`0000_baseline`) |
 | `npm run db:seed` | Seed demo user, workspace, cases, run, milestone, token |
@@ -115,3 +120,7 @@ Production self-hosting: [docs/deploy.md](docs/deploy.md). Tests and the release
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 Hasnat Jamil and Topology contributors.
 
 [Contributing](CONTRIBUTING.md) · [Deploy](docs/deploy.md) · [Import](docs/import.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md)
+
+Report owners can revoke all earlier share links from a report; new links remain usable. Apply database migrations before running the updated app. Public pages and exports check persisted revocation generations. XLSX downloads are Office Open XML workbooks; PDF reports paginate through all rows.
+
+The production app sends CSP, frame denial, nosniff and no-referrer headers. Configure AUTH_URL to the public HTTPS origin to enable runtime HSTS; TLS terminator configuration still needs deployment verification. Webhook secrets are write-only; configured HMAC signs each attempt. Transient webhook failures retry at most three times using the same delivery ID; delivery is best-effort in-process.

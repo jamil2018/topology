@@ -3,10 +3,10 @@
 import Link from "next/link";
 
 export default function ReportsError({
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   return (
     <div
@@ -22,7 +22,7 @@ export default function ReportsError({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={reset}
+          onClick={retry}
           className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)]"
         >
           Try again

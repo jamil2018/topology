@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 // desktop-1440 injects the admin session and /login redirects to the hub.
 // These two tests assert the logged-out form. Health does not need a session.

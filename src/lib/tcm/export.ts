@@ -1,3 +1,5 @@
+import { strToU8, zipSync } from "fflate";
+
 const FORMULA_START = /^[=+\-@]/;
 
 export type ExportColumn = { key: string; header: string };
@@ -32,41 +34,25 @@ function xmlEscape(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** SpreadsheetML 2003 workbook — Excel, Sheets, and Numbers open this as XLSX/XML. */
+/** An Office Open XML workbook with explicitly typed, formula-safe cells. */
 export function buildXlsx(
   sheetName: string,
   columns: readonly ExportColumn[],
   rows: ReadonlyArray<Record<string, unknown>>,
-): string {
-  const name = xmlEscape(sheetName.slice(0, 31) || "Sheet1");
-  const header = `<Row>${columns
-    .map(
-      (c) =>
-        `<Cell ss:StyleID="header"><Data ss:Type="String">${xmlEscape(c.header)}</Data></Cell>`,
-    )
-    .join("")}</Row>`;
-  const body = rows
-    .map((row) => {
-      const cells = columns
-        .map((c) => {
-          const raw = row[c.key];
-          if (typeof raw === "number" && Number.isFinite(raw)) {
-            return `<Cell><Data ss:Type="Number">${raw}</Data></Cell>`;
-          }
-          const text = raw == null ? "" : String(raw);
-          return `<Cell><Data ss:Type="String">${xmlEscape(text)}</Data></Cell>`;
-        })
-        .join("");
-      return `<Row>${cells}</Row>`;
-    })
-    .join("");
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-<Styles><Style ss:ID="header"><Font ss:Bold="1"/></Style></Styles>
-<Worksheet ss:Name="${name}"><Table>${header}${body}</Table></Worksheet>
-</Workbook>
-`;
+): Uint8Array {
+  const name = xmlEscape(sheetName.replace(/[\[\]:*?/\\]/g, " ").replace(/^'+|'+$/g, "").slice(0, 31) || "Sheet1");
+  const cell = (value: unknown) => typeof value === "number" && Number.isFinite(value)
+    ? `<c><v>${value}</v></c>`
+    : `<c t="inlineStr"><is><t xml:space="preserve">${xmlEscape(value == null ? "" : String(value)).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")}</t></is></c>`;
+  const data = [columns.map((column) => column.header), ...rows.map((row) => columns.map((column) => row[column.key]))];
+  const worksheet = `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${data.map((values, index) => `<row r="${index + 1}">${values.map(cell).join("")}</row>`).join("")}</sheetData></worksheet>`;
+  return zipSync({
+    "[Content_Types].xml": strToU8(`<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`),
+    "_rels/.rels": strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
+    "xl/workbook.xml": strToU8(`<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${name}" sheetId="1" r:id="rId1"/></sheets></workbook>`),
+    "xl/_rels/workbook.xml.rels": strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`),
+    "xl/worksheets/sheet1.xml": strToU8(worksheet),
+  }, { level: 6 });
 }
 
 function pdfEscape(text: string): string {
@@ -91,7 +77,7 @@ function wrapLine(text: string, width = 90): string[] {
   return lines;
 }
 
-/** Minimal single-page-stream PDF (Helvetica) for report text. */
+/** Paginated PDF (Helvetica) for report text. */
 export function buildPdf(title: string, lines: readonly string[]): Uint8Array {
   const wrapped: string[] = [];
   wrapped.push(...wrapLine(title, 70));
@@ -99,19 +85,22 @@ export function buildPdf(title: string, lines: readonly string[]): Uint8Array {
   for (const line of lines) {
     wrapped.push(...wrapLine(line, 90));
   }
-  const contentLines: string[] = ["BT", "/F1 12 Tf", "50 760 Td", "14 TL"];
-  for (const line of wrapped.slice(0, 48)) {
-    contentLines.push(`(${pdfEscape(line)}) '`);
-  }
-  contentLines.push("ET");
-  const stream = contentLines.join("\n");
+  const pageCount = Math.max(1, Math.ceil(wrapped.length / 48));
+  const fontId = 3 + pageCount * 2;
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
-    `<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}\nendstream`,
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${3 + i * 2} 0 R`).join(" ")}] /Count ${pageCount} >>`,
   ];
+  for (let i = 0; i < pageCount; i += 1) {
+    const contentLines = ["BT", "/F1 12 Tf", "50 760 Td", "14 TL",
+      ...wrapped.slice(i * 48, (i + 1) * 48).map((line) => `(${pdfEscape(line)}) '`), "ET"];
+    const stream = contentLines.join("\n");
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${4 + i * 2} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`,
+      `<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}\nendstream`,
+    );
+  }
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   let body = "%PDF-1.4\n";
   const offsets = [0];
   for (let i = 0; i < objects.length; i += 1) {

@@ -13,16 +13,15 @@ Prove that a self-hosted Topology 0.1.x instance can be set up, signed into, and
 ### In scope
 
 - The Next.js app on `http://127.0.0.1:4317` (pages under `src/app`, including `(app)`, `login`, `setup`, `invite`, `share`, and `connect`).
-- HTTP APIs under `src/app/api` (84 route modules).
+- HTTP APIs under `src/app/api` (enumerated by method in `tasks/validation/inventory.json`).
 - Workspace roles and the action catalog in `src/lib/permissions.ts`.
 - API token scopes `read`, `ci-write`, and `agent`.
 - CLI (`packages/cli`), MCP (`packages/mcp`), reporters (`@topology/playwright`, `@topology/jest`, `@topology/cypress`, pytest in `packages/pytest-topology`), issue providers (`@topology/issue-providers`), outbound webhooks, and S3-compatible attachments.
-- Docker image, `docker-compose.prod.yml`, journaled migrations `0000_baseline` through `0003_quality_graph_pref`, backup and restore, and the performance budgets in [OPS](#8-ops-deploy-and-data).
-- Chromium only. `npm run test:e2e` runs the `chromium` project. The release suite is `desktop-1440` after the e2e seed. Viewport projects are opt-in. See [Environments](#2-environments-and-setup).
+- Docker image, `docker-compose.prod.yml`, journaled migrations `0000_baseline` through `0006_report_share_generation`, backup and restore, and the performance budgets in [OPS](#8-ops-deploy-and-data).
+- Comprehensive Chromium plus required Firefox/WebKit core journeys. Release evaluation includes responsive/accessibility, visual and scale checks. See [Environments](#2-environments-and-setup).
 
 ### Out of scope
 
-- **Firefox and WebKit.** They are a known gap for 0.1.x. Do not file a release-blocking defect solely because a flow fails outside Chromium. Record a note if someone happens to try them. They are not a release gate.
 - Hosted multi-tenant SaaS, billing, and a public demo reset.
 - Helm. Production packaging under test is the container image and Compose file in [docs/deploy.md](deploy.md).
 - Live calls to GitHub, Google, Jira, Linear, GitLab, or a real LLM. OAuth buttons are checked for visibility only. Issue providers other than `mock` are contract-tested with HTTP mocked.
@@ -42,37 +41,17 @@ Ship 0.1.x only when all of the following are true:
 
 ## 2. Environments and setup
 
-### Runtime
-
-| Item | Value |
-| --- | --- |
-| Node.js | 22 (CI major; local Node 20+ can smoke-test, release evidence uses 22) |
-| Database | PostgreSQL 16 via `docker compose up -d` |
-| Host port | `54329` (`DATABASE_URL=postgresql://topology:topology@127.0.0.1:54329/topology`) |
-| Migrate | `npm run db:migrate` (journaled Drizzle, `drizzle/meta/_journal.json`) |
-| App | `npm run dev` → [http://127.0.0.1:4317](http://127.0.0.1:4317) |
-| Health | `GET /api/health` and `GET /health` return HTTP 200 when Postgres answers |
-| Issue provider | `TOPOLOGY_ISSUE_PROVIDER=mock` |
-| Seed mode for this plan | `TOPOLOGY_SEED_MODE=e2e` or `npm run db:seed:e2e`. Default `npm run db:seed` does not create the e2e users. |
-| Attachments (default) | `ATTACHMENTS_DRIVER=local`, `ATTACHMENTS_DIR=./data/attachments` |
-| AI | `TOPOLOGY_AI_PROVIDER=none` (unset is the same) |
-| OAuth | Unset for the default run, so email/password is the primary login |
-
-Copy `.env.example` to `.env.local`. Set `AUTH_SECRET` (`openssl rand -base64 32`) and `AUTH_URL=http://127.0.0.1:4317`. Then:
+Release validation uses Node 22, Python 3 + pytest, Docker Compose v2 and installed Playwright browsers. Run `npm ci` then `npx playwright install chromium firefox webkit`. The harness builds pinned upstream MinIO from source and needs network access on its first run.
 
 ```bash
-docker compose up -d
-npm install
-npm run db:migrate
-npm run db:seed:e2e
-npm run dev
+npm run test:sanity
+npm run test:regression
+npm run test:release
 ```
 
-`npm run db:seed:e2e` sets `TOPOLOGY_SEED_MODE=e2e`. `TOPOLOGY_SEED_MODE=e2e npm run db:seed` is the same e2e seed. Default `npm run db:seed` does not create the e2e users, Harbor Beta, Foreign Project, or the e2e tokens.
+The harness creates unique disposable PostgreSQL/MinIO services, distinct onboarding/seeded/migration/visual/Lighthouse/performance/restore databases, and temporary attachments. It migrates and seeds only its own databases and cleans them up after success or failure. Never reset the developer database. Browser gates run a production webpack build and the standalone server; `test:e2e:debug` explicitly selects development mode against a separately prepared disposable database.
 
-`npm run db:seed` refuses to run when `NODE_ENV=production` unless `TOPOLOGY_ALLOW_DEMO_SEED=1` ([SEC-SECRET-003](#sec-secret-003--demo-seed-refuses-production)). `TOPOLOGY_SEED_MODE=bootstrap` creates only the first admin and no demo cases ([OPS-BOOT-001](#ops-boot-001--bootstrap-seed-creates-only-the-admin)).
-
-Do not point release tests at a developer database that already has folders. The demo seed skips case inserts when any folder exists. Use a fresh volume or drop the `topology` database before `db:migrate` and `db:seed`.
+See [commands and evidence](../tasks/validation/README.md). External-provider qualification is opt-in through `test:live`; manual screen-reader/native zoom checks remain unqualified until executed with the prerequisites listed below.
 
 ### E2E seed contract
 
@@ -105,55 +84,17 @@ The process environment variable `TOPOLOGY_API_TOKEN` is not a bearer credential
 
 ### Playwright projects
 
-Config: `playwright.config.ts`. Browser: Chromium.
+- `setup`: real login for admin/member/viewer/custom accounts.
+- `chromium`: comprehensive seeded functional, security, UX and accessibility checks. This is `test:e2e`.
+- `smoke`: the original smoke and release-gate selection, now `test:e2e:smoke`.
+- `firefox-core`, `webkit-core`: critical execution and public-report journeys.
+- `mobile-390`, `tablet-834`, `tablet-1194`, `laptop-1366`, `desktop-1920`: responsive/accessibility checks.
+- `onboarding`: first-admin creation and login against an empty database.
+- `performance`: measured 50k cases, 5k executor results, 10k-result ingest.
+- `visual`: controlled light/dark primary screens, dialog and empty-state snapshots against a separate fixture database.
+- `lighthouse`: authenticated production home, cases and run budgets.
 
-`npm run test:e2e` runs `playwright test --project=chromium` only. `chromium` is Desktop Chrome, has no storage state, does not depend on `setup`, and ignores `e2e/auth.setup.ts`. The config does not restrict `testMatch` yet, so `chromium` collects `e2e/smoke.spec.ts`, `e2e/release-gate.spec.ts`, and any other spec under `e2e/` except `auth.setup.ts`. That matches a CI database seeded with the demo user only (`TOPOLOGY_SEED_MODE` unset). When `testMatch` is restricted, `chromium` is expected to run `e2e/smoke.spec.ts` and `e2e/release-gate.spec.ts` only.
-
-The release suite runs after the e2e seed (`npm run db:seed:e2e` or `TOPOLOGY_SEED_MODE=e2e`):
-
-```bash
-npx playwright test --project=setup --project=desktop-1440
-```
-
-| Project | What it runs |
-| --- | --- |
-| `setup` | Signs in as admin, member, viewer, and custom. Writes `e2e/.auth/admin.json`, `e2e/.auth/member.json`, `e2e/.auth/viewer.json`, and `e2e/.auth/custom.json`. There is no storage state for `other@`. |
-| `chromium` | What `npm run test:e2e` runs. No storage state. Does not depend on `setup`. Collects every spec except `auth.setup.ts` until `testMatch` is limited to `e2e/smoke.spec.ts` and `e2e/release-gate.spec.ts`. |
-| `desktop-1440` | Release suite. Desktop Chrome at 1440×900. Uses the admin storage state at `e2e/.auth/admin.json`. Depends on `setup`. Runs every spec except `auth.setup.ts`. |
-| `mobile-390` | Opt-in. Grep `@responsive` or `@a11y`. Viewport 390×844. Depends on `setup`. Admin storage state `e2e/.auth/admin.json`. |
-| `tablet-834` | Same tags. Viewport 834×1194. Depends on `setup`. Same admin storage state. |
-| `tablet-1194` | Same tags. Viewport 1194×834. Depends on `setup`. Same admin storage state. |
-| `laptop-1366` | Same tags. Viewport 1366×768. Depends on `setup`. Same admin storage state. |
-| `desktop-1920` | Same tags. Viewport 1920×1080. Depends on `setup`. Same admin storage state. |
-
-Viewport projects are not part of `npm run test:e2e`. Opt in with `--project=<name>`. Each depends on `setup`, uses `e2e/.auth/admin.json`, and greps `@responsive` or `@a11y`.
-
-A bare `npx playwright test` with no `--project` runs every project, including `setup` and the viewport projects.
-
-Each functional spec creates its own entities with a `Date.now()` suffix so reruns do not collide.
-
-```bash
-npx playwright test --project=mobile-390 --project=tablet-834 --project=tablet-1194 --project=laptop-1366 --project=desktop-1920
-```
-
-Integration and ops:
-
-```bash
-npm run test:integration
-# ops scripts and tests live under tests/ops/
-```
-
-### How to read a case
-
-Every case has an ID, priority, area, preconditions, steps, expected result, and an automation pointer.
-
-- **P0** blocks the release.
-- **P1** should pass. A failure needs a written defect before it can be waived.
-- **P2** is nice to have.
-
-"Signed in as admin" means `demo@topology.local` on the Harbor project unless the case names someone else. Button names are the accessible names in the UI. Result status buttons expose `Mark <case key> as passed|failed|blocked|skipped|untested` and visible labels Passed, Failed, Blocked, Skipped, Untested.
-
-Keyboard shortcuts come from `src/lib/shortcuts.ts`. They do not fire while focus is in `input`, `textarea`, `select`, `contenteditable`, or `role="textbox|searchbox|combobox"`. Escape still closes a panel from inside a field. Go-chords are `G` then a second key within 1000 ms.
+Retries are disabled. Every selected required service must pass preflight. Artifacts include JSON/HTML results, redacted logs/traces, masked failure screenshots and browser diagnostics. The matrix records **not run** until assertion review and actual execution evidence are reconciled.
 
 ## 3. Priority scheme
 
@@ -1006,7 +947,7 @@ Import page: `/cases/import`. Buttons: **Preview mapping**, **Dry run**, **Impor
 - **Area:** Reports
 - **Preconditions:** A share token from [FN-REP-003](#fn-rep-003--unauthenticated-share-link).
 - **Steps:**
-  1. Revoke the share in the report UI (or the revoke API on that share row).
+  1. Select **Revoke all share links** in the report UI, or `DELETE /api/reports/<id>/share` with `reports.create` permission.
   2. Open `/share/reports/<token>` again with no session.
   3. Guess a second token by changing one character.
 - **Expected:** The revoked URL does not show results (404 or a dedicated revoked message). The guessed token does not show results. Tokens are long and unguessable ([SEC-SHARE-001](#sec-share-001--share-token-entropy-and-revocation)).
@@ -1639,7 +1580,7 @@ Automation: `e2e/security/*.spec.ts` and `tests/integration/security.integration
 
 Public routes that may answer without a session cookie: `/api/health`, `/health`, `/api/auth/*`, `/login`, `/setup` and `/api/setup` only while no admin exists, `/api/invites/<token>`, `/invite/<token>`, `/share/reports/<token>`, `/api/share/reports/<token>/export`, and `POST /api/webhooks/github` (which still fails closed). Token routes (`/api/ci/*`, `/api/agent`, `/api/executions`, `/api/releases`, `/api/query`, `/api/affected`, `/api/coverage`, `/api/git/ingest`) are not anonymous: they require a bearer token and must not redirect to `/login`.
 
-`src/auth.config.ts` currently lets `/api/ci`, `/api/agent`, `/api/executions`, `/api/releases`, health, invites, setup, auth, and GitHub webhooks through middleware without a session. Handlers still authenticate. Routes the CLI calls that are not in that middleware allowlist must be added if they 302 to `/login` when a bearer token is present. That bug fails [RBAC-TOK-002](#rbac-tok-002--ci-write-scope) and [SEC-UNAUTH-003](#sec-unauth-003--token-routes-reject-a-missing-bearer).
+`src/auth.config.ts` currently lets `/api/ci`, `/api/agent`, `/api/executions`, `/api/releases`, health, invites, setup, auth, and GitHub webhooks through middleware without a session. Handlers still authenticate. Exact `/api/affected`, `/api/coverage`, `/api/query` and `/api/git/ingest` paths are also explicitly allowed through proxy interception; handlers authenticate and enforce token scopes. Any future CLI route missing from that allowlist must be added if it redirects a valid bearer request to login. That bug fails [RBAC-TOK-002](#rbac-tok-002--ci-write-scope) and [SEC-UNAUTH-003](#sec-unauth-003--token-routes-reject-a-missing-bearer).
 
 ### SEC-UNAUTH-001 — Unauthenticated sweep of every API method
 
@@ -2019,7 +1960,7 @@ Public routes that may answer without a session cookie: `/api/health`, `/health`
 - **Steps:**
   1. `GET /login`, `GET /`, and `GET /api/health`. Record response headers.
   2. On the HTTPS origin, repeat `GET /login`.
-- **Expected:** Every HTML and API response is supposed to include all of the following. These headers are not implemented. A missing header is logged as this defect at release time. Do not treat the gap as untested, do not `test.skip` the case, and do not describe the headers as already present:
+- **Expected:** Every HTML and API response must include the following baseline. Implemented in next.config.ts and the runtime HTTPS-origin proxy policy; verify over real HTTP/TLS rather than inferring a pass from configuration:
   - **Content-Security-Policy** with a restrictive `default-src` and `frame-ancestors` (or `frame-ancestors 'none'`).
   - **X-Frame-Options** (`DENY` or `SAMEORIGIN`) or CSP `frame-ancestors` covering the same threat. At least one of the two mechanisms must be present; shipping neither is this defect.
   - **X-Content-Type-Options:** `nosniff`.
@@ -2976,7 +2917,7 @@ Journal files:
   1. Issue 100 authenticated list requests after 10 warm-up requests.
   2. Compute p95 latency on the server side (time to first byte of the JSON).
 - **Expected:** p95 under **500 ms**. The payload is a page (limit at most 100), not 50,000 rows. A p95 at or above 500 ms fails the case. Record the actual number in the test output.
-- **Automation:** `tests/ops/perf.test.ts`
+- **Automation:** `e2e/performance.spec.ts`
 
 ### OPS-PERF-002 — Run executor usable at 5,000 results
 
@@ -2988,7 +2929,7 @@ Journal files:
   2. Click **Passed** on the first result.
   3. Scroll to result 2500 and click **Failed**.
 - **Expected:** "Usable" means all of: first meaningful paint of the executor under 2 s on the reference machine after the HTML arrives; the status click's API round trip p95 under 500 ms; the main thread does not block for more than 200 ms on the click that selects the next row. The virtual list does not mount 5,000 DOM rows (DOM node count for the list stays in the low hundreds).
-- **Automation:** `tests/ops/perf.test.ts`
+- **Automation:** `e2e/performance.spec.ts`
 
 ### OPS-PERF-003 — JUnit ingest of 10,000 testcases under 30 s
 
@@ -2999,7 +2940,7 @@ Journal files:
   1. `POST /api/ci/junit` and time the response.
   2. `GET` the run and count results.
 - **Expected:** The POST completes in under **30 seconds** and returns success. The run has 10,000 results (or 10,000 deduped names if the generator used unique names). The process does not OOM. A timeout fails the case.
-- **Automation:** `tests/ops/perf.test.ts`
+- **Automation:** `e2e/performance.spec.ts`
 
 ### OPS-LH-001 — Lighthouse on hub, cases, and a run
 
@@ -3012,19 +2953,19 @@ Journal files:
   2. Lighthouse `/cases`.
   3. Lighthouse `/runs/<seeded id>`.
 - **Expected:** Performance ≥ 90, Best Practices ≥ 90, Accessibility 100, on each URL. SEO is not a gate. If Accessibility is under 100, the failing audit must also be filed against the matching `A11Y-*` case. Do not average the three pages.
-- **Automation:** Manual checklist [Lighthouse](#lighthouse).
+- **Automation:** `e2e/lighthouse.spec.ts`; manual checklist [Lighthouse](#lighthouse) remains available.
 
-### OPS-MW-001 — Next middleware file is still the supported convention
+### OPS-MW-001 — Auth interceptor uses the installed Next convention
 
 - **Priority:** P1
 - **Area:** Ops
-- **Preconditions:** Dependencies installed. Auth middleware is `src/middleware.ts`, which re-exports `NextAuth(authConfig).auth` and a `config.matcher`.
+- **Preconditions:** Dependencies installed. Auth interception is `src/proxy.ts`, wrapping NextAuth and preserving config.matcher; it also sets runtime-origin HSTS.
 - **Steps:**
   1. Read the Next.js docs shipped in this install under `node_modules/next/dist/docs/` for middleware (search for `middleware` and for a renamed convention such as `proxy`).
-  2. Confirm `src/middleware.ts` is the file Next is actually executing (request log, or a header the middleware sets).
+  2. Confirm `src/proxy.ts` is the file Next is actually executing (request log, or a header the middleware sets).
   3. If the docs mark `middleware.ts` as deprecated or renamed, file a defect. Do not move the file during the test.
 - **Expected:** Either the docs still describe `middleware.ts` as the request interceptor and the file runs, or a written defect names the replacement file convention and the release note. A silent ignore is not allowed: Next 16 may deprecate this file, and skipping the check would leave auth unenforced after an upgrade. Tie header work to the same place: if headers are added in middleware, they have to move with it ([SEC-HEADERS-001](#sec-headers-001--security-headers-are-present)).
-- **Automation:** `tests/ops/middleware-convention.test.ts`
+- **Automation:** `e2e/security/session.spec.ts` and `e2e/security/api.spec.ts`
 
 ### OPS-BROW-001 — Chromium-only statement
 
@@ -3092,9 +3033,9 @@ Journal files:
 | Docker and Compose | OPS-DOCKER-001, OPS-COMPOSE-001 | `tests/ops/docker.test.ts`, `tests/ops/compose.test.ts` |
 | Migrations and bootstrap | OPS-MIG-001 – OPS-MIG-004, OPS-BOOT-001 | `tests/ops/migrate.test.ts`, `tests/ops/bootstrap.test.ts` |
 | Backup and restore | OPS-BAK-001 | Manual |
-| Performance | OPS-PERF-001 – OPS-PERF-003 | `tests/ops/perf.test.ts` |
+| Performance | OPS-PERF-001 – OPS-PERF-003 | `e2e/performance.spec.ts` |
 | Lighthouse | OPS-LH-001 | Manual |
-| Middleware convention | OPS-MW-001 | `tests/ops/middleware-convention.test.ts` |
+| Middleware convention | OPS-MW-001 | `e2e/security/session.spec.ts` and `e2e/security/api.spec.ts` |
 | Browser support note | OPS-BROW-001 | `tests/ops/browser-support.test.ts` |
 
 ## 6. Defects, severity, and security header policy
@@ -3130,11 +3071,11 @@ Record one S1 defect for each of these when it is absent on `/login`, `/`, and `
 
 Title them `SEC-HEADERS-001: missing <header>`. Do not mark the case skipped, expected-fail, or passing with a comment. Do not describe the headers as already implemented.
 
-These headers are absent from the current `next.config.ts` / middleware path. That is the defect to log.
+The baseline headers are configured in `next.config.ts`; HSTS is applied by `src/proxy.ts` only for the configured HTTPS AUTH_URL. HTTP localhost does not qualify TLS/HSTS deployment. Missing headers remain defects.
 
 ### Middleware convention
 
-Authentication for the app is wired in `src/middleware.ts` (NextAuth, with the allowlist in `src/auth.config.ts`). Next 16 may deprecate `middleware.ts` or rename that convention. [OPS-MW-001](#ops-mw-001--next-middleware-convention) reads `node_modules/next/dist/docs/` on the installed Next version and fails if the docs say this file is no longer the interceptor. File an S2 defect (S1 if the file is already not executing, because that means routes are unprotected). Do not relocate auth during a test run. If security headers are added in this file, they must be part of the same migration.
+Authentication for the app is wired in `src/proxy.ts` (NextAuth, with the allowlist in `src/auth.config.ts`). Installed Next 16.4.6 deprecates middleware.ts in favor of proxy.ts; the migration is implemented. [OPS-MW-001](#ops-mw-001--next-middleware-convention) reads `node_modules/next/dist/docs/` on the installed Next version and fails if the docs say this file is no longer the interceptor. File an S2 defect (S1 if the file is already not executing, because that means routes are unprotected). Do not relocate auth during a test run. If security headers are added in this file, they must be part of the same migration.
 
 ## 7. Manual-only checklists
 
@@ -3253,3 +3194,54 @@ Counts for this document:
 | **Total** | **220** | |
 
 Manual-only cases, which automation must not mark passed on its own: **A11Y-SR-001**, **A11Y-SR-002**, **SEC-ZAP-001**, **OPS-BAK-001**, **OPS-LH-001**.
+
+## Validation suite revision — 2026-11-16
+
+The current implementation checklist and evidence take precedence over historical command descriptions above: [plan](../tasks/plan.md), [checklist](../tasks/todo.md), [commands and limitations](../tasks/validation/README.md), [coverage inventory](../tasks/validation/coverage-matrix.md), [findings](../tasks/validation/findings.md). Existing case IDs remain unchanged.
+
+`test:e2e` now selects comprehensive Chromium after authentication setup; `test:e2e:smoke` preserves the previous two-spec selection. All release browser commands build and start production by default, with retries disabled and no server reuse. Firefox/WebKit core checks are required in CI. The harness provisions its own disposable services; never drop or reset the developer database. Migrations now include `0006_report_share_generation`. Report share links can be revoked per report; generation zero covers legacy links.
+
+A successful test command alone does not satisfy the full release acceptance criteria. Unreviewed inventory entries, manual qualifications, skipped tests, visual baseline inspection, and missing operational/performance evidence remain open until explicitly evaluated. Require three clean retry-free sanity runs and one full release evaluation on the final revision.
+
+### VAL-PROD-001 — Template review, launch and retest lineage
+
+- **Priority:** P0
+- **Expected:** Template review launches a new run without changing the source; retest selection excludes unmapped cases, creates untested results, and preserves source failures and lineage.
+- **Automation:** `e2e/refinement.spec.ts`, `tests/integration/productivity.integration.test.ts`.
+- **Manual qualification:** With a seeded instance, complete the review → launch → fail → select → retest journey and inspect both source and retest after reload.
+
+### VAL-PROD-002 — Isolated authoring and HTTP project isolation
+
+- **Priority:** P0
+- **Expected:** Unique project/case fixtures persist after reload; another project's viewer cannot read the authored case; teardown removes the entire test project even after failure.
+- **Automation:** `e2e/functional/isolated-authoring.spec.ts`.
+- **Manual qualification:** Inspect project-switching clarity and keyboard behavior with two separately authenticated users.
+
+### VAL-AUTO-001 — Batched ingestion preserves identity and statistics
+
+- **Priority:** P0
+- **Expected:** Crossing a 500-result batch boundary preserves every deduped result, authored intent links, project boundaries and legacy case-linked history. Concurrent runs share existing identities; a failed result write rolls back graph changes. Seven- and thirty-day rollups retain independently verified counts and percentiles.
+- **Automation:** `tests/integration/ingest-batch.integration.test.ts`, `e2e/performance.spec.ts`.
+- **Manual qualification:** Inspect the resulting automation run and reliability reports after a 10k-result ingest; compare the exported results to the input fixture.
+
+### VAL-SEC-001 — HTTP token scopes and revocation
+
+- **Priority:** P0
+- **Expected:** Read, ci-write and agent scopes remain disjoint where required; revoked credentials return 401; newly issued tokens stop working immediately after real HTTP revocation.
+- **Automation:** `e2e/security/api.spec.ts`, `tests/integration/mcp-scopes.integration.test.ts`.
+- **Manual qualification:** Qualify external MCP client transport/scopes with a separately installed consumer; mocked in-process transport tests do not establish that result.
+
+### VAL-VIS-001 — Stable light/dark visual baselines
+
+- **Priority:** P1
+- **Expected:** Primary screens, populated reports, long content, case details/authoring, empty and server-error states match inspected baselines. Fixture IDs/dates and browser time are controlled; authentication retains its real clock.
+- **Automation:** `e2e/visual.spec.ts`.
+- **Manual qualification:** Inspect every new or changed baseline on the named renderer before acceptance. Native zoom and screen-reader checks remain separate.
+
+### VAL-PROD-003 — Authored matrix execution through retest reporting
+
+- **Priority:** P0
+- **Preconditions:** Disposable seeded production app; a unique project with its own authenticated admin.
+- **Steps:** Author a ready case; create a two-browser/one-OS matrix plan through authenticated HTTP; launch and inspect both persisted runs; execute one failure in the UI; complete it; inspect triage; create a retest from that failure; pass and complete the retest; reload; export and view its report.
+- **Expected:** Exactly two matrix runs each snapshot the authored case. Retest starts untested, passes, remains passed after reload, and exports exactly one passed case. The original result keeps its failed ID/status. Triage and report show the persisted authored case/run.
+- **Automation:** `e2e/functional/plans.spec.ts` (combined author → matrix plan → failure → triage → retest → report test).

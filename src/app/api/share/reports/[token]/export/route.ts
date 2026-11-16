@@ -6,6 +6,10 @@ import { getRunReport } from "@/lib/queries";
 import { parseExportFormat, runExportResponse } from "@/lib/tcm/export-http";
 import { verifyShareToken } from "@/lib/tcm/share-token";
 
+import { isReportShareActive } from "@/lib/tcm/report-share";
+
+export const dynamic = "force-dynamic";
+
 type Params = { params: Promise<{ token: string }> };
 
 export async function GET(request: Request, { params }: Params) {
@@ -16,6 +20,9 @@ export async function GET(request: Request, { params }: Params) {
   }
   if (verified.payload.kind !== "run") {
     return NextResponse.json({ error: "Not a run report" }, { status: 400 });
+  }
+  if (!(await isReportShareActive(verified.payload))) {
+    return NextResponse.json({ error: "Share link revoked" }, { status: 403 });
   }
   const format = parseExportFormat(
     new URL(request.url).searchParams.get("format"),

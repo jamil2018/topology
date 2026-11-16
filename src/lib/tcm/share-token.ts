@@ -6,6 +6,8 @@ export type ReportSharePayload = {
   workspaceId: string;
   targetId: string;
   exp: number;
+  /** Absent on legacy links, which belong to generation zero. */
+  generation?: number;
 };
 
 function shareSecret(explicit?: string): string {
@@ -73,10 +75,13 @@ export function verifyShareToken(
     if (payload.v !== 1 || (payload.kind !== "run" && payload.kind !== "milestone")) {
       return { ok: false, error: "Invalid share link" };
     }
-    if (!payload.workspaceId || !payload.targetId) {
+    if (typeof payload.workspaceId !== "string" || typeof payload.targetId !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.workspaceId) ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.targetId) ||
+        (payload.generation !== undefined && (!Number.isSafeInteger(payload.generation) || payload.generation < 0))) {
       return { ok: false, error: "Invalid share link" };
     }
-    if (typeof payload.exp !== "number" || payload.exp <= now) {
+    if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp) || payload.exp <= now) {
       return { ok: false, error: "Share link expired" };
     }
     return { ok: true, payload };
@@ -86,3 +91,8 @@ export function verifyShareToken(
 }
 
 export const SHARE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Call only after signature verification; legacy tokens have generation zero. */
+export function matchesShareGeneration(payload: ReportSharePayload, generation: number): boolean {
+  return (payload.generation ?? 0) === generation;
+}

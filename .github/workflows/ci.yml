@@ -1,18 +1,17 @@
-name: CI
-
+name: Validation
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
+  workflow_dispatch:
+  schedule:
+    - cron: "20 1 * * 1"
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: validation-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
-  lint:
-    name: ESLint
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,278 +21,44 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
-
-  build:
-    name: Next.js build
-    runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: postgresql://topology:topology@127.0.0.1:54329/topology
-      AUTH_SECRET: topology-ci-secret-not-for-production
-      AUTH_URL: http://127.0.0.1:4317
-      TOPOLOGY_ISSUE_PROVIDER: mock
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - run: npm run test:inventory
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      # High and critical advisories are reported and must be triaged.
-      # continue-on-error is only on this step: npm audit --audit-level=high
-      # already exits 1 on pre-existing findings, and those must not fail the
-      # release gate. Exit 1 is an advisory report. Any other status is a
-      # command or script error and fails the job in the next step.
-      - name: npm audit
-        id: npm-audit
-        continue-on-error: true
-        run: |
-          set +e
-          npm audit --omit=dev --audit-level=high | tee "$RUNNER_TEMP/npm-audit.txt"
-          status=${PIPESTATUS[0]}
-          set -e
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          if [ "$status" -ne 0 ]; then
-            {
-              echo "## npm audit"
-              echo
-              echo "High and critical advisories are reported and must be triaged."
-              echo
-              echo '```'
-              cat "$RUNNER_TEMP/npm-audit.txt"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-          exit "$status"
-      - name: Fail on npm audit command errors
-        if: steps.npm-audit.outcome == 'failure' && steps.npm-audit.outputs.status != '1'
-        run: |
-          echo "npm audit exited ${{ steps.npm-audit.outputs.status }}."
-          echo "Advisory reports exit 1 and are triaged from the job summary. Any other status is a command or script error."
-          exit 1
-      - run: npm run build
-      - name: Client bundle secret scan
-        run: |
-          if [ ! -d .next ]; then
-            echo ".next was not produced; skipping client bundle secret scan."
-            exit 0
-          fi
-          if [ ! -d .next/static ]; then
-            echo ".next/static is absent; skipping client bundle secret scan."
-            exit 0
-          fi
-          pattern='(^|[^A-Za-z0-9_])(JIRA_API_TOKEN|AUTH_GITHUB_SECRET|LINEAR_API_KEY|GITLAB_TOKEN)["'\'']?[[:space:]]*[:=]'
-          set +e
-          grep -R -n -E --binary-files=text "$pattern" .next/static
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
-            echo "Client bundle assigns a secret env name."
-            exit 1
-          fi
-          if [ "$status" -ne 1 ]; then
-            echo "Bundle secret scan failed (grep status $status)."
-            exit "$status"
-          fi
-          echo "No assigned secret env names in .next/static."
-
-  unit:
-    name: Unit + UI tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: npm run test:unit
-      - run: npm run test:ui
-
-  integration:
-    name: Integration tests
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: topology
-          POSTGRES_PASSWORD: topology
-          POSTGRES_DB: topology
-        ports:
-          - 54329:5432
-        options: >-
-          --health-cmd "pg_isready -U topology -d topology"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgresql://topology:topology@127.0.0.1:54329/topology
-      AUTH_SECRET: topology-ci-secret-not-for-production
-      AUTH_URL: http://127.0.0.1:4317
-      DEMO_USER_EMAIL: demo@topology.local
-      DEMO_USER_PASSWORD: topology-demo
-      TOPOLOGY_API_TOKEN: topo_demo_token_local_dev_only
-      TOPOLOGY_URL: http://127.0.0.1:4317
-      TOPOLOGY_ISSUE_PROVIDER: mock
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      # db:seed uses tsx --env-file=.env.local; CI env already supplies vars
-      - run: touch .env.local
-      - run: npm run db:migrate
-      - run: npm run db:seed
-      # RBAC throws without the e2e users. api-security runs that file after db:seed:e2e.
-      - run: npm run test:integration -- --exclude "**/rbac.integration.test.ts"
-
-  api-security:
-    name: API security
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: topology
-          POSTGRES_PASSWORD: topology
-          POSTGRES_DB: topology
-        ports:
-          - 54329:5432
-        options: >-
-          --health-cmd "pg_isready -U topology -d topology"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgresql://topology:topology@127.0.0.1:54329/topology
-      AUTH_SECRET: topology-ci-secret-not-for-production
-      AUTH_URL: http://127.0.0.1:4317
-      DEMO_USER_EMAIL: demo@topology.local
-      DEMO_USER_PASSWORD: topology-demo
-      TOPOLOGY_API_TOKEN: topo_demo_token_local_dev_only
-      TOPOLOGY_URL: http://127.0.0.1:4317
-      TOPOLOGY_ISSUE_PROVIDER: mock
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: touch .env.local
-      - run: npm run db:migrate
-      - run: npm run db:seed:e2e
-      - name: RBAC, security, webhook, CLI, and MCP tests
-        run: |
-          npx vitest run --config vitest.integration.config.ts \
-            tests/integration/rbac.integration.test.ts \
-            tests/integration/security.integration.test.ts \
-            tests/integration/security/unauth-sweep.integration.test.ts \
-            tests/integration/webhooks.integration.test.ts \
-            tests/integration/cli-ingest.integration.test.ts \
-            tests/integration/mcp-scopes.integration.test.ts \
-            tests/integration/issues-mcp.integration.test.ts
-
-  e2e:
-    name: Playwright desktop
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: topology
-          POSTGRES_PASSWORD: topology
-          POSTGRES_DB: topology
-        ports:
-          - 54329:5432
-        options: >-
-          --health-cmd "pg_isready -U topology -d topology"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgresql://topology:topology@127.0.0.1:54329/topology
-      AUTH_SECRET: topology-ci-secret-not-for-production
-      AUTH_URL: http://127.0.0.1:4317
-      DEMO_USER_EMAIL: demo@topology.local
-      DEMO_USER_PASSWORD: topology-demo
-      TOPOLOGY_API_TOKEN: topo_demo_token_local_dev_only
-      TOPOLOGY_URL: http://127.0.0.1:4317
-      TOPOLOGY_ISSUE_PROVIDER: mock
-      CI: true
-      PORT: "4317"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: touch .env.local
-      - run: npm run db:migrate
-      - run: npm run db:seed:e2e
-      - name: Playwright setup and desktop-1440
-        run: npx playwright test --project=setup --project=desktop-1440 --reporter=dot --reporter=html
-        env:
-          PLAYWRIGHT_BASE_URL: http://127.0.0.1:4317
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-desktop
+          name: coverage-inventory
           path: |
-            playwright-report/
-            test-results/
-          if-no-files-found: ignore
-          retention-days: 14
-
-  e2e-viewport:
-    name: Playwright viewports
+            tasks/validation/
+  regression:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: topology
-          POSTGRES_PASSWORD: topology
-          POSTGRES_DB: topology
-        ports:
-          - 54329:5432
-        options: >-
-          --health-cmd "pg_isready -U topology -d topology"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgresql://topology:topology@127.0.0.1:54329/topology
-      AUTH_SECRET: topology-ci-secret-not-for-production
-      AUTH_URL: http://127.0.0.1:4317
-      DEMO_USER_EMAIL: demo@topology.local
-      DEMO_USER_PASSWORD: topology-demo
-      TOPOLOGY_API_TOKEN: topo_demo_token_local_dev_only
-      TOPOLOGY_URL: http://127.0.0.1:4317
-      TOPOLOGY_ISSUE_PROVIDER: mock
-      CI: true
-      PORT: "4317"
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: python3 -m pip install pytest
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:regression
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: regression-evidence
+          path: |
+            test-results/
+            playwright-report/
+            tasks/validation/
+          retention-days: 14
+  cross-browser-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -301,66 +66,59 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: touch .env.local
-      - run: npm run db:migrate
-      - run: npm run db:seed:e2e
-      - name: Playwright viewport and a11y shard
-        run: |
-          npx playwright test \
-            --project=setup \
-            --project=mobile-390 \
-            --project=tablet-834 \
-            --project=tablet-1194 \
-            --project=laptop-1366 \
-            --project=desktop-1920 \
-            --shard=${{ matrix.shard }}/2 \
-            --reporter=dot \
-            --reporter=html
-        env:
-          PLAYWRIGHT_BASE_URL: http://127.0.0.1:4317
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:core
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: playwright-viewport-shard-${{ matrix.shard }}
+          name: cross-browser-evidence
           path: |
-            playwright-report/
             test-results/
-          if-no-files-found: ignore
+            playwright-report/
           retention-days: 14
-
+  release-evaluation:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: python3 -m pip install pytest
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:release
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-evidence
+          path: |
+            test-results/
+            playwright-report/
+            tasks/validation/
+          retention-days: 30
   release-gate:
     name: Release gate
-    runs-on: ubuntu-latest
     if: always()
-    needs:
-      - lint
-      - typecheck
-      - build
-      - unit
-      - integration
-      - api-security
-      - e2e
-      - e2e-viewport
+    needs: [checks, regression, cross-browser-core, release-evaluation]
+    runs-on: ubuntu-latest
     steps:
-      - name: Require every gate job
+      - name: Require selected evaluations
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          REGRESSION: ${{ needs.regression.result }}
+          CORE: ${{ needs.cross-browser-core.result }}
+          RELEASE: ${{ needs.release-evaluation.result }}
+          EVENT: ${{ github.event_name }}
         run: |
-          fail=0
-          check() {
-            name="$1"
-            result="$2"
-            echo "$name: $result"
-            if [ "$result" != "success" ]; then
-              fail=1
-            fi
-          }
-          check lint "${{ needs.lint.result }}"
-          check typecheck "${{ needs.typecheck.result }}"
-          check build "${{ needs.build.result }}"
-          check unit "${{ needs.unit.result }}"
-          check integration "${{ needs.integration.result }}"
-          check api-security "${{ needs.api-security.result }}"
-          check e2e "${{ needs.e2e.result }}"
-          check e2e-viewport "${{ needs.e2e-viewport.result }}"
-          exit "$fail"
+          test "$CHECKS" = success
+          test "$REGRESSION" = success
+          test "$CORE" = success
+          if [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ]; then
+            test "$RELEASE" = success
+          fi

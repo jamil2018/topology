@@ -9,9 +9,11 @@
  *   PERF_CASES=50000 PERF_RUNS=500 npm run db:perf-fixture
  */
 import "dotenv/config";
+import { writeFileSync } from "node:fs";
+import { hashToken } from "../src/lib/ci-auth";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db";
-import { cases, runResults, runs, workspaces } from "../src/db/schema";
+import { apiTokens, cases, runResults, runs, users, workspaceMembers, workspaces } from "../src/db/schema";
 
 const SLUG = "perf-fixture";
 const CASE_COUNT = Math.max(1, Number.parseInt(process.env.PERF_CASES ?? "5000", 10) || 5000);
@@ -83,8 +85,8 @@ async function main() {
   });
 
   const resultRows = [];
-  const sample = insertedCases.slice(0, Math.min(200, insertedCases.length));
-  for (const run of createdRuns) {
+  for (const [runIndex, run] of createdRuns.entries()) {
+    const sample = insertedCases.slice(0, Math.min(runIndex === 0 ? 5000 : 200, insertedCases.length));
     for (const [index, c] of sample.entries()) {
       const flip = (index + run.id.charCodeAt(0)) % 4;
       resultRows.push({
@@ -104,13 +106,21 @@ async function main() {
   console.log(`Inserting ${resultRows.length} run results…`);
   await insertInBatches(resultRows, (chunk) => db.insert(runResults).values(chunk));
 
+  if (process.env.TOPOLOGY_VALIDATION === "1") {
+    const user = await db.query.users.findFirst({ where: eq(users.email, "demo@topology.local") });
+    if (!user) throw new Error("Seed the isolated performance database before creating fixtures");
+    await db.insert(workspaceMembers).values({ workspaceId: workspace.id, userId: user.id, role: "admin" });
+    await db.insert(apiTokens).values({ workspaceId: workspace.id, userId: user.id, name: "Performance", tokenHash: hashToken("topo_validation_performance_token"), tokenPrefix: "topo_validation", scope: "read,ci-write,agent" });
+    await db.update(runs).set({ kind: "manual", status: "in_progress", createdById: user.id }).where(eq(runs.id, createdRuns[0].id));
+    if (process.env.PERF_METADATA_OUTPUT) writeFileSync(process.env.PERF_METADATA_OUTPUT, JSON.stringify({ projectId: workspace.id, runId: createdRuns[0].id }));
+  }
   console.log(
     `Done. workspace=${workspace.id} slug=${SLUG} cases=${CASE_COUNT} runs=${RUN_COUNT}`,
   );
   console.log("Benchmark with: npm run db:perf-bench");
 }
 
-main().catch((err) => {
+main().then(() => process.exit(0)).catch((err) => {
   console.error(err);
   process.exit(1);
 });

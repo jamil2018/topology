@@ -4,8 +4,10 @@
 import { config } from "dotenv";
 import { runMigrations } from "./migrator";
 
-config({ path: ".env.local", quiet: true });
-config({ path: ".env", quiet: true });
+if (process.env.TOPOLOGY_VALIDATION !== "1") {
+  config({ path: ".env.local", quiet: true });
+  config({ path: ".env", quiet: true });
+}
 
 runMigrations()
   .then(() => {

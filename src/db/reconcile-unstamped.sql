@@ -351,3 +351,5 @@ CREATE TABLE IF NOT EXISTS "result_case_links" (
   "created_by_id" uuid REFERENCES "users"("id") ON DELETE SET NULL,
   "created_at" timestamp DEFAULT now() NOT NULL
 );
+
+ALTER TABLE "runs" ADD COLUMN IF NOT EXISTS "share_generation" integer DEFAULT 0 NOT NULL;

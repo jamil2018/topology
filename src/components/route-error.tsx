@@ -5,13 +5,13 @@ import Link from "next/link";
 export function RouteError({
   title,
   description,
-  reset,
+  retry,
   backHref,
   backLabel,
 }: {
   title: string;
   description: string;
-  reset: () => void;
+  retry: () => void;
   backHref?: string;
   backLabel?: string;
 }) {
@@ -27,7 +27,7 @@ export function RouteError({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={reset}
+          onClick={retry}
           className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)]"
         >
           Try again
