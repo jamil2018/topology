@@ -214,7 +214,7 @@ describe("RunExecutor abort confirmation", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /^Start$/ }),
-    ).toBeDisabled();
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "View report" })).toBeNull();
     expect(
       screen.getByRole("button", { name: "Mark SMOKE-1 as passed" }),
