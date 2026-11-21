@@ -29,21 +29,16 @@ async function assertSkipLinkIfPresent(page: Page, route: string) {
   const skip = page.getByRole("link", { name: /skip/i });
   await expect(skip, `Missing skip link on ${route}`).toHaveCount(1);
   const link = skip.first();
-  // Workspaces may autofocus search on rAF after mount. Wait two frames, blur
-  // whatever won focus, then Tab from the document start onto the skip link.
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            const active = document.activeElement;
-            if (active instanceof HTMLElement) active.blur();
-            resolve();
-          });
-        });
-      }),
-  );
+  // Park focus on body immediately before Tab so sequential navigation starts
+  // at the document root even if hydration left focus on a random node.
+  await page.evaluate(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+    document.body.setAttribute("tabindex", "-1");
+    document.body.focus({ preventScroll: true });
+  });
   await page.keyboard.press("Tab");
+  await page.evaluate(() => document.body.removeAttribute("tabindex"));
   await expect(link).toBeFocused();
   const href = await link.getAttribute("href");
   expect(href, "skip link href").toMatch(/^#[^#\s]+$/);
