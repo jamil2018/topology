@@ -3,7 +3,7 @@ export type CaseOutcome = "passed" | "failed" | "blocked" | "skipped" | "unteste
 export type MilestoneCase = {
   key: string;
   priority: "P0" | "P1" | "P2" | "P3";
-  status: "draft" | "ready" | "blocked" | "deprecated";
+  status: "draft" | "ready" | "blocked" | "deprecated" | "in_review";
   lastResult?: CaseOutcome | null;
 };
 
@@ -114,7 +114,10 @@ export function computeMilestoneReadiness(
   ).length;
   const blockedCases = active.filter((c) => c.status === "blocked").length;
   const notReadyCases = active.filter(
-    (c) => c.status === "draft" || c.status === "blocked",
+    (c) =>
+      c.status === "draft" ||
+      c.status === "blocked" ||
+      c.status === "in_review",
   ).length;
 
   const reasons: string[] = [];

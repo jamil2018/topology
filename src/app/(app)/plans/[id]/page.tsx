@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { pageTitle } from "@/lib/format-labels";
 import { NoProjectEmptyState } from "@/components/no-project-empty-state";
 import { PlanDetail } from "@/components/plan-detail";
 import { db } from "@/db";
-import { environments } from "@/db/schema";
+import { environments, milestones } from "@/db/schema";
 import { resolveActiveProject } from "@/lib/project";
 import { isUuid, listCases } from "@/lib/queries";
 import { getPlan } from "@/lib/tcm/plans";
@@ -34,12 +34,16 @@ export default async function PlanDetailPage({ params }: Props) {
 
   const { id } = await params;
   if (!isUuid(id)) notFound();
-  const [plan, envs, cases] = await Promise.all([
+  const [plan, envs, cases, milestoneRows] = await Promise.all([
     getPlan(ctx.project.id, id),
     db.query.environments.findMany({
       where: eq(environments.workspaceId, ctx.project.id),
     }),
     listCases(ctx.project.id),
+    db.query.milestones.findMany({
+      where: eq(milestones.workspaceId, ctx.project.id),
+      orderBy: [asc(milestones.name)],
+    }),
   ]);
   if (!plan) notFound();
 
@@ -50,6 +54,7 @@ export default async function PlanDetailPage({ params }: Props) {
         name: plan.name,
         description: plan.description,
         status: plan.status,
+        milestoneId: plan.milestoneId,
         matrix: plan.matrix,
         cases: plan.cases.map((row) => ({
           id: row.id,
@@ -70,6 +75,11 @@ export default async function PlanDetailPage({ params }: Props) {
         })),
       }}
       environments={envs.map((e) => ({ id: e.id, name: e.name }))}
+      milestones={milestoneRows.map((m) => ({
+        id: m.id,
+        name: m.name,
+        status: m.status,
+      }))}
       cases={cases.map((c) => ({
         id: c.id,
         key: c.key,

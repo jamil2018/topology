@@ -17,10 +17,12 @@ export const updateCaseSchema = z
     expectedResult: z.string().optional(),
     priority: z.enum(["P0", "P1", "P2", "P3"]).optional(),
     status: z
-      .enum(["draft", "ready", "blocked", "deprecated"])
+      .enum(["draft", "in_review", "ready", "blocked", "deprecated"])
       .optional(),
     folderId: z.string().uuid().nullable().optional(),
     tags: z.array(z.string().trim().min(1)).optional(),
+    reviewerId: z.string().uuid().nullable().optional(),
+    reviewComment: z.string().trim().max(2000).optional(),
     structuredSteps: z.array(structuredStepInputSchema).optional(),
     parameters: z
       .array(
@@ -46,6 +48,8 @@ export const updateCaseSchema = z
       v.status !== undefined ||
       v.folderId !== undefined ||
       v.tags !== undefined ||
+      v.reviewerId !== undefined ||
+      v.reviewComment !== undefined ||
       v.structuredSteps !== undefined ||
       v.parameters !== undefined ||
       v.datasets !== undefined ||
@@ -62,7 +66,7 @@ export type CaseUpdateSnapshot = {
   steps: string;
   expectedResult: string;
   priority: "P0" | "P1" | "P2" | "P3" | string;
-  status: "draft" | "ready" | "blocked" | "deprecated" | string;
+  status: "draft" | "in_review" | "ready" | "blocked" | "deprecated" | string;
   folderId: string | null;
   tags: string[];
 };

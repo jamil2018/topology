@@ -545,3 +545,245 @@ export async function explainChangeImpact(input: {
   });
 }
 
+export type DraftedCaseStep = {
+  action: string;
+  expected: string;
+  data: string;
+};
+
+export type CaseStepsDraftResult =
+  | { disabled: true }
+  | {
+      disabled?: false;
+      steps: DraftedCaseStep[];
+      heuristic: boolean;
+      model: string;
+    };
+
+export type TriageSummaryDraftResult =
+  | { disabled: true }
+  | {
+      disabled?: false;
+      summary: string;
+      heuristic: boolean;
+      model: string;
+    };
+
+const CASE_STEPS_SYSTEM = `You are a QA test-case author for Topology.
+Respond with JSON only (no markdown fences): { "steps": [{ "action": string, "expected": string, "data": string }] }.
+Produce 3-6 concrete, ordered manual test steps. Keep action/expected concise.`;
+
+const TRIAGE_SUMMARY_SYSTEM = `You are a QA triage assistant for Topology.
+Respond with JSON only (no markdown fences): { "summary": string }.
+Summarize the failure cluster for a human reviewer in 2-4 sentences.`;
+
+function parseJsonObject(raw: string): unknown | null {
+  const trimmed = raw.trim();
+  const jsonText = trimmed.startsWith("{")
+    ? trimmed
+    : trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    return JSON.parse(jsonText);
+  } catch {
+    return null;
+  }
+}
+
+/** Heuristic step draft used when the model is offline. */
+export function heuristicCaseSteps(input: {
+  title: string;
+  description?: string | null;
+}): DraftedCaseStep[] {
+  const title = input.title.trim() || "the behavior under test";
+  const detail = input.description?.trim();
+  return [
+    {
+      action: `Open the surface related to: ${title}`,
+      expected: "The page or screen loads without errors",
+      data: "",
+    },
+    {
+      action: detail
+        ? `Follow the described flow: ${detail.slice(0, 180)}`
+        : `Perform the primary action for ${title}`,
+      expected: "The system accepts valid input and progresses",
+      data: "",
+    },
+    {
+      action: `Verify the outcome of ${title}`,
+      expected: "Observed result matches the acceptance criteria",
+      data: "",
+    },
+  ];
+}
+
+function parseCaseStepsPayload(raw: string): DraftedCaseStep[] | null {
+  const parsed = parseJsonObject(raw);
+  if (!parsed || typeof parsed !== "object") return null;
+  const steps = (parsed as { steps?: unknown }).steps;
+  if (!Array.isArray(steps) || steps.length === 0) return null;
+  const mapped = steps
+    .map((step) => {
+      if (!step || typeof step !== "object") return null;
+      const action = String((step as { action?: unknown }).action ?? "").trim();
+      if (!action) return null;
+      return {
+        action,
+        expected: String((step as { expected?: unknown }).expected ?? "").trim(),
+        data: String((step as { data?: unknown }).data ?? "").trim(),
+      };
+    })
+    .filter((step): step is DraftedCaseStep => Boolean(step));
+  return mapped.length > 0 ? mapped : null;
+}
+
+export async function draftCaseSteps(input: {
+  workspaceId: string;
+  title: string;
+  description?: string | null;
+  requirementId?: string | null;
+  config?: AiProviderConfig;
+  allowHeuristic?: boolean;
+}): Promise<CaseStepsDraftResult> {
+  const config =
+    input.config ?? (await getWorkspaceAiProviderConfig(input.workspaceId));
+  if (!isAiProviderEnabled(config) && !input.allowHeuristic) {
+    return { disabled: true };
+  }
+
+  let requirementContext = "";
+  if (input.requirementId) {
+    const req = await db.query.requirements.findFirst({
+      where: and(
+        eq(requirements.id, input.requirementId),
+        eq(requirements.workspaceId, input.workspaceId),
+      ),
+    });
+    if (req) {
+      requirementContext = ` Requirement ${req.key}: ${req.title}. ${req.description}`;
+    }
+  }
+
+  let steps: DraftedCaseStep[] | null = null;
+  let modelLabel = "heuristic";
+  let heuristic = true;
+
+  if (isAiProviderEnabled(config)) {
+    try {
+      const chat = await completeChat({
+        system: CASE_STEPS_SYSTEM,
+        user: `Draft manual test steps for case titled "${input.title}". Description: ${input.description ?? ""}.${requirementContext}`,
+        config,
+      });
+      if (chat?.content) {
+        steps = parseCaseStepsPayload(chat.content);
+        if (steps) {
+          modelLabel = chat.model;
+          heuristic = false;
+        }
+      }
+    } catch {
+      steps = null;
+    }
+  }
+
+  if (!steps) {
+    steps = heuristicCaseSteps({
+      title: input.title,
+      description: input.description,
+    });
+    modelLabel = "heuristic";
+    heuristic = true;
+  }
+
+  return { steps, heuristic, model: modelLabel };
+}
+
+/** Heuristic triage summary used when the model is offline. */
+export function heuristicTriageSummary(input: {
+  items: Array<{
+    caseKey?: string | null;
+    caseTitle?: string | null;
+    notes?: string | null;
+    priority?: string | null;
+    reason?: string | null;
+  }>;
+}): string {
+  const count = input.items.length;
+  const keys = Array.from(
+    new Set(
+      input.items
+        .map((item) => item.caseKey?.trim())
+        .filter((key): key is string => Boolean(key)),
+    ),
+  ).slice(0, 5);
+  const top = input.items[0];
+  const note = top?.notes?.trim().split("\n")[0]?.trim();
+  const reason = top?.reason?.trim();
+  const parts = [
+    `Cluster of ${count} failure${count === 1 ? "" : "s"}`,
+    keys.length > 0 ? `touching ${keys.join(", ")}` : null,
+    top?.priority ? `(highest priority ${top.priority})` : null,
+  ].filter(Boolean);
+  const lead = `${parts.join(" ")}.`;
+  const detail = note || reason || top?.caseTitle || "No failure notes provided.";
+  return `${lead} Representative signal: ${detail}`;
+}
+
+function parseTriageSummaryPayload(raw: string): string | null {
+  const parsed = parseJsonObject(raw);
+  if (!parsed || typeof parsed !== "object") return null;
+  const summary = (parsed as { summary?: unknown }).summary;
+  return typeof summary === "string" && summary.trim() ? summary.trim() : null;
+}
+
+export async function draftTriageSummary(input: {
+  workspaceId: string;
+  items: Array<{
+    caseKey?: string | null;
+    caseTitle?: string | null;
+    notes?: string | null;
+    priority?: string | null;
+    reason?: string | null;
+  }>;
+  config?: AiProviderConfig;
+  allowHeuristic?: boolean;
+}): Promise<TriageSummaryDraftResult> {
+  const config =
+    input.config ?? (await getWorkspaceAiProviderConfig(input.workspaceId));
+  if (!isAiProviderEnabled(config) && !input.allowHeuristic) {
+    return { disabled: true };
+  }
+
+  let summary: string | null = null;
+  let modelLabel = "heuristic";
+  let heuristic = true;
+
+  if (isAiProviderEnabled(config)) {
+    try {
+      const chat = await completeChat({
+        system: TRIAGE_SUMMARY_SYSTEM,
+        user: `Summarize this failure cluster: ${JSON.stringify(input.items.slice(0, 12))}`,
+        config,
+      });
+      if (chat?.content) {
+        summary = parseTriageSummaryPayload(chat.content);
+        if (summary) {
+          modelLabel = chat.model;
+          heuristic = false;
+        }
+      }
+    } catch {
+      summary = null;
+    }
+  }
+
+  if (!summary) {
+    summary = heuristicTriageSummary({ items: input.items });
+    modelLabel = "heuristic";
+    heuristic = true;
+  }
+
+  return { summary, heuristic, model: modelLabel };
+}
+

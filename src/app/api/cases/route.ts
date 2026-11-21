@@ -26,7 +26,7 @@ const createCaseSchema = z.object({
   expectedResult: z.string().optional().default(""),
   priority: z.enum(["P0", "P1", "P2", "P3"]).optional().default("P2"),
   status: z
-    .enum(["draft", "ready", "blocked", "deprecated"])
+    .enum(["draft", "in_review", "ready", "blocked", "deprecated"])
     .optional()
     .default("draft"),
   folderId: z.string().uuid().nullable().optional(),
@@ -36,7 +36,9 @@ const createCaseSchema = z.object({
 
 const bulkUpdateSchema = z.object({
   caseIds: z.array(z.string().uuid()).min(1).max(500),
-  status: z.enum(["draft", "ready", "blocked", "deprecated"]).optional(),
+  status: z
+    .enum(["draft", "in_review", "ready", "blocked", "deprecated"])
+    .optional(),
   priority: z.enum(["P0", "P1", "P2", "P3"]).optional(),
   folderId: z.string().uuid().nullable().optional(),
   tags: z.array(z.string()).optional(),
@@ -51,7 +53,7 @@ function buildBulkPatch(
     tags: string[] | null;
   },
   input: {
-    status?: "draft" | "ready" | "blocked" | "deprecated";
+    status?: "draft" | "in_review" | "ready" | "blocked" | "deprecated";
     priority?: "P0" | "P1" | "P2" | "P3";
     folderId?: string | null;
     tags?: string[];

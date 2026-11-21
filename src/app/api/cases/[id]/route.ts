@@ -4,10 +4,16 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { cases, customFieldDefs, folders, runResults } from "@/db/schema";
-import { isLockFailure } from "@/lib/pg-error";
-import { recordCaseFieldChanges } from "@/lib/case-activity";
+import {
+  recordCaseActivity,
+  recordCaseFieldChanges,
+} from "@/lib/case-activity";
+import { validateCaseReviewTransition } from "@/lib/case-review";
 import { buildCasePatch, updateCaseSchema } from "@/lib/case-update";
-import { requireProjectAccess } from "@/lib/project";
+import { createNotification } from "@/lib/notifications";
+import { isLockFailure } from "@/lib/pg-error";
+import { ctxHasAction, requireProjectAccess } from "@/lib/project";
+import { requireWorkspaceAssignee } from "@/lib/assignee";
 import {
   loadCaseTcm,
   replaceCaseParameters,
@@ -20,6 +26,31 @@ type Params = { params: Promise<{ id: string }> };
 
 function invalidId(id: string) {
   return !z.string().uuid().safeParse(id).success;
+}
+
+async function maybeDispatchReviewChannel(input: {
+  workspaceId: string;
+  title: string;
+  body: string;
+  entityId: string;
+}) {
+  try {
+    const { dispatchNotificationChannels } = await import(
+      "@/lib/notification-channels"
+    );
+    await dispatchNotificationChannels(
+      "assignment",
+      {
+        title: input.title,
+        body: input.body,
+        entityType: "case",
+        entityId: input.entityId,
+      },
+      input.workspaceId,
+    );
+  } catch {
+    // Channel delivery is best-effort — in-app notification is enough.
+  }
 }
 
 export async function GET(request: Request, { params }: Params) {
@@ -72,6 +103,8 @@ export async function GET(request: Request, { params }: Params) {
       tags: row.tags ?? [],
       folderId: row.folderId,
       intentId: row.intentId,
+      reviewerId: row.reviewerId,
+      reviewedAt: row.reviewedAt,
       intent: row.intent
         ? {
             id: row.intent.id,
@@ -107,14 +140,17 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const access = await requireProjectAccess(session.user.id, {
+  const viewAccess = await requireProjectAccess(session.user.id, {
     request,
-    action: "cases.edit",
+    action: "cases.view",
   });
-  if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status });
+  if (!viewAccess.ok) {
+    return NextResponse.json(
+      { error: viewAccess.error },
+      { status: viewAccess.status },
+    );
   }
-  const workspaceId = access.ctx.project.id;
+  const workspaceId = viewAccess.ctx.project.id;
 
   const { id } = await params;
   if (invalidId(id)) {
@@ -139,6 +175,69 @@ export async function PATCH(request: Request, { params }: Params) {
   });
   if (!existing) {
     return NextResponse.json({ error: "Case not found" }, { status: 404 });
+  }
+
+  const reviewCheck = validateCaseReviewTransition({
+    from: existing.status,
+    to: parsed.data.status,
+    reviewerId:
+      parsed.data.reviewerId !== undefined
+        ? parsed.data.reviewerId
+        : existing.reviewerId,
+    reviewComment: parsed.data.reviewComment,
+  });
+  if (!reviewCheck.ok) {
+    return NextResponse.json({ error: reviewCheck.error }, { status: 400 });
+  }
+  const transition = reviewCheck.transition;
+
+  const reviewOnly =
+    (transition.kind === "approve" || transition.kind === "request_changes") &&
+    parsed.data.title === undefined &&
+    parsed.data.description === undefined &&
+    parsed.data.preconditions === undefined &&
+    parsed.data.steps === undefined &&
+    parsed.data.expectedResult === undefined &&
+    parsed.data.priority === undefined &&
+    parsed.data.folderId === undefined &&
+    parsed.data.tags === undefined &&
+    parsed.data.structuredSteps === undefined &&
+    parsed.data.parameters === undefined &&
+    parsed.data.datasets === undefined &&
+    parsed.data.customFields === undefined;
+
+  if (transition.kind === "approve" || transition.kind === "request_changes") {
+    if (!ctxHasAction(viewAccess.ctx, "cases.approve")) {
+      return NextResponse.json(
+        { error: "Missing permission: cases.approve" },
+        { status: 403 },
+      );
+    }
+    if (!reviewOnly && !ctxHasAction(viewAccess.ctx, "cases.edit")) {
+      return NextResponse.json(
+        { error: "Missing permission: cases.edit" },
+        { status: 403 },
+      );
+    }
+  } else if (!ctxHasAction(viewAccess.ctx, "cases.edit")) {
+    return NextResponse.json(
+      { error: "Missing permission: cases.edit" },
+      { status: 403 },
+    );
+  }
+
+  if (transition.kind === "submit" && parsed.data.reviewerId) {
+    const assignee = await requireWorkspaceAssignee(
+      workspaceId,
+      parsed.data.reviewerId,
+      "cases.approve",
+    );
+    if (!assignee.ok) {
+      return NextResponse.json(
+        { error: assignee.error },
+        { status: assignee.status },
+      );
+    }
   }
 
   if (parsed.data.folderId) {
@@ -181,12 +280,40 @@ export async function PATCH(request: Request, { params }: Params) {
     parsed.data.datasets !== undefined ||
     parsed.data.customFields !== undefined;
 
-  if (fields.length === 0 && !tcmChanged) {
+  const reviewMetaChanged =
+    transition.kind === "submit" ||
+    transition.kind === "approve" ||
+    transition.kind === "request_changes" ||
+    parsed.data.reviewerId !== undefined;
+
+  if (fields.length === 0 && !tcmChanged && !reviewMetaChanged) {
     return NextResponse.json({ case: existing, updated: false });
   }
 
   let next = existing;
-  if (fields.length > 0) {
+  if (fields.length > 0 || reviewMetaChanged) {
+    const now = new Date();
+    const reviewFields: {
+      reviewerId?: string | null;
+      reviewedAt?: Date | null;
+    } = {};
+
+    if (transition.kind === "submit") {
+      reviewFields.reviewerId = parsed.data.reviewerId ?? null;
+      reviewFields.reviewedAt = null;
+    } else if (transition.kind === "approve") {
+      reviewFields.reviewedAt = now;
+      if (parsed.data.reviewerId !== undefined) {
+        reviewFields.reviewerId = parsed.data.reviewerId;
+      } else if (!existing.reviewerId) {
+        reviewFields.reviewerId = session.user.id;
+      }
+    } else if (transition.kind === "request_changes") {
+      reviewFields.reviewedAt = now;
+    } else if (parsed.data.reviewerId !== undefined) {
+      reviewFields.reviewerId = parsed.data.reviewerId;
+    }
+
     const [updated] = await db
       .update(cases)
       .set({
@@ -208,6 +335,7 @@ export async function PATCH(request: Request, { params }: Params) {
           ? {
               status: patch.status as
                 | "draft"
+                | "in_review"
                 | "ready"
                 | "blocked"
                 | "deprecated",
@@ -215,20 +343,56 @@ export async function PATCH(request: Request, { params }: Params) {
           : {}),
         ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
         ...(patch.tags !== undefined ? { tags: patch.tags } : {}),
-        updatedAt: new Date(),
+        ...reviewFields,
+        updatedAt: now,
       })
       .where(eq(cases.id, id))
       .returning();
     next = updated ?? existing;
 
-    await recordCaseFieldChanges({
-      caseId: id,
-      actorId: session.user.id,
-      action: "updated",
-      before,
-      after,
-      fields,
-    });
+    if (fields.length > 0) {
+      await recordCaseFieldChanges({
+        caseId: id,
+        actorId: session.user.id,
+        action: "updated",
+        before,
+        after,
+        fields,
+      });
+    }
+
+    if (transition.kind === "submit") {
+      await recordCaseActivity({
+        caseId: id,
+        actorId: session.user.id,
+        action: "submitted_for_review",
+        field: "status",
+        fromValue: existing.status,
+        toValue: "in_review",
+        summary: "Submitted for review",
+      });
+    } else if (transition.kind === "approve") {
+      await recordCaseActivity({
+        caseId: id,
+        actorId: session.user.id,
+        action: "approved",
+        field: "status",
+        fromValue: existing.status,
+        toValue: "ready",
+        summary: "Approved review",
+        approvedById: session.user.id,
+      });
+    } else if (transition.kind === "request_changes") {
+      await recordCaseActivity({
+        caseId: id,
+        actorId: session.user.id,
+        action: "changes_requested",
+        field: "status",
+        fromValue: existing.status,
+        toValue: "draft",
+        summary: `Changes requested: ${parsed.data.reviewComment?.trim()}`,
+      });
+    }
   }
 
   if (parsed.data.structuredSteps) {
@@ -258,11 +422,31 @@ export async function PATCH(request: Request, { params }: Params) {
     }
   }
 
-  if (fields.length > 0 || tcmChanged) {
+  if (fields.length > 0 || tcmChanged || reviewMetaChanged) {
     await snapshotCaseVersion({
       workspaceId,
       caseId: id,
       actorId: session.user.id,
+    });
+  }
+
+  if (transition.kind === "submit" && next.reviewerId) {
+    const title = `Review requested: ${next.key}`;
+    const body = `${next.title} is waiting for your review.`;
+    await createNotification({
+      workspaceId,
+      userId: next.reviewerId,
+      type: "assignment",
+      title,
+      body,
+      entityType: "case",
+      entityId: next.id,
+    });
+    void maybeDispatchReviewChannel({
+      workspaceId,
+      title,
+      body,
+      entityId: next.id,
     });
   }
 

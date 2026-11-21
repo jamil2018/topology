@@ -1,5 +1,5 @@
 -- Idempotent catch-up for databases created with drizzle-kit push (empty journal).
--- Safe to re-run. Journaled 0000–0003 already cover fresh databases.
+-- Safe to re-run. Journaled 0000–0007 already cover fresh databases.
 
 CREATE TABLE IF NOT EXISTS "audit_events" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -353,3 +353,90 @@ CREATE TABLE IF NOT EXISTS "result_case_links" (
 );
 
 ALTER TABLE "runs" ADD COLUMN IF NOT EXISTS "share_generation" integer DEFAULT 0 NOT NULL;
+
+-- Collaboration & integrations (migration 0007) for pre-journal installations.
+ALTER TYPE "public"."case_status" ADD VALUE IF NOT EXISTS 'in_review';
+
+DO $$ BEGIN
+  CREATE TYPE "public"."notification_channel_kind" AS ENUM('slack', 'teams', 'smtp');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE "cases" ADD COLUMN IF NOT EXISTS "reviewer_id" uuid;
+ALTER TABLE "cases" ADD COLUMN IF NOT EXISTS "reviewed_at" timestamp;
+DO $$ BEGIN
+  ALTER TABLE "cases" ADD CONSTRAINT "cases_reviewer_id_users_id_fk" FOREIGN KEY ("reviewer_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE OR REPLACE FUNCTION "topology_cases_search_vector"("key" text, "title" text, "description" text, "tags" text[]) RETURNS tsvector LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT
+    setweight(to_tsvector('english', coalesce("key", '')), 'A') ||
+    setweight(to_tsvector('english', coalesce("title", '')), 'A') ||
+    setweight(to_tsvector('english', coalesce("description", '')), 'B') ||
+    setweight(to_tsvector('english', coalesce(array_to_string("tags", ' '), '')), 'C')
+$$;
+CREATE OR REPLACE FUNCTION "topology_case_steps_search_vector"("action" text, "expected" text) RETURNS tsvector LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT
+    setweight(to_tsvector('english', coalesce("action", '')), 'A') ||
+    setweight(to_tsvector('english', coalesce("expected", '')), 'B')
+$$;
+DO $$ BEGIN
+  ALTER TABLE "cases" ADD COLUMN "search_vector" tsvector GENERATED ALWAYS AS (
+    "topology_cases_search_vector"("key", "title", "description", "tags")
+  ) STORED;
+EXCEPTION
+  WHEN duplicate_column THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS "cases_search_vector_idx" ON "cases" USING gin ("search_vector");
+
+DO $$ BEGIN
+  ALTER TABLE "case_steps" ADD COLUMN "search_vector" tsvector GENERATED ALWAYS AS (
+    "topology_case_steps_search_vector"("action", "expected")
+  ) STORED;
+EXCEPTION
+  WHEN duplicate_column THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS "case_steps_search_vector_idx" ON "case_steps" USING gin ("search_vector");
+
+CREATE TABLE IF NOT EXISTS "webhook_deliveries" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "endpoint_id" uuid NOT NULL,
+  "workspace_id" uuid NOT NULL,
+  "event" text NOT NULL,
+  "delivery_id" text NOT NULL,
+  "request_body" text NOT NULL,
+  "response_status" integer,
+  "response_excerpt" text DEFAULT '' NOT NULL,
+  "attempt_count" integer DEFAULT 1 NOT NULL,
+  "duration_ms" integer,
+  "delivered_at" timestamp DEFAULT now() NOT NULL
+);
+DO $$ BEGIN
+  ALTER TABLE "webhook_deliveries" ADD CONSTRAINT "webhook_deliveries_endpoint_id_webhook_endpoints_id_fk" FOREIGN KEY ("endpoint_id") REFERENCES "public"."webhook_endpoints"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE "webhook_deliveries" ADD CONSTRAINT "webhook_deliveries_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS "webhook_deliveries_endpoint_id_idx" ON "webhook_deliveries" ("endpoint_id");
+CREATE INDEX IF NOT EXISTS "webhook_deliveries_workspace_id_idx" ON "webhook_deliveries" ("workspace_id");
+CREATE INDEX IF NOT EXISTS "webhook_deliveries_delivery_id_idx" ON "webhook_deliveries" ("delivery_id");
+CREATE INDEX IF NOT EXISTS "webhook_deliveries_delivered_at_idx" ON "webhook_deliveries" ("delivered_at");
+
+CREATE TABLE IF NOT EXISTS "notification_channels" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "workspace_id" uuid NOT NULL,
+  "kind" "notification_channel_kind" NOT NULL,
+  "name" text NOT NULL,
+  "config_json" text DEFAULT '{}' NOT NULL,
+  "events" text DEFAULT 'assignment,mention,run.completed,coverage.dropped' NOT NULL,
+  "enabled" integer DEFAULT 1 NOT NULL,
+  "created_at" timestamp DEFAULT now() NOT NULL
+);
+DO $$ BEGIN
+  ALTER TABLE "notification_channels" ADD CONSTRAINT "notification_channels_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS "notification_channels_workspace_id_idx" ON "notification_channels" ("workspace_id");

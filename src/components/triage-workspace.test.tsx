@@ -14,6 +14,8 @@ vi.mock("next/navigation", () => ({
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const sharedNotesA = "payment iframe timeout after 1000ms";
@@ -62,6 +64,8 @@ const queue = buildTriageQueue([
   resultId: null,
   caseId: null,
   flakeHint: null,
+  issueKey: null,
+  issueUrl: null,
 }));
 
 describe("TriageWorkspace signature clusters", () => {
@@ -139,5 +143,55 @@ describe("TriageWorkspace signature clusters", () => {
     expect(screen.getByText("Demo issue")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Demo issue key")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/MOCK-1/i)).toBeNull();
+  });
+
+  it("shows linked issue state instead of a hardcoded No issue chip", () => {
+    render(
+      <TriageWorkspace
+        initialQueue={[
+          {
+            ...queue[2],
+            issueKey: "HAR-41",
+            issueUrl: "https://example.test/HAR-41",
+          },
+        ]}
+        flakeHints={[]}
+      />,
+    );
+
+    expect(screen.queryByText("No issue")).toBeNull();
+    const link = screen.getByRole("link", { name: /HAR-41/i });
+    expect(link).toHaveAttribute("href", "https://example.test/HAR-41");
+  });
+
+  it("bulk resolves selected triage items", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <TriageWorkspace
+        initialQueue={[{ ...queue[2] }]}
+        flakeHints={[]}
+      />,
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: /Select TOP-3/i }));
+    expect(screen.getByText(/1 selected failures/i)).toBeInTheDocument();
+
+    const resolveButtons = screen.getAllByRole("button", { name: /^Resolve$/i });
+    await user.click(resolveButtons[resolveButtons.length - 1]!);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/triage",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ id: queue[2].id, status: "resolved" }),
+      }),
+    );
+    expect(screen.queryByText("TOP-3")).not.toBeInTheDocument();
   });
 });

@@ -343,7 +343,11 @@ describe("CasesWorkspace permissions and recovery", () => {
     for (const button of screen.getAllByRole("button", { name: `Delete ${sampleCase.key}` })) expect(button).toBeDisabled();
     act(() => dispatchShortcut("create"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => !String(url).includes("/api/custom-fields"),
+      ),
+    ).toHaveLength(0);
   });
   it("rolls back an optimistic inline edit on a rejected network request", async () => {
     const user = userEvent.setup();

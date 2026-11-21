@@ -31,6 +31,8 @@ type QueueItem = {
   signatureId?: string | null;
   /** Commit SHA from the failing run, when known (Phase 4 correlation). */
   commitSha?: string | null;
+  issueKey?: string | null;
+  issueUrl?: string | null;
 };
 
 type FlakeHint = {
@@ -83,6 +85,10 @@ export function TriageWorkspace({
   );
   const [error, setError] = useState<string | null>(null);
   const [linkKey, setLinkKey] = useState<Record<string, string>>({});
+  const [clusterSummaries, setClusterSummaries] = useState<
+    Record<string, string>
+  >({});
+  const [summarizingId, setSummarizingId] = useState<string | null>(null);
   const mockProvider = issueProvider === "mock";
   const showDemoIssue = mockProvider && demoMode;
   const showIssueLink = !mockProvider || demoMode;
@@ -133,6 +139,52 @@ export function TriageWorkspace({
     });
   }
 
+  async function summarizeCluster(signatureId: string, members: QueueItem[]) {
+    if (summarizingId || members.length === 0) return;
+    setSummarizingId(signatureId);
+    setError(null);
+    try {
+      const res = await fetch("/api/ai/draft?heuristic=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job: "triage_summary",
+          allowHeuristic: true,
+          items: members.map((item) => ({
+            caseKey: item.caseKey,
+            caseTitle: item.caseTitle,
+            notes: item.notes,
+            priority: item.priority,
+            reason: item.reason,
+          })),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "Could not summarize cluster",
+        );
+        return;
+      }
+      const summary =
+        typeof data.summary === "string" ? data.summary.trim() : "";
+      if (!summary) {
+        setError("AI returned an empty summary");
+        return;
+      }
+      setClusterSummaries((current) => ({
+        ...current,
+        [signatureId]: summary,
+      }));
+    } catch {
+      setError("Could not summarize cluster");
+    } finally {
+      setSummarizingId(null);
+    }
+  }
+
   async function setStatus(id: string, status: "resolved" | "snoozed") {
     if (!can("triage.manage") || busy.current) return;
     busy.current = true; setPending(true);
@@ -148,9 +200,45 @@ export function TriageWorkspace({
       return;
     }
     setQueue((prev) => prev.filter((item) => item.id !== id));
+    setSelected((ids) => ids.filter((selectedId) => selectedId !== id));
     } catch { setError("The request failed. Your input is preserved; try again."); }
     finally { busy.current = false; setPending(false); }
 
+  }
+
+  async function bulkSetStatus(status: "resolved" | "snoozed") {
+    if (!can("triage.manage") || busy.current || selected.length === 0) return;
+    const ids = [...selected];
+    busy.current = true;
+    setPending(true);
+    try {
+      setError(null);
+      const results = await Promise.all(
+        ids.map(async (id) => {
+          const res = await fetch("/api/triage", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, status }),
+          });
+          return { id, ok: res.ok };
+        }),
+      );
+      const succeeded = new Set(results.filter((r) => r.ok).map((r) => r.id));
+      if (succeeded.size === 0) {
+        setError("Could not update triage items");
+        return;
+      }
+      if (succeeded.size < ids.length) {
+        setError("Some triage items could not be updated");
+      }
+      setQueue((prev) => prev.filter((item) => !succeeded.has(item.id)));
+      setSelected((prev) => prev.filter((id) => !succeeded.has(id)));
+    } catch {
+      setError("The request failed. Your input is preserved; try again.");
+    } finally {
+      busy.current = false;
+      setPending(false);
+    }
   }
 
   async function fileIssue(item: QueueItem) {
@@ -179,6 +267,7 @@ export function TriageWorkspace({
       return;
     }
     setQueue((prev) => prev.filter((q) => q.id !== item.id));
+    setSelected((ids) => ids.filter((id) => id !== item.id));
     } catch { setError("The request failed. Your input is preserved; try again."); }
     finally { busy.current = false; setPending(false); }
 
@@ -213,6 +302,7 @@ export function TriageWorkspace({
       return;
     }
     setQueue((prev) => prev.filter((q) => q.id !== item.id));
+    setSelected((ids) => ids.filter((id) => id !== item.id));
     } catch { setError("The request failed. Your input is preserved; try again."); }
     finally { busy.current = false; setPending(false); }
 
@@ -226,7 +316,23 @@ export function TriageWorkspace({
           nested ? "border-t border-[color:var(--topo-line)] px-3 py-3 pl-6" : ""
         }`}
       >
-        {can("runs.create") && item.resultId ? <label className="flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`Select ${item.caseKey || item.caseTitle} for retest`} checked={selected.includes(item.resultId)} onChange={(event) => setSelected((ids) => event.target.checked ? [...ids, item.resultId!] : ids.filter((id) => id !== item.resultId))} />Retest</label> : null}
+        {can("runs.create") || can("triage.manage") ? (
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              aria-label={`Select ${item.caseKey || item.caseTitle}`}
+              checked={selected.includes(item.id)}
+              onChange={(event) =>
+                setSelected((ids) =>
+                  event.target.checked
+                    ? [...ids, item.id]
+                    : ids.filter((id) => id !== item.id),
+                )
+              }
+            />
+            Select
+          </label>
+        ) : null}
 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -235,7 +341,26 @@ export function TriageWorkspace({
             {item.isFlaky ? (
               <StatusChip tone="warning">Flake</StatusChip>
             ) : null}
-            <StatusChip tone="danger">No issue</StatusChip>
+            {item.issueKey ? (
+              item.issueUrl ? (
+                <a
+                  href={item.issueUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex"
+                >
+                  <StatusChip tone="accent" mono>
+                    {item.issueKey}
+                  </StatusChip>
+                </a>
+              ) : (
+                <StatusChip tone="accent" mono>
+                  {item.issueKey}
+                </StatusChip>
+              )
+            ) : (
+              <StatusChip tone="danger">No issue</StatusChip>
+            )}
           </div>
           <h2 className="mt-1.5 text-sm font-semibold text-[color:var(--topo-ink)]">
             <span className="font-mono text-[color:var(--topo-accent)]">
@@ -384,7 +509,46 @@ export function TriageWorkspace({
         }
       />
 
-      {selected.length && can("runs.create") ? <div className="topo-toolbar"><span className="text-sm">{selected.length} selected failures</span><Link className="underline text-sm" href={`/runs/new?retest=${selected.join(",")}`}>Review retest</Link><button className="text-xs" onClick={() => setSelected([])}>Clear</button></div> : null}
+      {selected.length > 0 && (can("runs.create") || can("triage.manage")) ? (
+        <div className="topo-toolbar flex flex-wrap items-center gap-3">
+          <span className="text-sm">{selected.length} selected failures</span>
+          {can("runs.create") &&
+          selected.some((id) => queue.find((item) => item.id === id)?.resultId) ? (
+            <Link
+              className="underline text-sm"
+              href={`/runs/new?retest=${selected
+                .map((id) => queue.find((item) => item.id === id)?.resultId)
+                .filter(Boolean)
+                .join(",")}`}
+            >
+              Review retest
+            </Link>
+          ) : null}
+          {can("triage.manage") ? (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={pending}
+                onPress={() => void bulkSetStatus("snoozed")}
+              >
+                Snooze
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={pending}
+                onPress={() => void bulkSetStatus("resolved")}
+              >
+                Resolve
+              </Button>
+            </>
+          ) : null}
+          <button type="button" className="text-xs" onClick={() => setSelected([])}>
+            Clear
+          </button>
+        </div>
+      ) : null}
       {error ? (
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
       ) : null}
@@ -423,6 +587,7 @@ export function TriageWorkspace({
               );
             }
 
+            const summary = clusterSummaries[cluster.signatureId];
             return (
               <motion.li
                 key={cluster.signatureId}
@@ -430,13 +595,13 @@ export function TriageWorkspace({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i, 10) * 0.02 }}
               >
-                <button
-                  type="button"
-                  aria-expanded={isOpen}
-                  onClick={() => toggleCluster(cluster.signatureId)}
-                  className="flex w-full items-start justify-between gap-3 px-3 py-3 text-left hover:bg-[color:var(--topo-chip)]/40"
-                >
-                  <div className="min-w-0">
+                <div className="flex w-full items-start justify-between gap-3 px-3 py-3">
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    onClick={() => toggleCluster(cluster.signatureId)}
+                    className="min-w-0 flex-1 text-left hover:opacity-90"
+                  >
                     <div className="flex flex-wrap items-center gap-1.5">
                       <StatusChip tone="danger" mono>
                         {cluster.count} failures
@@ -461,14 +626,33 @@ export function TriageWorkspace({
                       {" · "}
                       {isOpen ? "Hide failures" : "Show failures"}
                     </p>
+                  </button>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      isDisabled={summarizingId === cluster.signatureId}
+                      onPress={() =>
+                        void summarizeCluster(cluster.signatureId, members)
+                      }
+                    >
+                      {summarizingId === cluster.signatureId
+                        ? "Summarizing…"
+                        : "Summarize cluster"}
+                    </Button>
+                    <span
+                      aria-hidden
+                      className="font-mono text-xs text-[color:var(--topo-muted)]"
+                    >
+                      {isOpen ? "▾" : "▸"}
+                    </span>
                   </div>
-                  <span
-                    aria-hidden
-                    className="mt-1 font-mono text-xs text-[color:var(--topo-muted)]"
-                  >
-                    {isOpen ? "▾" : "▸"}
-                  </span>
-                </button>
+                </div>
+                {summary ? (
+                  <p className="border-t border-[color:var(--topo-line)] px-3 py-2 text-xs text-[color:var(--topo-ink)]">
+                    {summary}
+                  </p>
+                ) : null}
                 {isOpen
                   ? members.map((item) => (
                       <div key={item.id}>{renderItem(item, true)}</div>

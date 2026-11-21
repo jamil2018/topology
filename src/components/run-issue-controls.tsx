@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@heroui/react";
 import type { LinkedIssue } from "./run-executor-model";
+
+const FALLBACK_PROVIDERS = ["mock"];
 
 function IssueChip({
   issue,
@@ -72,6 +75,8 @@ export function RunIssueControls({
   linkKey,
   onLinkKeyChange,
   onIssueAction,
+  defaultProvider = "mock",
+  availableProviders = FALLBACK_PROVIDERS,
 }: {
   resultId: string;
   status: string;
@@ -82,7 +87,20 @@ export function RunIssueControls({
   linkKey: string;
   onLinkKeyChange: (value: string) => void;
   onIssueAction: (body: Record<string, unknown>) => void;
+  defaultProvider?: string;
+  availableProviders?: string[];
 }) {
+  const providers =
+    availableProviders.length > 0 ? availableProviders : FALLBACK_PROVIDERS;
+  const resolvedDefault = providers.includes(defaultProvider)
+    ? defaultProvider
+    : providers[0]!;
+  const [providerOverride, setProviderOverride] = useState<string | null>(null);
+  const provider =
+    providerOverride && providers.includes(providerOverride)
+      ? providerOverride
+      : resolvedDefault;
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       {issues.map((issue) => (
@@ -109,6 +127,24 @@ export function RunIssueControls({
       ))}
       {(status === "failed" || status === "blocked") && !frozen ? (
         <>
+          {providers.length > 1 ? (
+            <label className="flex items-center gap-1 text-xs text-[color:var(--topo-muted)]">
+              Provider
+              <select
+                aria-label="Issue provider"
+                value={provider}
+                disabled={issueBusy}
+                onChange={(e) => setProviderOverride(e.target.value)}
+                className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs capitalize text-[color:var(--topo-ink)] accent-[color:var(--topo-accent)]"
+              >
+                {providers.map((id) => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <button
             type="button"
             disabled={issueBusy}
@@ -116,7 +152,7 @@ export function RunIssueControls({
               void onIssueAction({
                 action: "create",
                 resultId,
-                provider: "mock",
+                provider,
               })
             }
             className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-2 py-1 text-xs font-medium text-[color:var(--topo-ink)] disabled:opacity-50"
@@ -139,7 +175,7 @@ export function RunIssueControls({
                   action: "link",
                   resultId,
                   remoteKey: linkKey.trim(),
-                  provider: "mock",
+                  provider,
                 })
               }
             >

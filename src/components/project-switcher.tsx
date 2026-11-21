@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { CaretDownIcon, FolderSimpleIcon } from "@phosphor-icons/react";
 import { selectActiveProject } from "@/lib/project-actions";
 
@@ -23,13 +23,44 @@ export function ProjectSwitcher({
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const active =
     projects.find((p) => p.id === activeProjectId) ?? projects[0] ?? null;
 
+  function closeMenu(restoreFocus = false) {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        closeMenu(true);
+      }
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
   function select(id: string) {
     if (id === active?.id) {
-      setOpen(false);
+      closeMenu(true);
       return;
     }
     setError(null);
@@ -39,7 +70,7 @@ export function ProjectSwitcher({
         setError(result.error);
         return;
       }
-      setOpen(false);
+      closeMenu(true);
     });
   }
 
@@ -51,25 +82,68 @@ export function ProjectSwitcher({
     );
   }
 
+  const listbox = open ? (
+    <div
+      role="listbox"
+      className={`absolute z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] py-1 shadow-lg ${
+        collapsed ? "left-0 w-56" : "left-0 right-0"
+      }`}
+    >
+      {projects.map((project) => {
+        const selected = project.id === active?.id;
+        return (
+          <button
+            key={project.id}
+            type="button"
+            role="option"
+            aria-selected={selected}
+            className={`flex w-full flex-col px-2.5 py-1.5 text-left text-sm ${
+              selected
+                ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                : "text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
+            }`}
+            onClick={() => select(project.id)}
+          >
+            <span className="truncate font-medium">{project.name}</span>
+            <span className="truncate font-medium text-xs opacity-70">
+              {project.slug} · {project.role}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
   if (collapsed) {
     return (
-      <div className="flex justify-center px-2 pb-2">
+      <div ref={rootRef} className="relative flex justify-center px-2 pb-2">
         <button
+          ref={triggerRef}
           type="button"
           title={active?.name ?? "Project"}
           aria-label={`Project: ${active?.name ?? "none"}`}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          disabled={pending}
           className="flex h-9 w-9 items-center justify-center rounded-lg bg-[color:var(--topo-chip)] text-[color:var(--topo-accent)]"
           onClick={() => setOpen((v) => !v)}
         >
           <FolderSimpleIcon size={16} weight="fill" />
         </button>
+        {listbox}
+        {error ? (
+          <p className="absolute left-0 top-full mt-1 w-56 px-1 text-xs text-red-600">
+            {error}
+          </p>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="relative mx-2 mb-2">
+    <div ref={rootRef} className="relative mx-2 mb-2">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -92,35 +166,7 @@ export function ProjectSwitcher({
         />
       </button>
 
-      {open ? (
-        <div
-          role="listbox"
-          className="absolute left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] py-1 shadow-lg"
-        >
-          {projects.map((project) => {
-            const selected = project.id === active?.id;
-            return (
-              <button
-                key={project.id}
-                type="button"
-                role="option"
-                aria-selected={selected}
-                className={`flex w-full flex-col px-2.5 py-1.5 text-left text-sm ${
-                  selected
-                    ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
-                    : "text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
-                }`}
-                onClick={() => select(project.id)}
-              >
-                <span className="truncate font-medium">{project.name}</span>
-                <span className="truncate font-medium text-xs opacity-70">
-                  {project.slug} · {project.role}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      {listbox}
 
       {error ? (
         <p className="mt-1 px-1 text-xs text-red-600">{error}</p>

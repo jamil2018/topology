@@ -77,6 +77,32 @@ export function CasesBulkBar({
       </Select>
       <Select
         isDisabled={disabled}
+        className="w-[7.5rem]"
+        variant="secondary"
+        placeholder="Priority"
+        onChange={(value) => {
+          if (value == null) return;
+          onBulkUpdate({ priority: String(value) });
+        }}
+      >
+        <Label className="sr-only">Bulk priority</Label>
+        <Select.Trigger>
+          <Select.Value />
+          <Select.Indicator />
+        </Select.Trigger>
+        <Select.Popover>
+          <ListBox>
+            {CASE_PRIORITIES.map((priority) => (
+              <ListBox.Item key={priority} id={priority} textValue={priority}>
+                {priority}
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+            ))}
+          </ListBox>
+        </Select.Popover>
+      </Select>
+      <Select
+        isDisabled={disabled}
         className="w-[12rem]"
         variant="secondary"
         placeholder="Move folder"

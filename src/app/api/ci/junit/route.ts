@@ -90,6 +90,15 @@ export async function POST(request: Request) {
         data,
         authResult.workspaceId,
       ).catch(() => {});
+      void import("@/lib/notification-channels")
+        .then(({ dispatchNotificationChannels }) =>
+          dispatchNotificationChannels(
+            "run.completed",
+            data,
+            authResult.workspaceId,
+          ),
+        )
+        .catch(() => {});
     }
 
     return NextResponse.json({

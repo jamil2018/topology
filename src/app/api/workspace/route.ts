@@ -223,6 +223,24 @@ export async function POST(request: Request) {
 
   const base =
     process.env.AUTH_URL ?? process.env.TOPOLOGY_URL ?? "http://127.0.0.1:4317";
+  const acceptUrl = `${base.replace(/\/$/, "")}/invite/${invite.token}`;
+
+  let emailSent = false;
+  try {
+    const { sendWorkspaceInviteEmail } = await import(
+      "@/lib/notification-channels"
+    );
+    const mailed = await sendWorkspaceInviteEmail({
+      to: invite.email,
+      workspaceName: workspace.name,
+      acceptUrl,
+      inviterEmail: session.user.email,
+    });
+    emailSent = mailed.sent;
+  } catch {
+    emailSent = false;
+  }
+
   return NextResponse.json(
     {
       invite: {
@@ -232,7 +250,8 @@ export async function POST(request: Request) {
         roleId: invite.customRoleId,
         token: invite.token,
         expiresAt: invite.expiresAt,
-        acceptUrl: `${base.replace(/\/$/, "")}/invite/${invite.token}`,
+        acceptUrl,
+        emailSent,
       },
     },
     { status: 201 },

@@ -45,6 +45,7 @@ export type ResultRow = {
   status: string;
   notes: string;
   assigneeId: string | null;
+  durationMs?: number | null;
   iterationIndex?: number;
   iterationValuesJson?: string | null;
   linkedIssues: LinkedIssue[];
@@ -80,7 +81,22 @@ export const RESULT_STATUSES = [
 
 export type ResultStatus = (typeof RESULT_STATUSES)[number];
 
-export type StatusFilter = "all" | "untested" | "failed" | "blocked";
+export type StatusFilter =
+  | "all"
+  | "untested"
+  | "passed"
+  | "failed"
+  | "blocked"
+  | "skipped";
+
+export const STATUS_FILTERS: StatusFilter[] = [
+  "all",
+  "untested",
+  "passed",
+  "failed",
+  "blocked",
+  "skipped",
+];
 
 export type ResultListFilter = {
   status: StatusFilter;
@@ -95,7 +111,14 @@ export type RunAction =
       resultId: string;
       status?: string;
       notes?: string;
+      durationMs?: number | null;
       step?: { position: number; status: string };
+      assigneeId?: string | null;
+    }
+  | {
+      type: "bulk_results";
+      resultIds: string[];
+      status?: string;
       assigneeId?: string | null;
     }
   | { type: "run"; status?: string; assigneeId?: string | null };
@@ -111,6 +134,20 @@ export function applyRunAction(current: RunDetail, action: RunAction): RunDetail
         action.assigneeId !== undefined ? action.assigneeId : current.assigneeId,
     };
   }
+  if (action.type === "bulk_results") {
+    const selected = new Set(action.resultIds);
+    return {
+      ...current,
+      status: current.status === "planned" ? "in_progress" : current.status,
+      results: current.results.map((row) => {
+        if (!selected.has(row.id)) return row;
+        const next = { ...row };
+        if (action.status) next.status = action.status;
+        if (action.assigneeId !== undefined) next.assigneeId = action.assigneeId;
+        return next;
+      }),
+    };
+  }
   return {
     ...current,
     status: current.status === "planned" ? "in_progress" : current.status,
@@ -119,6 +156,7 @@ export function applyRunAction(current: RunDetail, action: RunAction): RunDetail
       const next = { ...row };
       if (action.status) next.status = action.status;
       if (action.notes !== undefined) next.notes = action.notes;
+      if (action.durationMs !== undefined) next.durationMs = action.durationMs;
       if (action.assigneeId !== undefined) next.assigneeId = action.assigneeId;
       if (action.step && next.stepResults) {
         next.stepResults = next.stepResults.map((step) =>

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+﻿import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, waitFor, screen, within } from "@testing-library/react";
 import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
@@ -116,7 +116,9 @@ describe("RunExecutor complete confirmation", () => {
     expect(
       screen.getByRole("heading", { name: "Complete this run?" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Completing is permanent/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Completing locks results and case structure/i),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(fetchMock).not.toHaveBeenCalled();
@@ -205,14 +207,14 @@ describe("RunExecutor abort confirmation", () => {
     expect(screen.getByText(/aborted and is locked/i)).toBeInTheDocument();
     expect(screen.getByText(/^Aborted$/i)).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /^Abort$/ }),
+      screen.queryByRole("button", { name: /^Abort run$/ }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /^Complete$/ }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /^Start$/ }),
-    ).not.toBeInTheDocument();
+    ).toBeDisabled();
     expect(screen.queryByRole("link", { name: "View report" })).toBeNull();
     expect(
       screen.getByRole("button", { name: "Mark SMOKE-1 as passed" }),
@@ -398,14 +400,17 @@ describe("RunExecutor list and detail", () => {
       />,
     );
 
-    await user.type(screen.getByPlaceholderText("Add a comment"), "Looks flaky");
+    await user.type(
+      screen.getByPlaceholderText(/Add a comment/),
+      "Looks flaky",
+    );
     await user.click(screen.getByRole("button", { name: "Comment" }));
     expect(await screen.findByText("Looks flaky")).toBeInTheDocument();
     expect(screen.getByText("Ada")).toBeInTheDocument();
 
     const file = new File(["xx"], "shot.png", { type: "image/png" });
     await user.upload(screen.getByLabelText("Attach file"), file);
-    expect(await screen.findByText("shot.png")).toBeInTheDocument();
+    expect(await screen.findByAltText("shot.png")).toBeInTheDocument();
     expect(refresh).not.toHaveBeenCalled();
   });
 
@@ -536,3 +541,7 @@ it("allows completing after reverting a failed notes draft to its saved value", 
   await waitFor(() => expect(screen.getByText(/completed and locked/i)).toBeVisible());
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
+
+
+
+

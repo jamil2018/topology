@@ -3,7 +3,16 @@ import type { OrderedStep } from "@/lib/tcm/steps";
 export const CASE_WORKSPACE_PAGE_SIZE = 50;
 
 export const CASE_PRIORITIES = ["P0", "P1", "P2", "P3"] as const;
-export const CASE_STATUSES = ["draft", "ready", "blocked", "deprecated"] as const;
+export const CASE_STATUSES = [
+  "draft",
+  "in_review",
+  "ready",
+  "blocked",
+  "deprecated",
+] as const;
+
+/** HTML5 DnD payload type for moving cases onto folders. */
+export const CASE_DRAG_MIME = "application/x-topology-case-ids";
 
 export type Folder = { id: string; name: string; parentId: string | null };
 export type FlatFolder = Folder & { depth: number };

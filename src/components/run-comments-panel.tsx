@@ -1,7 +1,13 @@
 "use client";
 
+import { useCallback, type ClipboardEvent } from "react";
 import { Button } from "@heroui/react";
 import type { AttachmentRow, CommentRow } from "./run-executor-model";
+import {
+  imageFilesFromDataTransfer,
+  isImageAttachment,
+  type PendingUpload,
+} from "./run-paste-upload";
 
 export function RunCommentsPanel({
   comments,
@@ -9,13 +15,26 @@ export function RunCommentsPanel({
   pending,
   onDraftChange,
   onSubmit,
+  onUpload,
 }: {
   comments: CommentRow[];
   draft: string;
   pending: boolean;
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
+  onUpload?: (file: File) => void | Promise<void>;
 }) {
+  const onPaste = useCallback(
+    (event: ClipboardEvent) => {
+      if (!onUpload) return;
+      const files = imageFilesFromDataTransfer(event.clipboardData);
+      if (files.length === 0) return;
+      event.preventDefault();
+      for (const file of files) void onUpload(file);
+    },
+    [onUpload],
+  );
+
   return (
     <div className="space-y-2 border-t border-[color:var(--topo-line)] pt-3">
       <p className="font-medium text-xs text-[color:var(--topo-muted)]">
@@ -49,7 +68,13 @@ export function RunCommentsPanel({
         <input
           value={draft}
           onChange={(e) => onDraftChange(e.target.value)}
-          placeholder="Add a comment"
+          onPaste={onPaste}
+          aria-label="Add a comment"
+          placeholder={
+            onUpload
+              ? "Add a comment — paste or drop screenshots"
+              : "Add a comment"
+          }
           className="min-w-[12rem] flex-1 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
         />
         <Button
@@ -69,11 +94,13 @@ export function RunAttachmentsPanel({
   attachments,
   uploading,
   pending,
+  pendingUploads = [],
   onUpload,
 }: {
   attachments: AttachmentRow[];
   uploading: boolean;
   pending: boolean;
+  pendingUploads?: PendingUpload[];
   onUpload: (file: File | null) => void;
 }) {
   return (
@@ -81,25 +108,67 @@ export function RunAttachmentsPanel({
       <p className="font-medium text-xs text-[color:var(--topo-muted)]">
         Attachments
       </p>
-      {attachments.length === 0 ? (
+      {attachments.length === 0 && pendingUploads.length === 0 ? (
         <p className="text-xs text-[color:var(--topo-muted)]">No files yet.</p>
       ) : (
-        <ul className="space-y-1">
-          {attachments.map((attachment) => (
-            <li key={attachment.id}>
-              <a
-                href={attachment.url ?? `/api/attachments/${attachment.id}`}
-                className="font-mono text-xs text-[color:var(--topo-accent)] hover:underline"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {attachment.filename}
-              </a>
-              <span className="ml-2 text-xs text-[color:var(--topo-muted)]">
-                {(attachment.sizeBytes / 1024).toFixed(1)} KB
+        <ul className="flex flex-wrap gap-2">
+          {pendingUploads.map((row) => (
+            <li
+              key={row.localId}
+              className="relative overflow-hidden rounded-md border border-[color:var(--topo-line)]"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={row.previewUrl}
+                alt={row.filename}
+                className="h-16 w-16 object-cover opacity-70"
+              />
+              <span className="absolute inset-x-0 bottom-0 bg-[color:var(--topo-ink)]/70 px-1 py-0.5 text-center text-[10px] text-white">
+                Uploading…
               </span>
             </li>
           ))}
+          {attachments.map((attachment) => {
+            const href = attachment.url ?? `/api/attachments/${attachment.id}`;
+            const image = isImageAttachment(
+              attachment.contentType,
+              attachment.filename,
+            );
+            return (
+              <li key={attachment.id}>
+                {image ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block overflow-hidden rounded-md border border-[color:var(--topo-line)]"
+                    title={attachment.filename}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={href}
+                      alt={attachment.filename}
+                      className="h-16 w-16 object-cover"
+                    />
+                  </a>
+                ) : (
+                  <>
+                    <a
+                      href={href}
+                      className="font-mono text-xs text-[color:var(--topo-accent)] hover:underline"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {attachment.filename}
+                    </a>
+                    <span className="ml-2 text-xs text-[color:var(--topo-muted)]">
+                      {(attachment.sizeBytes / 1024).toFixed(1)} KB
+                    </span>
+                  </>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[color:var(--topo-muted)]">
@@ -108,6 +177,7 @@ export function RunAttachmentsPanel({
         </span>
         <input
           type="file"
+          accept="image/*,*/*"
           aria-label="Attach file"
           className="hidden"
           disabled={uploading || pending}

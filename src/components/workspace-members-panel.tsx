@@ -95,15 +95,22 @@ export function WorkspaceMembersPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), roleId }),
       });
-      const data = await res.json();
-      if (!res.ok) {
+      const data = (await res.json()) as {
+        error?: unknown;
+        invite?: { email: string; acceptUrl: string; emailSent?: boolean };
+      };
+      if (!res.ok || !data.invite) {
         throw new Error(
           typeof data.error === "string" ? data.error : "Invite failed",
         );
       }
       setEmail("");
       setLastAcceptUrl(data.invite.acceptUrl);
-      setMsg(`Invite created for ${data.invite.email}`);
+      setMsg(
+        data.invite.emailSent
+          ? `Invite emailed to ${data.invite.email}`
+          : `Invite created for ${data.invite.email} — copy the link below`,
+      );
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invite failed");
@@ -169,9 +176,14 @@ export function WorkspaceMembersPanel() {
         <p className="text-xs text-[color:var(--topo-muted)]">{msg}</p>
       ) : null}
       {lastAcceptUrl ? (
-        <p className="break-all rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-1.5 font-mono text-xs text-[color:var(--topo-ink)]">
-          {lastAcceptUrl}
-        </p>
+        <div className="space-y-1.5">
+          <p className="text-xs text-[color:var(--topo-muted)]">
+            Copy-link fallback (always available):
+          </p>
+          <p className="break-all rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-1.5 font-mono text-xs text-[color:var(--topo-ink)]">
+            {lastAcceptUrl}
+          </p>
+        </div>
       ) : null}
 
       <ul className="divide-y divide-[color:var(--topo-line)] rounded-md border border-[color:var(--topo-line)]">

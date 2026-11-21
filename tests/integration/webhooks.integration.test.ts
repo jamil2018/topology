@@ -157,7 +157,7 @@ describe.skipIf(!hasDb)("outbound webhooks (integration)", () => {
     const { dispatchWebhook } = await import("@/lib/webhooks");
     const payload = await dispatchWebhook("run.completed", { run: { id: "retry" } }, workspaceId);
     const { db } = await import("@/db");
-    const { webhookEndpoints } = await import("@/db/schema");
+    const { webhookDeliveries, webhookEndpoints } = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
     await vi.waitFor(async () => {
       expect((await db.query.webhookEndpoints.findFirst({ where: eq(webhookEndpoints.id, endpoint.id) }))?.lastStatus).toBe(200);
@@ -172,6 +172,17 @@ describe.skipIf(!hasDb)("outbound webhooks (integration)", () => {
       expect(headers["X-Topology-Signature"]).toBe(`sha256=${createHmac("sha256", "retry-secret").update(body).digest("hex")}`);
       expect(call[1]?.redirect).toBe("manual");
     }
+    await vi.waitFor(async () => {
+      const row = await db.query.webhookDeliveries.findFirst({
+        where: eq(webhookDeliveries.deliveryId, payload.id),
+      });
+      expect(row).toBeTruthy();
+      expect(row!.endpointId).toBe(endpoint.id);
+      expect(row!.responseStatus).toBe(200);
+      expect(row!.attemptCount).toBe(3);
+      expect(row!.responseExcerpt).toContain("response");
+      expect(row!.requestBody).toContain("retry");
+    });
   });
 
   for (const status of [404, 500]) {

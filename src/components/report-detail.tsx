@@ -99,6 +99,14 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
       value: formatDuration(kpis.durationMs),
       hint: run.completedAt ? "wall clock" : "sum of result timings",
     },
+    {
+      label: "Avg duration",
+      value: formatDuration(kpis.averageDurationMs),
+      hint:
+        kpis.timedResultCount > 0
+          ? `${kpis.timedResultCount} timed result${kpis.timedResultCount === 1 ? "" : "s"}`
+          : "no timed results",
+    },
   ];
 
   return (
@@ -166,7 +174,7 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
         {formatWhen(run.completedAt)} · source {run.source}
       </p>
 
-      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-line)] sm:grid-cols-3 lg:grid-cols-6">
+      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-line)] sm:grid-cols-3 lg:grid-cols-7">
         {kpiTiles.map((tile, i) => (
           <motion.div
             key={tile.label}
@@ -265,12 +273,17 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
                     className="align-top hover:bg-[color:var(--topo-chip)]/30"
                   >
                     <td className="px-3 py-2.5">
-                      <div className="font-mono text-xs text-[color:var(--topo-accent)]">
-                        {row.caseKey}
-                      </div>
-                      <div className="mt-0.5 max-w-xs text-[color:var(--topo-ink)]">
-                        {row.title}
-                      </div>
+                      <Link
+                        href={`/runs/${run.id}?result=${row.resultId}`}
+                        className="block max-w-xs rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--topo-accent)]"
+                      >
+                        <div className="font-mono text-xs text-[color:var(--topo-accent)] hover:underline">
+                          {row.caseKey}
+                        </div>
+                        <div className="mt-0.5 text-[color:var(--topo-ink)]">
+                          {row.title}
+                        </div>
+                      </Link>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-[color:var(--topo-muted)]">
                       {row.suite}

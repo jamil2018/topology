@@ -1,6 +1,15 @@
 "use client";
 
-import { ArrowLeftIcon } from "@phosphor-icons/react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+} from "react";
+import { ArrowLeftIcon, PauseIcon, PlayIcon, ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
+import { formatDuration } from "@/lib/report-stats";
 import { formatStatusLabel } from "@/lib/format-labels";
 import {
   RESULT_STATUSES,
@@ -14,6 +23,12 @@ import {
   RunAttachmentsPanel,
   RunCommentsPanel,
 } from "./run-comments-panel";
+import {
+  imageFilesFromDataTransfer,
+  pendingUploadFromFile,
+  revokePendingUploads,
+  type PendingUpload,
+} from "./run-paste-upload";
 
 function ResultStatusButtons({
   caseKey,
@@ -51,6 +66,61 @@ function ResultStatusButtons({
   );
 }
 
+function useResultTimer(resultId: string | null) {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [running, setRunning] = useState(false);
+  const startedAt = useRef<number | null>(null);
+  const baseMs = useRef(0);
+
+  useEffect(() => {
+    setElapsedMs(0);
+    setRunning(false);
+    startedAt.current = null;
+    baseMs.current = 0;
+  }, [resultId]);
+
+  useEffect(() => {
+    if (!running) return;
+    const tick = () => {
+      if (startedAt.current == null) return;
+      setElapsedMs(baseMs.current + (performance.now() - startedAt.current));
+    };
+    tick();
+    const id = window.setInterval(tick, 250);
+    return () => window.clearInterval(id);
+  }, [running]);
+
+  const start = useCallback(() => {
+    if (running) return;
+    startedAt.current = performance.now();
+    setRunning(true);
+  }, [running]);
+
+  const pause = useCallback(() => {
+    if (!running || startedAt.current == null) return;
+    baseMs.current += performance.now() - startedAt.current;
+    startedAt.current = null;
+    setElapsedMs(baseMs.current);
+    setRunning(false);
+  }, [running]);
+
+  const reset = useCallback(() => {
+    startedAt.current = null;
+    baseMs.current = 0;
+    setElapsedMs(0);
+    setRunning(false);
+  }, []);
+
+  const readMs = useCallback(() => {
+    if (running && startedAt.current != null) {
+      return Math.round(baseMs.current + (performance.now() - startedAt.current));
+    }
+    return Math.round(baseMs.current || elapsedMs);
+  }, [elapsedMs, running]);
+
+  return { elapsedMs, running, start, pause, reset, readMs };
+}
+
 export function RunCaseDetail({
   result,
   members,
@@ -61,6 +131,8 @@ export function RunCaseDetail({
   notes,
   commentDraft,
   linkKey,
+  defaultProvider = "mock",
+  availableProviders,
   onBack,
   onRecordStatus,
   onStepStatus,
@@ -72,6 +144,7 @@ export function RunCaseDetail({
   onUpload,
   onLinkKeyChange,
   onIssueAction,
+  onTimerReader,
 }: {
   result: ResultRow | null;
   members: MemberOption[];
@@ -82,8 +155,10 @@ export function RunCaseDetail({
   notes: string;
   commentDraft: string;
   linkKey: string;
+  defaultProvider?: string;
+  availableProviders?: string[];
   onBack: () => void;
-  onRecordStatus: (status: string) => void;
+  onRecordStatus: (status: string, durationMs?: number) => void;
   onStepStatus: (position: number, status: string) => void;
   onAssign: (assigneeId: string | null) => void;
   onNotesChange: (value: string) => void;
@@ -93,7 +168,48 @@ export function RunCaseDetail({
   onUpload: (file: File | null) => void;
   onLinkKeyChange: (value: string) => void;
   onIssueAction: (body: Record<string, unknown>) => void;
+  onTimerReader?: (readMs: () => number) => void;
 }) {
+  const [dropActive, setDropActive] = useState(false);
+  const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
+  const timer = useResultTimer(result?.id ?? null);
+
+  useEffect(() => {
+    onTimerReader?.(timer.readMs);
+  }, [onTimerReader, timer.readMs]);
+
+  useEffect(() => {
+    return () => revokePendingUploads(pendingUploads);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- revoke only on unmount
+  }, []);
+
+  useEffect(() => {
+    if (!uploading && pendingUploads.length > 0) {
+      revokePendingUploads(pendingUploads);
+      setPendingUploads([]);
+    }
+  }, [uploading, pendingUploads]);
+
+  const queueUpload = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) return;
+      const next = files.map(pendingUploadFromFile);
+      setPendingUploads((prev) => [...prev, ...next]);
+      for (const file of files) onUpload(file);
+    },
+    [onUpload],
+  );
+
+  const onPasteNotes = useCallback(
+    (event: ClipboardEvent) => {
+      const files = imageFilesFromDataTransfer(event.clipboardData);
+      if (files.length === 0) return;
+      event.preventDefault();
+      queueUpload(files);
+    },
+    [queueUpload],
+  );
+
   if (!result) {
     return (
       <div className="flex flex-1 items-center justify-center px-4 py-10 text-sm text-[color:var(--topo-muted)]">
@@ -131,8 +247,59 @@ export function RunCaseDetail({
           caseKey={result.case.key}
           value={result.status}
           disabled={pending || frozen}
-          onChange={onRecordStatus}
+          onChange={(status) => {
+            const ms = timer.readMs();
+            onRecordStatus(status, ms > 0 ? ms : undefined);
+            if (ms > 0) timer.pause();
+          }}
         />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2.5 py-2">
+        <span className="text-xs text-[color:var(--topo-muted)]">Timer</span>
+        <span
+          className="font-mono text-sm tabular-nums text-[color:var(--topo-ink)]"
+          aria-live="polite"
+        >
+          {formatDuration(Math.round(timer.elapsedMs))}
+        </span>
+        {result.durationMs != null && result.durationMs > 0 ? (
+          <span className="text-xs text-[color:var(--topo-muted)]">
+            last {formatDuration(result.durationMs)}
+          </span>
+        ) : null}
+        <div className="ml-auto flex flex-wrap gap-1">
+          {timer.running ? (
+            <button
+              type="button"
+              disabled={frozen}
+              onClick={timer.pause}
+              className="inline-flex items-center gap-1 rounded-md border border-[color:var(--topo-line)] px-2 py-1 text-xs text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-chip)]/50 disabled:opacity-50"
+            >
+              <PauseIcon size={12} weight="bold" aria-hidden />
+              Pause timer
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={frozen}
+              onClick={timer.start}
+              className="inline-flex items-center gap-1 rounded-md border border-[color:var(--topo-line)] px-2 py-1 text-xs text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-chip)]/50 disabled:opacity-50"
+            >
+              <PlayIcon size={12} weight="bold" aria-hidden />
+              Start timer
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={frozen || (timer.elapsedMs === 0 && !timer.running)}
+            onClick={timer.reset}
+            className="inline-flex items-center gap-1 rounded-md border border-[color:var(--topo-line)] px-2 py-1 text-xs text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)] disabled:opacity-50"
+          >
+            <ArrowCounterClockwiseIcon size={12} weight="bold" aria-hidden />
+            Reset timer
+          </button>
+        </div>
       </div>
 
       {result.iterationValuesJson ? (
@@ -216,41 +383,75 @@ export function RunCaseDetail({
           pending={pending}
           issueBusy={issueBusy}
           linkKey={linkKey}
+          defaultProvider={defaultProvider}
+          availableProviders={availableProviders}
           onLinkKeyChange={onLinkKeyChange}
           onIssueAction={onIssueAction}
         />
       </div>
 
-      <label className="mt-3 block space-y-1 text-xs">
-        <span className="text-[color:var(--topo-muted)]">Notes</span>
-        <textarea
-          value={notes}
-          onChange={(e) => onNotesChange(e.target.value)}
-          onBlur={onNotesBlur}
-          rows={3}
-          readOnly={frozen}
-          disabled={frozen}
-          className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm disabled:opacity-70"
-          placeholder="Optional notes for this result"
-        />
-      </label>
+      <div
+        className={`mt-3 space-y-3 rounded-md ${
+          dropActive
+            ? "outline outline-2 outline-[color:var(--topo-accent)] outline-offset-2"
+            : ""
+        }`}
+        onDragEnter={(e: DragEvent) => {
+          if ([...e.dataTransfer.types].includes("Files")) setDropActive(true);
+        }}
+        onDragOver={(e: DragEvent) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }}
+        onDragLeave={() => setDropActive(false)}
+        onDrop={(e: DragEvent) => {
+          e.preventDefault();
+          setDropActive(false);
+          queueUpload(imageFilesFromDataTransfer(e.dataTransfer));
+        }}
+      >
+        <label className="block space-y-1 text-xs">
+          <span className="text-[color:var(--topo-muted)]">
+            Notes — paste or drop screenshots
+          </span>
+          <textarea
+            aria-label="Notes"
+            value={notes}
+            onChange={(e) => onNotesChange(e.target.value)}
+            onBlur={onNotesBlur}
+            onPaste={onPasteNotes}
+            rows={3}
+            readOnly={frozen}
+            disabled={frozen}
+            className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm disabled:opacity-70"
+            placeholder="Optional notes for this result"
+          />
+        </label>
 
-      <div className="mt-3">
+        {dropActive ? (
+          <p className="text-xs text-[color:var(--topo-accent)]">
+            Drop image to attach as evidence
+          </p>
+        ) : null}
+
         <RunCommentsPanel
           comments={result.comments}
           draft={commentDraft}
           pending={pending}
           onDraftChange={onCommentDraftChange}
           onSubmit={onComment}
+          onUpload={(file) => queueUpload([file])}
         />
-      </div>
 
-      <div className="mt-3">
         <RunAttachmentsPanel
           attachments={result.attachments}
           uploading={uploading}
           pending={pending}
-          onUpload={onUpload}
+          pendingUploads={pendingUploads}
+          onUpload={(file) => {
+            if (file) queueUpload([file]);
+            else onUpload(file);
+          }}
         />
       </div>
     </article>

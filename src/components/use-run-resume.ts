@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { StatusFilter } from "./run-executor-model";
+import { STATUS_FILTERS, type StatusFilter } from "./run-executor-model";
 
 type Context = { focusedId: string | null; statusFilter: StatusFilter; mineOnly: boolean; query: string };
 const fingerprint = (value: Context) => JSON.stringify([value.focusedId, value.statusFilter, value.mineOnly, value.query]);
@@ -26,7 +26,9 @@ export function useRunResume(key: string, resultIds: string[], context: Context,
       const status = params.get("status") ?? (explicit ? "all" : saved.statusFilter);
       const next: Context = {
         focusedId: candidate && latest.current.resultIds.includes(candidate) ? candidate : fallback,
-        statusFilter: ["all", "untested", "failed", "blocked"].includes(status ?? "") ? status as StatusFilter : "all",
+        statusFilter: STATUS_FILTERS.includes(status as StatusFilter)
+          ? (status as StatusFilter)
+          : "all",
         query: params.get("q") ?? (!explicit && typeof saved.query === "string" ? saved.query : ""),
         mineOnly: params.has("mine") ? params.get("mine") === "1" : !explicit && saved.mineOnly === true,
       };

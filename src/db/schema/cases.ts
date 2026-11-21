@@ -95,6 +95,11 @@ export const cases = pgTable(
     assigneeId: uuid("assignee_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    reviewerId: uuid("reviewer_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: timestamp("reviewed_at", { mode: "date" }),
+    // search_vector tsvector GENERATED ALWAYS + GIN index: migration 0007 (query via raw SQL).
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },
@@ -195,6 +200,7 @@ export const caseSteps = pgTable(
     sharedStepId: uuid("shared_step_id").references(() => sharedSteps.id, {
       onDelete: "set null",
     }),
+    // search_vector tsvector GENERATED ALWAYS + GIN index: migration 0007 (query via raw SQL).
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },

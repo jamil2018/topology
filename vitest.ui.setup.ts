@@ -24,9 +24,30 @@ function installMedia() {
     }));
   }
 }
+function installObjectUrl() {
+  if (typeof URL.createObjectURL !== "function") {
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => "blob:mock"),
+    });
+  }
+  if (typeof URL.revokeObjectURL !== "function") {
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
+  }
+}
 installStorage();
 installMedia();
-beforeEach(() => { installStorage(); installMedia(); });
+installObjectUrl();
+beforeEach(() => {
+  installStorage();
+  installMedia();
+  installObjectUrl();
+});
 afterEach(() => {
   window.localStorage?.clear();
   window.history.replaceState(null, "", "/");

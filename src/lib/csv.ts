@@ -16,7 +16,35 @@ export const csvCaseRowSchema = z.object({
   tags: z.string().optional().default(""),
 });
 
-export type CsvCaseRow = z.infer<typeof csvCaseRowSchema>;
+export type CsvCaseRow = z.infer<typeof csvCaseRowSchema> & {
+  customFields?: Record<string, string>;
+};
+
+const CORE_CSV_HEADERS = new Set([
+  "key",
+  "title",
+  "description",
+  "preconditions",
+  "steps",
+  "expectedResult",
+  "priority",
+  "status",
+  "folder",
+  "tags",
+]);
+
+/** Headers like `cf:owner` or bare custom field keys from known defs. */
+export function customFieldKeyFromHeader(
+  header: string,
+  knownKeys?: ReadonlySet<string>,
+): string | null {
+  const trimmed = header.trim();
+  if (!trimmed || CORE_CSV_HEADERS.has(trimmed)) return null;
+  const cfMatch = /^cf[:._-](.+)$/i.exec(trimmed);
+  if (cfMatch) return cfMatch[1].trim().toLowerCase();
+  if (knownKeys?.has(trimmed.toLowerCase())) return trimmed.toLowerCase();
+  return null;
+}
 
 /**
  * Parse records without splitting on newlines first. A quoted field may
@@ -109,7 +137,10 @@ function normalizeHeader(header: string): string {
   return map[key] ?? header.trim();
 }
 
-export function parseCasesCsv(raw: string): {
+export function parseCasesCsv(
+  raw: string,
+  options?: { customFieldKeys?: readonly string[] },
+): {
   rows: CsvCaseRow[];
   errors: string[];
 } {
@@ -119,15 +150,26 @@ export function parseCasesCsv(raw: string): {
     return { rows: [], errors: ["CSV must include a header and at least one row"] };
   }
 
-  const headers = records[0].map(normalizeHeader);
+  const knownKeys = new Set(
+    (options?.customFieldKeys ?? []).map((k) => k.toLowerCase()),
+  );
+  const rawHeaders = records[0].map((h) => h.trim());
+  const headers = rawHeaders.map(normalizeHeader);
   const rows: CsvCaseRow[] = [];
   const errors: string[] = [];
 
   for (let i = 1; i < records.length; i += 1) {
     const cells = records[i];
     const record: Record<string, string> = {};
+    const customFields: Record<string, string> = {};
     headers.forEach((header, idx) => {
-      record[header] = cells[idx] ?? "";
+      const value = cells[idx] ?? "";
+      const cfKey = customFieldKeyFromHeader(rawHeaders[idx] ?? header, knownKeys);
+      if (cfKey) {
+        if (value.trim()) customFields[cfKey] = value.trim();
+        return;
+      }
+      record[header] = value;
     });
 
     const parsed = csvCaseRowSchema.safeParse(record);
@@ -135,7 +177,10 @@ export function parseCasesCsv(raw: string): {
       errors.push(`Row ${i + 1}: ${parsed.error.issues[0]?.message ?? "invalid"}`);
       continue;
     }
-    rows.push(parsed.data);
+    rows.push({
+      ...parsed.data,
+      ...(Object.keys(customFields).length > 0 ? { customFields } : {}),
+    });
   }
 
   return { rows, errors };
@@ -153,8 +198,11 @@ export function serializeCasesCsv(
     status: string;
     folderName?: string | null;
     tags: string[];
+    customFields?: Record<string, string | number | boolean | null | undefined>;
   }>,
+  options?: { customFieldKeys?: readonly string[] },
 ): string {
+  const customKeys = [...(options?.customFieldKeys ?? [])];
   const header = [
     "key",
     "title",
@@ -166,6 +214,7 @@ export function serializeCasesCsv(
     "status",
     "folder",
     "tags",
+    ...customKeys.map((key) => `cf:${key}`),
   ];
 
   // Spreadsheets execute a cell that starts with these, even when quoted.
@@ -182,6 +231,11 @@ export function serializeCasesCsv(
 
   const lines = [header.join(",")];
   for (const c of cases) {
+    const customCells = customKeys.map((key) => {
+      const raw = c.customFields?.[key];
+      if (raw == null) return "";
+      return String(raw);
+    });
     lines.push(
       [
         c.key,
@@ -194,6 +248,7 @@ export function serializeCasesCsv(
         c.status,
         c.folderName ?? "",
         c.tags.join(";"),
+        ...customCells,
       ]
         .map(escape)
         .join(","),

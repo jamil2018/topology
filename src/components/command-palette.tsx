@@ -10,6 +10,7 @@ import {
   ChartBarIcon,
   ChartLineIcon,
   CirclesFourIcon,
+  CopyIcon,
   FlagIcon,
   FolderIcon,
   GearIcon,
@@ -36,19 +37,79 @@ import {
 import { useQualityGraph } from "./quality-graph-provider";
 
 type SearchHit = {
-  cases: Array<{ id: string; key: string; title: string }>;
-  runs: Array<{ id: string; name: string; status: string }>;
-  folders: Array<{ id: string; name: string }>;
+  cases: Array<{
+    id: string;
+    key: string;
+    title: string;
+    snippet?: string | null;
+    matchField?: string;
+  }>;
+  runs: Array<{
+    id: string;
+    name: string;
+    status: string;
+    snippet?: string | null;
+  }>;
+  folders: Array<{ id: string; name: string; snippet?: string | null }>;
+  comments: Array<{
+    id: string;
+    resultId: string;
+    runId: string;
+    snippet: string;
+    matchField?: string;
+  }>;
+  requirements?: Array<{
+    id: string;
+    key: string;
+    title: string;
+    snippet?: string | null;
+    matchField?: string;
+  }>;
+  intents?: Array<{
+    id: string;
+    key: string;
+    title: string;
+    snippet?: string | null;
+    matchField?: string;
+  }>;
+  risks?: Array<{
+    id: string;
+    key: string;
+    title: string;
+    snippet?: string | null;
+    matchField?: string;
+  }>;
 };
 
 type CommandItem = {
   id: string;
   label: string;
   hint?: string;
+  badge?: string;
+  snippet?: string;
   group: string;
   Icon: Icon;
   run: () => void;
 };
+
+const EMPTY_HITS: SearchHit = {
+  cases: [],
+  runs: [],
+  folders: [],
+  comments: [],
+};
+
+function matchFieldBadge(entity: string, matchField?: string): string {
+  if (!matchField) return entity;
+  if (matchField === "key") return `${entity} · Key`;
+  if (matchField === "step") return `${entity} · Step`;
+  if (matchField === "title") return `${entity} · Title`;
+  if (matchField === "description") return `${entity} · Description`;
+  if (matchField === "behavior") return `${entity} · Behavior`;
+  if (matchField === "comment") return "Comment";
+  if (matchField === "case") return entity;
+  return entity;
+}
 
 const PAGE_ICONS: Record<string, CommandItem["Icon"]> = {
   "/": CirclesFourIcon,
@@ -89,7 +150,8 @@ export type PaletteEntityFocus =
 
 export type CaseCommandDetail =
   | { type: "status"; id: string; value: string }
-  | { type: "priority"; id: string; value: string };
+  | { type: "priority"; id: string; value: string }
+  | { type: "duplicate"; id: string };
 
 let paletteFocus: PaletteEntityFocus = { kind: "none" };
 
@@ -124,11 +186,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const [hits, setHits] = useState<SearchHit>({
-    cases: [],
-    runs: [],
-    folders: [],
-  });
+  const [hits, setHits] = useState<SearchHit>(EMPTY_HITS);
   const inputRef = useRef<HTMLInputElement>(null);
   const trimmedQuery = query.trim();
 
@@ -136,7 +194,7 @@ export function CommandPalette() {
     setOpen(false);
     setQuery("");
     setActive(0);
-    setHits({ cases: [], runs: [], folders: [] });
+    setHits(EMPTY_HITS);
   }, []);
 
   useEffect(() => {
@@ -191,6 +249,10 @@ export function CommandPalette() {
             cases: data.cases ?? [],
             runs: data.runs ?? [],
             folders: data.folders ?? [],
+            comments: data.comments ?? [],
+            requirements: data.requirements,
+            intents: data.intents,
+            risks: data.risks,
           });
         })
         .catch(() => {
@@ -206,9 +268,7 @@ export function CommandPalette() {
   const items = useMemo(() => {
     const list: CommandItem[] = [];
     const q = query.trim().toLowerCase();
-    const resolvedHits = trimmedQuery
-      ? hits
-      : { cases: [] as SearchHit["cases"], runs: [] as SearchHit["runs"], folders: [] as SearchHit["folders"] };
+    const resolvedHits = trimmedQuery ? hits : EMPTY_HITS;
 
     const contextual: CommandItem[] = [];
     if (focus.kind === "case") {
@@ -261,6 +321,17 @@ export function CommandPalette() {
           close();
         },
       });
+      contextual.push({
+        id: "ctx-duplicate-case",
+        label: `Duplicate ${caseKey}`,
+        hint: "Copy",
+        group: "Focused",
+        Icon: CopyIcon,
+        run: () => {
+          dispatchCaseCommand({ type: "duplicate", id: caseId });
+          close();
+        },
+      });
     }
     if (isRunExecutorPath(pathname)) {
       contextual.push({
@@ -278,6 +349,7 @@ export function CommandPalette() {
 
     for (const action of contextual) {
       if (action.id.startsWith("ctx-status") || action.id.startsWith("ctx-priority")) { if (!can("cases.edit")) continue; }
+      if (action.id === "ctx-duplicate-case" && !can("cases.create")) continue;
       if (action.id === "ctx-start-run" && !can("runs.create")) continue;
       if (action.id === "ctx-assign" && !can("runs.edit")) continue;
       if (
@@ -391,7 +463,8 @@ export function CommandPalette() {
       list.push({
         id: `case-${c.id}`,
         label: `${c.key} · ${c.title}`,
-        hint: "Case",
+        badge: matchFieldBadge("Case", c.matchField),
+        snippet: c.snippet && c.snippet !== c.title ? c.snippet : undefined,
         group: "Jump",
         Icon: ListChecksIcon,
         run: () => {
@@ -404,7 +477,10 @@ export function CommandPalette() {
       list.push({
         id: `run-${r.id}`,
         label: r.name,
+        badge: "Run",
         hint: formatStatusLabel(r.status),
+        snippet:
+          r.snippet && r.snippet !== r.name ? r.snippet : undefined,
         group: "Jump",
         Icon: PlayCircleIcon,
         run: () => {
@@ -417,11 +493,72 @@ export function CommandPalette() {
       list.push({
         id: `folder-${f.id}`,
         label: f.name,
-        hint: "Folder",
+        badge: "Folder",
         group: "Jump",
         Icon: FolderIcon,
         run: () => {
           router.push(`/cases?folder=${f.id}`);
+          close();
+        },
+      });
+    }
+    for (const comment of resolvedHits.comments) {
+      list.push({
+        id: `comment-${comment.id}`,
+        label: "Result comment",
+        badge: "Comment",
+        snippet: comment.snippet || undefined,
+        group: "Jump",
+        Icon: BugIcon,
+        run: () => {
+          router.push(`/runs/${comment.runId}?result=${comment.resultId}`);
+          close();
+        },
+      });
+    }
+    for (const req of resolvedHits.requirements ?? []) {
+      list.push({
+        id: `requirement-${req.id}`,
+        label: `${req.key} · ${req.title}`,
+        badge: matchFieldBadge("Requirement", req.matchField),
+        snippet:
+          req.snippet && req.snippet !== req.title ? req.snippet : undefined,
+        group: "Jump",
+        Icon: FolderIcon,
+        run: () => {
+          router.push(`/requirements`);
+          close();
+        },
+      });
+    }
+    for (const intent of resolvedHits.intents ?? []) {
+      list.push({
+        id: `intent-${intent.id}`,
+        label: `${intent.key} · ${intent.title}`,
+        badge: matchFieldBadge("Intent", intent.matchField),
+        snippet:
+          intent.snippet && intent.snippet !== intent.title
+            ? intent.snippet
+            : undefined,
+        group: "Jump",
+        Icon: TargetIcon,
+        run: () => {
+          router.push(`/intents?intent=${intent.id}`);
+          close();
+        },
+      });
+    }
+    for (const risk of resolvedHits.risks ?? []) {
+      list.push({
+        id: `risk-${risk.id}`,
+        label: `${risk.key} · ${risk.title}`,
+        badge: matchFieldBadge("Risk", risk.matchField),
+        snippet:
+          risk.snippet && risk.snippet !== risk.title ? risk.snippet : undefined,
+        group: "Jump",
+        Icon: BugIcon,
+        run: () => {
+          router.push(`/risks`);
           close();
         },
       });
@@ -535,13 +672,25 @@ export function CommandPalette() {
                           weight={selected ? "fill" : "regular"}
                           className={
                             selected
-                              ? "text-[color:var(--topo-accent)]"
-                              : "text-[color:var(--topo-muted)]"
+                              ? "shrink-0 self-start text-[color:var(--topo-accent)]"
+                              : "shrink-0 self-start text-[color:var(--topo-muted)]"
                           }
                         />
-                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                        <div className="min-w-0 flex-1">
+                          <span className="min-w-0 truncate">{item.label}</span>
+                          {item.snippet ? (
+                            <span className="mt-0.5 block truncate text-xs text-[color:var(--topo-muted)]">
+                              {item.snippet}
+                            </span>
+                          ) : null}
+                        </div>
+                        {item.badge ? (
+                          <span className="shrink-0 self-start rounded border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[color:var(--topo-muted)]">
+                            {item.badge}
+                          </span>
+                        ) : null}
                         {item.hint ? (
-                          <span className="shrink-0 font-medium text-xs text-[color:var(--topo-muted)]">
+                          <span className="shrink-0 self-start font-medium text-xs text-[color:var(--topo-muted)]">
                             {item.hint}
                           </span>
                         ) : null}

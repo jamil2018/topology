@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
-import { and, eq, notInArray } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { runResults, runStepResults, runs, notifications } from "@/db/schema";
+import { recordAuditEvent } from "@/lib/audit";
 import { parseAssigneeInput, requireWorkspaceAssignee } from "@/lib/assignee";
-import { openTriageForResult } from "@/lib/ci-ingest";
+import { clampDurationMs, openTriageForResult } from "@/lib/ci-ingest";
 import { isLockFailure } from "@/lib/pg-error";
 import { requireProjectAccess } from "@/lib/project";
-import { pendingResultCount } from "@/lib/run-immutability";
+import {
+  isReopenableRunStatus,
+  pendingResultCount,
+} from "@/lib/run-immutability";
 import {
   immutableMessageFor,
   isRunFrozen,
@@ -35,6 +39,7 @@ const updateResultSchema = z
     resultId: z.string().uuid().optional(),
     status: resultStatusEnum.optional(),
     notes: z.string().optional().default(""),
+    durationMs: z.number().int().min(0).nullable().optional(),
     stepResults: z
       .array(
         z.object({
@@ -48,6 +53,17 @@ const updateResultSchema = z
   })
   .refine((v) => v.status !== undefined || (v.stepResults && v.stepResults.length > 0), {
     message: "Provide a status or step results",
+  });
+
+const bulkResultsSchema = z
+  .object({
+    action: z.literal("bulk_results"),
+    resultIds: z.array(z.string().uuid()).min(1).max(500),
+    status: resultStatusEnum.optional(),
+    assigneeId: z.unknown().optional(),
+  })
+  .refine((v) => v.status !== undefined || v.assigneeId !== undefined, {
+    message: "Provide a status and/or assigneeId",
   });
 
 type Params = { params: Promise<{ id: string }> };
@@ -144,7 +160,7 @@ export async function PATCH(request: Request, { params }: Params) {
       ? (body as { action?: unknown }).action
       : undefined;
   const neededAction =
-    action === "complete"
+    action === "complete" || action === "reopen"
       ? ("runs.complete" as const)
       : action === "abort"
         ? ("runs.delete" as const)
@@ -277,6 +293,11 @@ export async function PATCH(request: Request, { params }: Params) {
       const data = await buildRunCompletedPayload(id);
       if (data) {
         void dispatchWebhook("run.completed", data, workspaceId);
+        void import("@/lib/notification-channels")
+          .then(({ dispatchNotificationChannels }) =>
+            dispatchNotificationChannels("run.completed", data, workspaceId),
+          )
+          .catch(() => {});
       }
       try {
         const { refreshImplementationStatsForRun } = await import(
@@ -297,6 +318,269 @@ export async function PATCH(request: Request, { params }: Params) {
       }
       return NextResponse.json(
         { error: "Failed to complete run" },
+        { status: 500 },
+      );
+    }
+  }
+
+  if (action === "reopen") {
+    if (!isReopenableRunStatus(existing.status)) {
+      return NextResponse.json(
+        { error: "Only completed or aborted runs can be reopened" },
+        { status: 409 },
+      );
+    }
+    try {
+      const outcome = await db.transaction(async (tx) => {
+        const [locked] = await tx
+          .select()
+          .from(runs)
+          .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
+          .limit(1)
+          .for("update");
+        if (!locked) return { kind: "missing" as const };
+        if (!isReopenableRunStatus(locked.status)) {
+          return { kind: "not-reopenable" as const, status: locked.status };
+        }
+        const [updated] = await tx
+          .update(runs)
+          .set({
+            status: "in_progress",
+            completedAt: null,
+            startedAt: locked.startedAt ?? new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
+          .returning();
+        return { kind: "ok" as const, run: updated, previousStatus: locked.status };
+      });
+      if (outcome.kind === "missing") {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      if (outcome.kind === "not-reopenable") {
+        return NextResponse.json(
+          { error: "Only completed or aborted runs can be reopened" },
+          { status: 409 },
+        );
+      }
+      await recordAuditEvent({
+        action: "run.reopen",
+        actorId: session.user.id,
+        actorEmail: session.user.email ?? null,
+        workspaceId,
+        targetType: "run",
+        targetId: id,
+        metadata: {
+          previousStatus: outcome.previousStatus,
+          name: outcome.run.name,
+        },
+        request,
+      });
+      liveRun(workspaceId, id, { runStatus: "in_progress" });
+      return NextResponse.json({ run: outcome.run });
+    } catch (err) {
+      if (isLockFailure(err)) {
+        return NextResponse.json(
+          { error: "Could not lock the run to reopen it. Retry." },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json(
+        { error: "Failed to reopen run" },
+        { status: 500 },
+      );
+    }
+  }
+
+  if (action === "bulk_results") {
+    const parsedBulk = bulkResultsSchema.safeParse(body);
+    if (!parsedBulk.success) {
+      return NextResponse.json(
+        { error: parsedBulk.error.flatten() },
+        { status: 400 },
+      );
+    }
+    if (isRunFrozen(existing.status)) {
+      return runImmutableResponse(immutableMessageFor(existing.status));
+    }
+
+    let assigneeId: string | null | undefined = undefined;
+    if (parsedBulk.data.assigneeId !== undefined) {
+      const parsedAssignee = parseAssigneeInput(parsedBulk.data.assigneeId);
+      if (!parsedAssignee.ok) {
+        return NextResponse.json(
+          { error: parsedAssignee.error },
+          { status: 400 },
+        );
+      }
+      const rejected = await rejectAssignee(
+        workspaceId,
+        parsedAssignee.assigneeId,
+      );
+      if (rejected) return rejected;
+      assigneeId = parsedAssignee.assigneeId;
+    }
+
+    const resultIds = [...new Set(parsedBulk.data.resultIds)];
+    const status = parsedBulk.data.status;
+
+    try {
+      const outcome = await db.transaction(async (tx) => {
+        const [locked] = await tx
+          .select({ status: runs.status, startedAt: runs.startedAt, name: runs.name })
+          .from(runs)
+          .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
+          .limit(1)
+          .for("update");
+        if (!locked) return { kind: "missing" as const };
+        if (isRunFrozen(locked.status)) {
+          return { kind: "frozen" as const, status: locked.status };
+        }
+
+        const rows = await tx
+          .select()
+          .from(runResults)
+          .where(and(eq(runResults.runId, id), inArray(runResults.id, resultIds)))
+          .for("update");
+        if (rows.length === 0) {
+          return { kind: "result-missing" as const };
+        }
+
+        const patch: {
+          status?: typeof status;
+          assigneeId?: string | null;
+          executedById?: string;
+          executedAt?: Date;
+        } = {};
+        if (status !== undefined) {
+          patch.status = status;
+          patch.executedById = session.user.id;
+          patch.executedAt = new Date();
+        }
+        if (assigneeId !== undefined) {
+          patch.assigneeId = assigneeId;
+        }
+
+        const updated = await tx
+          .update(runResults)
+          .set(patch)
+          .where(and(eq(runResults.runId, id), inArray(runResults.id, resultIds)))
+          .returning();
+
+        await tx
+          .update(runs)
+          .set({
+            status: "in_progress",
+            startedAt: locked.startedAt ?? new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)));
+
+        if (assigneeId && assigneeId !== session.user.id) {
+          const previousById = new Map(rows.map((row) => [row.id, row.assigneeId]));
+          const notifyIds = new Set<string>();
+          for (const row of updated) {
+            if (
+              row.assigneeId === assigneeId &&
+              previousById.get(row.id) !== assigneeId
+            ) {
+              notifyIds.add(row.id);
+            }
+          }
+          if (notifyIds.size > 0) {
+            await tx.insert(notifications).values({
+              workspaceId,
+              userId: assigneeId,
+              type: "assignment",
+              title: `Tests assigned in ${locked.name}`,
+              body: `${notifyIds.size} result${notifyIds.size === 1 ? "" : "s"} assigned to you.`,
+              entityType: "run",
+              entityId: id,
+            });
+            return {
+              kind: "ok" as const,
+              results: updated,
+              assignment: {
+                userId: assigneeId,
+                title: `Tests assigned in ${locked.name}`,
+                body: `${notifyIds.size} result${notifyIds.size === 1 ? "" : "s"} assigned to you.`,
+              },
+            };
+          }
+        }
+
+        return { kind: "ok" as const, results: updated };
+      });
+
+      if (outcome.kind === "missing") {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      if (outcome.kind === "frozen") {
+        return runImmutableResponse(immutableMessageFor(outcome.status));
+      }
+      if (outcome.kind === "result-missing") {
+        return NextResponse.json({ error: "Result not found" }, { status: 404 });
+      }
+
+      if ("assignment" in outcome && outcome.assignment) {
+        void import("@/lib/notification-channels")
+          .then(({ dispatchNotificationChannels }) =>
+            dispatchNotificationChannels(
+              "assignment",
+              {
+                userId: outcome.assignment!.userId,
+                title: outcome.assignment!.title,
+                body: outcome.assignment!.body,
+                entityType: "run",
+                entityId: id,
+              },
+              workspaceId,
+            ),
+          )
+          .catch(() => {});
+      }
+
+      for (const row of outcome.results) {
+        if (row.status === "failed" || row.status === "blocked") {
+          await openTriageForResult(row.id);
+        }
+        if (row.status === "passed" && row.caseId) {
+          try {
+            await syncIssuesOnPassingRetest({
+              workspaceId,
+              caseId: row.caseId,
+            });
+          } catch {
+            // Outbound close is best-effort.
+          }
+        }
+        liveRun(workspaceId, id, {
+          resultId: row.id,
+          status: row.status,
+          assigneeId: row.assigneeId,
+          runStatus: "in_progress",
+        });
+        if (row.status === "failed" || row.status === "blocked") {
+          emitLive({
+            workspaceId,
+            topic: "triage",
+            entityId: row.id,
+            resultId: row.id,
+            status: row.status,
+          });
+        }
+      }
+
+      return NextResponse.json({ results: outcome.results });
+    } catch (err) {
+      if (isLockFailure(err)) {
+        return NextResponse.json(
+          { error: "Could not lock the run for bulk update. Retry." },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json(
+        { error: "Failed to update results" },
         { status: 500 },
       );
     }
@@ -337,16 +621,51 @@ export async function PATCH(request: Request, { params }: Params) {
           })
           .where(and(eq(runs.id, id), eq(runs.workspaceId, workspaceId)))
           .returning();
+        let assignment: {
+          userId: string;
+          title: string;
+          body: string;
+        } | null = null;
         if (updated.assigneeId && updated.assigneeId !== locked.assigneeId && updated.assigneeId !== session.user.id) {
-          await tx.insert(notifications).values({ workspaceId, userId: updated.assigneeId, type: "assignment", title: `Run assigned: ${updated.name}`, body: "Open the run to continue testing.", entityType: "run", entityId: id });
+          assignment = {
+            userId: updated.assigneeId,
+            title: `Run assigned: ${updated.name}`,
+            body: "Open the run to continue testing.",
+          };
+          await tx.insert(notifications).values({
+            workspaceId,
+            userId: updated.assigneeId,
+            type: "assignment",
+            title: assignment.title,
+            body: assignment.body,
+            entityType: "run",
+            entityId: id,
+          });
         }
-        return { kind: "ok" as const, run: updated };
+        return { kind: "ok" as const, run: updated, assignment };
       });
       if (outcome.kind === "missing") {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
       if (outcome.kind === "frozen") {
         return runImmutableResponse(immutableMessageFor(outcome.status));
+      }
+      if (outcome.assignment) {
+        void import("@/lib/notification-channels")
+          .then(({ dispatchNotificationChannels }) =>
+            dispatchNotificationChannels(
+              "assignment",
+              {
+                userId: outcome.assignment!.userId,
+                title: outcome.assignment!.title,
+                body: outcome.assignment!.body,
+                entityType: "run",
+                entityId: id,
+              },
+              workspaceId,
+            ),
+          )
+          .catch(() => {});
       }
       liveRun(workspaceId, id, { assigneeId: outcome.run.assigneeId });
       return NextResponse.json({ run: outcome.run });
@@ -404,10 +723,30 @@ export async function PATCH(request: Request, { params }: Params) {
           )
           .returning();
         if (!updated) return { kind: "result-missing" as const };
+        let assignment: {
+          userId: string;
+          title: string;
+          body: string;
+          entityId: string;
+        } | null = null;
         if (updated.assigneeId && updated.assigneeId !== previous?.assigneeId && updated.assigneeId !== session.user.id) {
-          await tx.insert(notifications).values({ workspaceId, userId: updated.assigneeId, type: "assignment", title: `Test assigned in ${existing.name}`, body: "Open the result to continue testing.", entityType: "result", entityId: updated.id });
+          assignment = {
+            userId: updated.assigneeId,
+            title: `Test assigned in ${existing.name}`,
+            body: "Open the result to continue testing.",
+            entityId: updated.id,
+          };
+          await tx.insert(notifications).values({
+            workspaceId,
+            userId: updated.assigneeId,
+            type: "assignment",
+            title: assignment.title,
+            body: assignment.body,
+            entityType: "result",
+            entityId: updated.id,
+          });
         }
-        return { kind: "ok" as const, result: updated };
+        return { kind: "ok" as const, result: updated, assignment };
       });
       if (outcome.kind === "missing") {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -417,6 +756,24 @@ export async function PATCH(request: Request, { params }: Params) {
       }
       if (outcome.kind === "result-missing") {
         return NextResponse.json({ error: "Result not found" }, { status: 404 });
+      }
+      if (outcome.assignment) {
+        void import("@/lib/notification-channels")
+          .then(({ dispatchNotificationChannels }) =>
+            dispatchNotificationChannels(
+              "assignment",
+              {
+                userId: outcome.assignment!.userId,
+                title: outcome.assignment!.title,
+                body: outcome.assignment!.body,
+                entityType: "result",
+                entityId: outcome.assignment!.entityId,
+                runId: id,
+              },
+              workspaceId,
+            ),
+          )
+          .catch(() => {});
       }
       liveRun(workspaceId, id, {
         resultId: outcome.result.id,
@@ -488,6 +845,16 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Provide a status" }, { status: 400 });
   }
 
+  const durationPatch =
+    parsed.data.durationMs === undefined
+      ? {}
+      : {
+          durationMs:
+            parsed.data.durationMs == null
+              ? null
+              : clampDurationMs(parsed.data.durationMs),
+        };
+
   const [updated] = await db
     .update(runResults)
     .set({
@@ -495,6 +862,7 @@ export async function PATCH(request: Request, { params }: Params) {
       notes: parsed.data.notes,
       executedById: session.user.id,
       executedAt: new Date(),
+      ...durationPatch,
     })
     .where(resultWhere)
     .returning();

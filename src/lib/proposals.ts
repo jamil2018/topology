@@ -23,7 +23,13 @@ import {
 } from "@/lib/ai-provider";
 
 const PRIORITIES = new Set(["P0", "P1", "P2", "P3"]);
-const CASE_STATUSES = new Set(["draft", "ready", "blocked", "deprecated"]);
+const CASE_STATUSES = new Set([
+  "draft",
+  "in_review",
+  "ready",
+  "blocked",
+  "deprecated",
+]);
 const ENTITY_TYPES = new Set([
   "intent",
   "requirement",

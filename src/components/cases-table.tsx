@@ -2,6 +2,7 @@
 import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
+import type { DragEvent } from "react";
 import {
   Button,
   Chip,
@@ -10,13 +11,14 @@ import {
   TextField,
 } from "@heroui/react";
 import { motion } from "motion/react";
-import { TrashIcon } from "@phosphor-icons/react";
+import { CopyIcon, TrashIcon } from "@phosphor-icons/react";
 import type { CaseListSort, CaseListSortDir } from "@/lib/case-list";
 import { folderPathLabel } from "@/lib/folder-tree";
 import { GuidedFirstRun } from "./guided-first-run";
 import { StatusChip, statusToneForRun } from "./status-chip";
 import { useQualityGraph } from "./quality-graph-provider";
 import {
+  CASE_DRAG_MIME,
   CASE_PRIORITIES,
   CASE_STATUSES,
   formatStatusLabel,
@@ -168,6 +170,7 @@ export function CasesTable({
   onToggleSelectPage,
   onOpen,
   onDelete,
+  onDuplicate,
   onInlinePatch,
   onPageChange,
 }: {
@@ -196,10 +199,26 @@ export function CasesTable({
   onToggleSelectPage: () => void;
   onOpen: (row: CaseRow) => void;
   onDelete: (row: CaseRow) => void;
+  onDuplicate?: (row: CaseRow) => void;
   onInlinePatch: (id: string, patch: CaseInlinePatch) => void;
   onPageChange: (page: number) => void;
 }) {
   const { can } = useProjectActions();
+
+  function beginCaseDrag(event: DragEvent, row: CaseRow) {
+    if (!can("cases.edit")) {
+      event.preventDefault();
+      return;
+    }
+    const ids =
+      selectedIds.has(row.id) && selectedIds.size > 0
+        ? Array.from(selectedIds)
+        : [row.id];
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(CASE_DRAG_MIME, JSON.stringify(ids));
+    event.dataTransfer.setData("text/plain", ids.join(","));
+  }
+
   return (
     <div className="min-w-0 overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
       <div className="flex flex-col gap-2 border-b border-[color:var(--topo-line)] p-2.5 sm:flex-row sm:items-center sm:gap-3">
@@ -292,7 +311,13 @@ export function CasesTable({
                 initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(index, 12) * 0.02 }}
+                draggable={can("cases.edit")}
+                onDragStart={(event) =>
+                  beginCaseDrag(event as unknown as DragEvent, row)
+                }
                 className={`group border-b border-[color:var(--topo-line)] last:border-0 ${
+                  can("cases.edit") ? "cursor-grab active:cursor-grabbing" : ""
+                } ${
                   activeId === row.id || cursorIndex === index
                     ? "bg-[color:var(--topo-accent-soft)]"
                     : ""
@@ -384,15 +409,28 @@ export function CasesTable({
                   />
                 </td>
                 <td className="px-2 py-2 text-right">
-                  <button
-                    type="button"
-                    aria-label={`Delete ${row.key}`}
-                    disabled={!can("cases.delete")}
-                    className="rounded p-1 text-[color:var(--topo-muted)] opacity-100 hover:bg-[color:var(--topo-chip)] hover:text-red-600 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100 dark:hover:text-red-400"
-                    onClick={() => onDelete(row)}
-                  >
-                    <TrashIcon size={12} weight="bold" />
-                  </button>
+                  <div className="flex items-center justify-end gap-0.5 opacity-100 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
+                    {onDuplicate ? (
+                      <button
+                        type="button"
+                        aria-label={`Duplicate ${row.key}`}
+                        disabled={!can("cases.create")}
+                        className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
+                        onClick={() => onDuplicate(row)}
+                      >
+                        <CopyIcon size={12} weight="bold" />
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      aria-label={`Delete ${row.key}`}
+                      disabled={!can("cases.delete")}
+                      className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-red-600 dark:hover:text-red-400"
+                      onClick={() => onDelete(row)}
+                    >
+                      <TrashIcon size={12} weight="bold" />
+                    </button>
+                  </div>
                 </td>
               </motion.tr>
             ))
@@ -446,10 +484,21 @@ export function CasesTable({
                   </p>
                   {row.intent ? <IntentLink intent={row.intent} /> : null}
                 </button>
+                {onDuplicate ? (
+                  <button
+                    type="button"
+                    aria-label={`Duplicate ${row.key}`}
+                    disabled={!can("cases.create")}
+                    className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
+                    onClick={() => onDuplicate(row)}
+                  >
+                    <CopyIcon size={12} weight="bold" />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   aria-label={`Delete ${row.key}`}
-                    disabled={!can("cases.delete")}
+                  disabled={!can("cases.delete")}
                   className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-red-600"
                   onClick={() => onDelete(row)}
                 >
