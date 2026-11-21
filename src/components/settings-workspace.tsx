@@ -9,9 +9,11 @@ import { ConnectAgentPanel } from "./connect-agent-panel";
 import { CiSetupPanel } from "./ci-setup-panel";
 import { RepositoriesPanel } from "./repositories-panel";
 import { WebhooksPanel } from "./webhooks-panel";
+import { InboundIssueSyncPanel } from "./inbound-issue-sync-panel";
 import { NotificationChannelsPanel } from "./notification-channels-panel";
 import { useTheme, type ThemePreference } from "./theme-provider";
 import { useQualityGraph } from "./quality-graph-provider";
+import { useProjectActions } from "./project-actions";
 import { WorkspaceMembersPanel } from "./workspace-members-panel";
 import { CustomRolesPanel } from "./custom-roles-panel";
 import { ProjectsPanel } from "./projects-panel";
@@ -53,6 +55,7 @@ export function SettingsWorkspace({
     enabled: qualityGraphEnabled,
     setEnabled: setQualityGraphEnabled,
   } = useQualityGraph();
+  const { canAdmin } = useProjectActions();
   const [profile, setProfile] = useState<ProfileState | null>(null);
   const [name, setName] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -390,17 +393,31 @@ export function SettingsWorkspace({
                     {prefsMsg}
                   </p>
                 ) : null}
+              </section>
+            </>
+          ) : null}
 
-                <div className="border-t border-[color:var(--topo-line)] pt-4">
-                  <h3 className="text-sm font-semibold text-[color:var(--topo-ink)]">
-                    Quality graph
-                  </h3>
-                  <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
-                    Show intents, journeys, requirements, risks, components,
-                    impact, and proposals in the sidebar for everyone in this
-                    workspace. Test cases, plans, and test runs stay in the main
-                    nav either way.
-                  </p>
+          {page === "projects" ? (
+            <>
+              <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <ProjectsPanel />
+              </section>
+              {canAdmin ? (
+                <section
+                  id="quality-graph"
+                  className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
+                >
+                  <div>
+                    <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+                      Advanced Quality Graph
+                    </h2>
+                    <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
+                      Show intents, releases, journeys, requirements, risks, and
+                      components in the sidebar for everyone in this workspace.
+                      Milestones, impact, and proposals stay in the main nav
+                      either way.
+                    </p>
+                  </div>
                   <button
                     type="button"
                     aria-pressed={qualityGraphEnabled}
@@ -412,7 +429,7 @@ export function SettingsWorkspace({
                           : "Quality graph shown in the sidebar",
                       );
                     }}
-                    className={`mt-3 rounded-md px-3 py-1.5 text-xs font-medium ${
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium ${
                       qualityGraphEnabled
                         ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
                         : "border border-[color:var(--topo-line)] text-[color:var(--topo-muted)]"
@@ -422,16 +439,13 @@ export function SettingsWorkspace({
                       ? "Quality graph on"
                       : "Quality graph off"}
                   </button>
-                </div>
-              </section>
-            </>
-          ) : null}
-
-          {page === "projects" ? (
-            <>
-              <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-                <ProjectsPanel />
-              </section>
+                  {prefsMsg ? (
+                    <p className="text-xs text-[color:var(--topo-muted)]">
+                      {prefsMsg}
+                    </p>
+                  ) : null}
+                </section>
+              ) : null}
               <section className="scroll-mt-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
                 <CustomFieldsPanel />
               </section>
@@ -523,6 +537,20 @@ export function SettingsWorkspace({
                 <summary className="cursor-pointer text-sm font-semibold">Webhooks<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Notify other tools when testing activity changes.</span></summary>
                 <div className="mt-4">
                 <WebhooksPanel />
+              </div></details>
+
+              <details id="inbound" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <summary className="cursor-pointer text-sm font-semibold">Inbound issue sync<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Receive close / reopen events from Jira, Linear, GitHub, and GitLab.</span></summary>
+                <div className="mt-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+                    Inbound issue sync
+                  </h2>
+                  <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
+                    Per-provider webhook URLs and signing verification status.
+                  </p>
+                </div>
+                <InboundIssueSyncPanel defaultUrl={defaultUrl} />
               </div></details>
 
               <details id="notifications" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">

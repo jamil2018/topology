@@ -2,6 +2,7 @@
 import { useProjectActions } from "./project-actions";
 import { useMutationFeedback } from "./use-mutation-feedback";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, TextArea } from "@heroui/react";
@@ -20,13 +21,19 @@ type RequirementRow = {
 
 export function RequirementsWorkspace({
   initial,
+  selectedId = null,
 }: {
   initial: RequirementRow[];
+  selectedId?: string | null;
 }) {
   const router = useRouter();
   const [transitionPending, startTransition] = useTransition();
   const [items, setItems] = useState(initial);
-  const [selected, setSelected] = useState<string | null>(initial[0]?.id ?? null);
+  const [selected, setSelected] = useState<string | null>(
+    selectedId && initial.some((row) => row.id === selectedId)
+      ? selectedId
+      : (initial[0]?.id ?? null),
+  );
   const [error, setError] = useState<string | null>(null);
   const { can } = useProjectActions();
   const { saving, submit } = useMutationFeedback(setError);
@@ -37,6 +44,44 @@ export function RequirementsWorkspace({
     description: "",
     criticality: "P2",
   });
+  const [proposalMessage, setProposalMessage] = useState<string | null>(null);
+
+  async function draftCoverageProposal(requirementId: string) {
+    if (!can("intents.edit") && !can("proposals.create")) return;
+    return submit(async () => {
+      setError(null);
+      setProposalMessage(null);
+      const res = await fetch("/api/ai/draft?heuristic=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job: "intents_from_requirement",
+          requirementId,
+          allowHeuristic: true,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        proposalId?: string;
+        heuristic?: boolean;
+        model?: string;
+      };
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "Could not draft coverage proposal",
+        );
+        return;
+      }
+      setProposalMessage(
+        data.proposalId
+          ? `Coverage proposal queued${data.heuristic ? " (local template)" : data.model ? ` (${data.model})` : ""}.`
+          : "Draft created.",
+      );
+      startTransition(() => router.refresh());
+    });
+  }
 
   async function createRequirement() {
     if (!can("requirements.create")) return;
@@ -76,6 +121,15 @@ export function RequirementsWorkspace({
       {error ? (
         <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
           {error}
+        </p>
+      ) : null}
+
+      {proposalMessage ? (
+        <p className="text-sm text-[color:var(--topo-muted)]">
+          {proposalMessage}{" "}
+          <Link href="/proposals" className="underline">
+            Open Proposals
+          </Link>
         </p>
       ) : null}
 
@@ -162,7 +216,21 @@ export function RequirementsWorkspace({
                   </div>
                 </button>
                 {selected === req.id ? (
-                  <div className="border-t border-[color:var(--topo-line)] px-4 pb-4">
+                  <div className="space-y-3 border-t border-[color:var(--topo-line)] px-4 pb-4 pt-3">
+                    {can("intents.edit") || can("proposals.create") ? (
+                      <Button
+                        size="sm"
+                        variant={
+                          req.coversIntentIds.length === 0
+                            ? "secondary"
+                            : "tertiary"
+                        }
+                        isDisabled={pending}
+                        onPress={() => void draftCoverageProposal(req.id)}
+                      >
+                        Draft coverage proposal
+                      </Button>
+                    ) : null}
                     <EntityCollabPanel
                       entityType="requirement"
                       entityId={req.id}

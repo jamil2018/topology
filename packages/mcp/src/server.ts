@@ -294,6 +294,7 @@ export { TopologyClient, requireEnv } from "./client.js";
 const isDirect =
   process.argv[1] &&
   (process.argv[1].endsWith("server.ts") ||
+    process.argv[1].endsWith("server.js") ||
     process.argv[1].endsWith("topology-mcp.js"));
 
 if (isDirect) {

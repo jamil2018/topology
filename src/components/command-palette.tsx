@@ -79,6 +79,25 @@ type SearchHit = {
     snippet?: string | null;
     matchField?: string;
   }>;
+  plans?: Array<{
+    id: string;
+    name: string;
+    status?: string;
+    snippet?: string | null;
+  }>;
+  milestones?: Array<{
+    id: string;
+    name: string;
+    status?: string;
+    snippet?: string | null;
+  }>;
+  triage?: Array<{
+    id: string;
+    title: string;
+    status: string;
+    priority: string;
+    snippet?: string | null;
+  }>;
 };
 
 type CommandItem = {
@@ -97,6 +116,9 @@ const EMPTY_HITS: SearchHit = {
   runs: [],
   folders: [],
   comments: [],
+  plans: [],
+  milestones: [],
+  triage: [],
 };
 
 function matchFieldBadge(entity: string, matchField?: string): string {
@@ -237,30 +259,32 @@ export function CommandPalette() {
     if (!open) return;
     const q = query.trim();
     if (!q) return;
-    const controller = new AbortController();
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      void fetch(`/api/search?q=${encodeURIComponent(q)}`, {
-        signal: controller.signal,
-      })
+      if (cancelled) return;
+      void fetch(`/api/search?q=${encodeURIComponent(q)}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
-          if (!data) return;
+          if (cancelled || !data) return;
           setHits({
             cases: data.cases ?? [],
             runs: data.runs ?? [],
             folders: data.folders ?? [],
             comments: data.comments ?? [],
+            plans: data.plans ?? [],
+            milestones: data.milestones ?? [],
+            triage: data.triage ?? [],
             requirements: data.requirements,
             intents: data.intents,
             risks: data.risks,
           });
         })
         .catch(() => {
-          /* ignore abort / network */
+          /* ignore network errors */
         });
     }, 120);
     return () => {
-      controller.abort();
+      cancelled = true;
       window.clearTimeout(timer);
     };
   }, [open, query]);
@@ -516,6 +540,57 @@ export function CommandPalette() {
         },
       });
     }
+    for (const plan of resolvedHits.plans ?? []) {
+      list.push({
+        id: `plan-${plan.id}`,
+        label: plan.name,
+        badge: plan.status ? `Plan · ${plan.status}` : "Plan",
+        snippet:
+          plan.snippet && plan.snippet !== plan.name ? plan.snippet : undefined,
+        group: "Jump",
+        Icon: FlagIcon,
+        run: () => {
+          router.push(`/plans/${plan.id}`);
+          close();
+        },
+      });
+    }
+    for (const milestone of resolvedHits.milestones ?? []) {
+      list.push({
+        id: `milestone-${milestone.id}`,
+        label: milestone.name,
+        badge: milestone.status
+          ? `Milestone · ${milestone.status}`
+          : "Milestone",
+        snippet:
+          milestone.snippet && milestone.snippet !== milestone.name
+            ? milestone.snippet
+            : undefined,
+        group: "Jump",
+        Icon: FlagIcon,
+        run: () => {
+          router.push(`/milestones?milestone=${milestone.id}`);
+          close();
+        },
+      });
+    }
+    for (const item of resolvedHits.triage ?? []) {
+      list.push({
+        id: `triage-${item.id}`,
+        label: item.title,
+        badge: `Triage · ${item.priority}`,
+        snippet:
+          item.snippet && item.snippet !== item.title
+            ? item.snippet
+            : undefined,
+        group: "Jump",
+        Icon: BugIcon,
+        run: () => {
+          router.push(`/triage#failure-${item.id}`);
+          close();
+        },
+      });
+    }
     for (const req of resolvedHits.requirements ?? []) {
       list.push({
         id: `requirement-${req.id}`,
@@ -526,7 +601,7 @@ export function CommandPalette() {
         group: "Jump",
         Icon: FolderIcon,
         run: () => {
-          router.push(`/requirements`);
+          router.push(`/requirements?requirement=${req.id}`);
           close();
         },
       });
@@ -558,7 +633,7 @@ export function CommandPalette() {
         group: "Jump",
         Icon: BugIcon,
         run: () => {
-          router.push(`/risks`);
+          router.push(`/risks?risk=${risk.id}`);
           close();
         },
       });

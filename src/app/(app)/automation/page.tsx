@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { pageTitle } from "@/lib/format-labels";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { AutomationWorkspace } from "@/components/automation-workspace";
 import { resolveActiveProject } from "@/lib/project";
 import {
@@ -21,7 +21,7 @@ export default async function AutomationPage() {
   if (!session?.user?.id) redirect("/login");
 
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const workspaceId = ctx.project.id;
   const [runs, flakeHints, reliabilityHint] = await Promise.all([

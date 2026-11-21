@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { attachments, runResults } from "@/db/schema";
 import { ATTACHMENT_MAX_BYTES, inferAttachmentKind, isAttachmentKind, storeAttachmentFile } from "@/lib/attachments";
+import { emitLive } from "@/lib/live";
 import { requireProjectAccess } from "@/lib/project";
 
 type Params = { params: Promise<{ id: string }> };
@@ -137,19 +138,31 @@ export async function POST(request: Request, { params }: Params) {
       })
       .returning();
 
-    return NextResponse.json(
-      {
-        attachment: {
-          id: row.id,
-          filename: row.filename,
-          contentType: row.contentType,
-          sizeBytes: row.sizeBytes,
-          kind: row.kind,
-          url: `/api/attachments/${row.id}`,
-        },
+    const attachment = {
+      id: row.id,
+      filename: row.filename,
+      contentType: row.contentType,
+      sizeBytes: row.sizeBytes,
+      kind: row.kind,
+      url: `/api/attachments/${row.id}`,
+    };
+
+    emitLive({
+      workspaceId: access.ctx.project.id,
+      topic: "run",
+      entityId: result.runId,
+      resultId,
+      kind: "attachment",
+      attachment: {
+        id: attachment.id,
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        sizeBytes: attachment.sizeBytes,
+        url: attachment.url,
       },
-      { status: 201 },
-    );
+    });
+
+    return NextResponse.json({ attachment }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
     if (/exceeds/i.test(message)) return sizeLimit();

@@ -22,11 +22,23 @@ export function RunProductivityActions({ run }: { run: RunDetail }) {
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setHistoryError(null);
-    fetch(`/api/runs/${run.id}/retests`, { signal: controller.signal }).then(async (response) => {
-      if (!response.ok) throw new Error("Retest history unavailable");
-      const data = await response.json(); setLineage(data.lineage ?? []);
-    }).catch(() => { if (!controller.signal.aborted) setHistoryError("Retest history could not be loaded."); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/runs/${run.id}/retests`, { signal: controller.signal });
+        if (!response.ok) throw new Error("Retest history unavailable");
+        const data = await response.json();
+        if (controller.signal.aborted) return;
+        setLineage(data.lineage ?? []);
+      } catch (error) {
+        // Cleanup abort must not surface in the Next.js runtime overlay.
+        if (controller.signal.aborted) return;
+        if (typeof error === "object" && error !== null && "name" in error && (error as { name: string }).name === "AbortError") return;
+        setHistoryError("Retest history could not be loaded.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    })();
+    return () => controller.abort("retest-history-cleanup");
   }, [run.id, retry]);
   async function save() {
     if (saveLock.current || unavailableCases.length || !can("runs.create")) return;

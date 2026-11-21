@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import {
   IntentsWorkspace,
   type IntentListItem,
@@ -23,7 +23,7 @@ export default async function IntentsPage({
   if (!session?.user?.id) redirect("/login");
 
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const params = await searchParams;
   const [intents, views] = await Promise.all([

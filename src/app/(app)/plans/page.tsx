@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { pageTitle } from "@/lib/format-labels";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { PlansWorkspace } from "@/components/plans-workspace";
 import { db } from "@/db";
 import { environments, milestones } from "@/db/schema";
@@ -22,7 +22,7 @@ export default async function PlansPage() {
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const [plans, envs, milestoneRows] = await Promise.all([
     listPlans(ctx.project.id),

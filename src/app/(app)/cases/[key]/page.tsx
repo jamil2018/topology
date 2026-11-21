@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { CasesWorkspace } from "@/components/cases-workspace";
 import { CasesPageSkeleton } from "@/components/skeletons";
 import { resolveActiveProject } from "@/lib/project";
@@ -52,7 +52,7 @@ export default async function CaseDetailPage({ params, searchParams }: Props) {
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const { key: rawKey } = await params;
   const selectedCaseKey = decodeCaseKey(rawKey);

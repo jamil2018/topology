@@ -86,6 +86,16 @@ export function unionTags(
   return Array.from(new Set([...(existing ?? []), ...additions]));
 }
 
+/** Drop matching tags while preserving remaining order. */
+export function subtractTags(
+  existing: readonly string[] | null | undefined,
+  removals: readonly string[],
+): string[] {
+  if (!existing?.length || removals.length === 0) return [...(existing ?? [])];
+  const drop = new Set(removals);
+  return existing.filter((tag) => !drop.has(tag));
+}
+
 function tagsEqual(a: string[], b: string[]) {
   return (
     JSON.stringify([...a].sort()) === JSON.stringify([...b].sort())

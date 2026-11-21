@@ -14,6 +14,9 @@ export const CASE_STATUSES = [
 /** HTML5 DnD payload type for moving cases onto folders. */
 export const CASE_DRAG_MIME = "application/x-topology-case-ids";
 
+/** HTML5 DnD payload type for reparenting folders in the tree. */
+export const FOLDER_DRAG_MIME = "application/x-topology-folder-id";
+
 export type Folder = { id: string; name: string; parentId: string | null };
 export type FlatFolder = Folder & { depth: number };
 
@@ -34,7 +37,7 @@ export type BulkPatch = {
   priority?: string;
   folderId?: string | null;
   tags?: string[];
-  tagMode?: "replace" | "add";
+  tagMode?: "replace" | "add" | "remove";
 };
 
 export type CaseInlinePatch = {
@@ -99,7 +102,9 @@ export function applyBulkPatch(
       next.tags =
         patch.tagMode === "add"
           ? Array.from(new Set([...row.tags, ...patch.tags]))
-          : patch.tags;
+          : patch.tagMode === "remove"
+            ? row.tags.filter((tag) => !patch.tags!.includes(tag))
+            : patch.tags;
     }
     return next;
   });

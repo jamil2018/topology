@@ -22,6 +22,7 @@ export function CasesBulkBar({
   flatFolders,
   onBulkTags,
   onBulkUpdate,
+  onBulkDelete,
   onClear,
 }: {
   selectedCount: number;
@@ -31,6 +32,7 @@ export function CasesBulkBar({
   flatFolders: FlatFolder[];
   onBulkTags: (value: string) => void;
   onBulkUpdate: (patch: BulkPatch) => void;
+  onBulkDelete?: () => void;
   onClear: () => void;
 }) {
   const { can } = useProjectActions();
@@ -138,7 +140,7 @@ export function CasesBulkBar({
       <TextField name="bulk-tags" className="w-40">
         <Label className="sr-only">Add tags</Label>
         <Input
-          placeholder="Add tags…"
+          placeholder="Add or remove tags…"
           value={bulkTags}
           onChange={(e) => onBulkTags(e.target.value)}
         />
@@ -156,6 +158,29 @@ export function CasesBulkBar({
       >
         Add tags
       </Button>
+      <Button
+        size="sm"
+        variant="secondary"
+        isDisabled={disabled || !bulkTags.trim()}
+        onPress={() =>
+          onBulkUpdate({
+            tags: parseTagInput(bulkTags),
+            tagMode: "remove",
+          })
+        }
+      >
+        Remove tags
+      </Button>
+      {onBulkDelete && can("cases.delete") ? (
+        <Button
+          size="sm"
+          variant="danger"
+          isDisabled={bulkPending}
+          onPress={onBulkDelete}
+        >
+          Delete
+        </Button>
+      ) : null}
       <Button
         size="sm"
         variant="tertiary"

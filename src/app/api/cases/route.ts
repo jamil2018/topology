@@ -10,7 +10,11 @@ import {
   recordCaseFieldChanges,
 } from "@/lib/case-activity";
 import { replaceCaseSteps } from "@/lib/tcm/case-tcm";
-import { structuredStepInputSchema, unionTags } from "@/lib/case-update";
+import {
+  structuredStepInputSchema,
+  subtractTags,
+  unionTags,
+} from "@/lib/case-update";
 import { caseWriteError, isLockFailure } from "@/lib/pg-error";
 import { requireProjectAccess } from "@/lib/project";
 import { caseListQueryFromSearchParams } from "@/lib/case-list";
@@ -42,7 +46,7 @@ const bulkUpdateSchema = z.object({
   priority: z.enum(["P0", "P1", "P2", "P3"]).optional(),
   folderId: z.string().uuid().nullable().optional(),
   tags: z.array(z.string()).optional(),
-  tagMode: z.enum(["replace", "add"]).optional().default("replace"),
+  tagMode: z.enum(["replace", "add", "remove"]).optional().default("replace"),
 });
 
 function buildBulkPatch(
@@ -57,7 +61,7 @@ function buildBulkPatch(
     priority?: "P0" | "P1" | "P2" | "P3";
     folderId?: string | null;
     tags?: string[];
-    tagMode: "replace" | "add";
+    tagMode: "replace" | "add" | "remove";
   },
   folderNameById: Map<string, string>,
 ) {
@@ -90,7 +94,11 @@ function buildBulkPatch(
   }
   if (input.tags !== undefined) {
     const nextTags =
-      input.tagMode === "add" ? unionTags(row.tags, input.tags) : input.tags;
+      input.tagMode === "add"
+        ? unionTags(row.tags, input.tags)
+        : input.tagMode === "remove"
+          ? subtractTags(row.tags, input.tags)
+          : input.tags;
     const same =
       JSON.stringify([...(row.tags ?? [])].sort()) ===
       JSON.stringify([...nextTags].sort());
@@ -315,9 +323,9 @@ export async function PATCH(request: Request) {
     });
   };
 
-  // Add-mode unions tags under a row lock so concurrent adds cannot drop a tag.
+  // Add/remove modes adjust tags under a row lock so concurrent edits cannot race.
   // Replace mode still overwrites the array (last write wins).
-  if (tags !== undefined && tagMode === "add") {
+  if (tags !== undefined && (tagMode === "add" || tagMode === "remove")) {
     try {
       const written = await db.transaction(async (tx) => {
         const locked = await tx

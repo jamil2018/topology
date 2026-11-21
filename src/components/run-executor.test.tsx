@@ -251,11 +251,24 @@ describe("RunExecutor create issue", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Create issue" }));
+    expect(await screen.findByRole("heading", { name: /Preview defect/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create issue" }));
     expect(await screen.findByText("MOCK-9")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/issues",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"action":"create"'),
+      }),
     );
+    const body = JSON.parse(
+      String(
+        fetchMock.mock.calls.find((call) => String(call[0]).includes("/api/issues"))?.[1]
+          ?.body ?? "{}",
+      ),
+    );
+    expect(body.title).toMatch(/SMOKE-1/);
+    expect(body.description).toMatch(/Failure context/);
     expect(refresh).not.toHaveBeenCalled();
   });
 });
@@ -320,6 +333,45 @@ describe("RunExecutor list and detail", () => {
     expect(screen.getByRole("heading", { name: "First case" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Mark CASE-1 as passed" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Second case" })).toBeInTheDocument());
+  });
+
+  it("advances immediately while the status PATCH is still in flight", async () => {
+    const user = userEvent.setup();
+    let finish!: () => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = () => resolve({ ok: true, json: async () => ({}) });
+          }),
+      ),
+    );
+
+    render(<RunExecutor run={multiRun()} />);
+    await user.click(screen.getByRole("button", { name: "Mark CASE-1 as passed" }));
+    expect(screen.getByRole("heading", { name: "Second case" })).toBeInTheDocument();
+    await act(async () => {
+      finish();
+    });
+  });
+
+  it("shows a retry toast when optimistic status save fails", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error: "Save failed" }),
+      })
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunExecutor run={multiRun()} />);
+    await user.click(screen.getByRole("button", { name: "Mark CASE-1 as passed" }));
+    expect(await screen.findByText(/Could not save result status/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
   it("moves focus with J/K and records with P", async () => {

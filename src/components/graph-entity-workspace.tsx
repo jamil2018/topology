@@ -23,17 +23,23 @@ export function GraphEntityWorkspace({
   description,
   apiPath,
   initial,
+  selectedId = null,
 }: {
   kind: "risks" | "components";
   title: string;
   description: string;
   apiPath: string;
   initial: EntityRow[];
+  selectedId?: string | null;
 }) {
   const router = useRouter();
   const [transitionPending, startTransition] = useTransition();
   const [items, setItems] = useState(initial);
-  const [selected, setSelected] = useState<string | null>(initial[0]?.id ?? null);
+  const [selected, setSelected] = useState<string | null>(
+    selectedId && initial.some((row) => row.id === selectedId)
+      ? selectedId
+      : (initial[0]?.id ?? null),
+  );
   const [error, setError] = useState<string | null>(null);
   const { can } = useProjectActions();
   const { saving, submit } = useMutationFeedback(setError);

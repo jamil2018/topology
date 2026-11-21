@@ -130,7 +130,7 @@ export async function POST(request: Request, { params }: Params) {
           steps: source.steps,
           expectedResult: source.expectedResult,
           priority: source.priority,
-          status: source.status,
+          status: "draft",
           folderId: targetFolderId,
           tags: source.tags ?? [],
           assigneeId: source.assigneeId,

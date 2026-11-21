@@ -440,3 +440,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 CREATE INDEX IF NOT EXISTS "notification_channels_workspace_id_idx" ON "notification_channels" ("workspace_id");
+
+ALTER TABLE "triage_items" ADD COLUMN IF NOT EXISTS "resolution" text;
+ALTER TABLE "repositories" ADD COLUMN IF NOT EXISTS "post_pr_status_checks" boolean DEFAULT false NOT NULL;
+ALTER TABLE "repositories" ADD COLUMN IF NOT EXISTS "post_pr_summary_comment" boolean DEFAULT false NOT NULL;

@@ -10,6 +10,8 @@ type RepositoryRow = {
   provider: "github" | "gitlab" | "other";
   defaultBranch: string;
   hasWebhookSecret?: boolean;
+  postPrStatusChecks?: boolean;
+  postPrSummaryComment?: boolean;
 };
 
 type PathRuleRow = {
@@ -118,11 +120,35 @@ export function RepositoriesPanel({ defaultUrl }: { defaultUrl: string }) {
     setPathRules((prev) => prev.filter((r) => r.id !== id));
   }
 
+  async function patchRepository(
+    id: string,
+    patch: {
+      webhookSecret?: string;
+      postPrStatusChecks?: boolean;
+      postPrSummaryComment?: boolean;
+    },
+  ) {
+    setError(null);
+    const res = await fetch("/api/repositories", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...patch }),
+    });
+    if (!res.ok) {
+      setError("Could not update repository");
+      return false;
+    }
+    return true;
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-[color:var(--topo-muted)]">
         Connect git remotes so push and pull request webhooks can record commits
-        and changed paths for impact analysis.
+        and changed paths for impact analysis. Enable PR status checks or summary
+        comments per repository (requires{" "}
+        <code className="font-mono">GITHUB_TOKEN</code> /{" "}
+        <code className="font-mono">GITLAB_TOKEN</code>).
       </p>
 
       <div className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3 text-sm">
@@ -149,50 +175,134 @@ export function RepositoriesPanel({ defaultUrl }: { defaultUrl: string }) {
       </div>
 
       {repos.length > 0 ? (
-        <ul className="space-y-1 text-sm">
+        <ul className="space-y-2 text-sm">
           {repos.map((r) => (
             <li
               key={r.id}
-              className="flex flex-wrap items-center gap-2 rounded border border-[color:var(--topo-line)] px-2 py-1.5"
+              className="space-y-2 rounded border border-[color:var(--topo-line)] px-2 py-2"
             >
-              <StatusChip>{r.provider}</StatusChip>
-              <span className="font-mono text-xs text-[color:var(--topo-ink)]">
-                {r.remoteUrl}
-              </span>
-              <span className="text-xs text-[color:var(--topo-muted)]">
-                default {r.defaultBranch}
-              </span>
-              {r.hasWebhookSecret ? (
-                <StatusChip>webhook secret</StatusChip>
-              ) : (
-                <button
-                  type="button"
-                  className="text-xs text-[color:var(--topo-muted)] underline-offset-2 hover:underline"
-                  onClick={() => {
-                    const secret = window.prompt(
-                      "GitHub webhook secret for this repository",
-                    );
-                    if (!secret?.trim()) return;
-                    void fetch("/api/repositories", {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        id: r.id,
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusChip>{r.provider}</StatusChip>
+                <span className="font-mono text-xs text-[color:var(--topo-ink)]">
+                  {r.remoteUrl}
+                </span>
+                <span className="text-xs text-[color:var(--topo-muted)]">
+                  default {r.defaultBranch}
+                </span>
+                {r.hasWebhookSecret ? (
+                  <StatusChip>webhook secret</StatusChip>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-xs text-[color:var(--topo-muted)] underline-offset-2 hover:underline"
+                    onClick={() => {
+                      const secret = window.prompt(
+                        "GitHub webhook secret for this repository",
+                      );
+                      if (!secret?.trim()) return;
+                      void patchRepository(r.id, {
                         webhookSecret: secret.trim(),
-                      }),
-                    }).then((res) => {
-                      if (!res.ok) {
-                        setError("Could not save webhook secret");
-                        return;
-                      }
-                      setMsg("Webhook secret saved");
-                      void load();
-                    });
-                  }}
-                >
-                  Set webhook secret
-                </button>
-              )}
+                      }).then((ok) => {
+                        if (!ok) return;
+                        setMsg("Webhook secret saved");
+                        void load();
+                      });
+                    }}
+                  >
+                    Set webhook secret
+                  </button>
+                )}
+              </div>
+              {r.provider === "github" || r.provider === "gitlab" ? (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    aria-pressed={Boolean(r.postPrStatusChecks)}
+                    disabled={pending}
+                    className={`rounded-md px-2 py-1 text-xs font-medium ${
+                      r.postPrStatusChecks
+                        ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                        : "border border-[color:var(--topo-line)] text-[color:var(--topo-muted)]"
+                    }`}
+                    onClick={() => {
+                      const next = !r.postPrStatusChecks;
+                      setRepos((prev) =>
+                        prev.map((row) =>
+                          row.id === r.id
+                            ? { ...row, postPrStatusChecks: next }
+                            : row,
+                        ),
+                      );
+                      startTransition(() => {
+                        void patchRepository(r.id, {
+                          postPrStatusChecks: next,
+                        }).then((ok) => {
+                          if (!ok) {
+                            setRepos((prev) =>
+                              prev.map((row) =>
+                                row.id === r.id
+                                  ? { ...row, postPrStatusChecks: !next }
+                                  : row,
+                              ),
+                            );
+                            return;
+                          }
+                          setMsg(
+                            next
+                              ? "PR status checks enabled"
+                              : "PR status checks disabled",
+                          );
+                        });
+                      });
+                    }}
+                  >
+                    Post PR status checks
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={Boolean(r.postPrSummaryComment)}
+                    disabled={pending}
+                    className={`rounded-md px-2 py-1 text-xs font-medium ${
+                      r.postPrSummaryComment
+                        ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                        : "border border-[color:var(--topo-line)] text-[color:var(--topo-muted)]"
+                    }`}
+                    onClick={() => {
+                      const next = !r.postPrSummaryComment;
+                      setRepos((prev) =>
+                        prev.map((row) =>
+                          row.id === r.id
+                            ? { ...row, postPrSummaryComment: next }
+                            : row,
+                        ),
+                      );
+                      startTransition(() => {
+                        void patchRepository(r.id, {
+                          postPrSummaryComment: next,
+                        }).then((ok) => {
+                          if (!ok) {
+                            setRepos((prev) =>
+                              prev.map((row) =>
+                                row.id === r.id
+                                  ? { ...row, postPrSummaryComment: !next }
+                                  : row,
+                              ),
+                            );
+                            return;
+                          }
+                          setMsg(
+                            next
+                              ? "PR summary comments enabled"
+                              : "PR summary comments disabled",
+                          );
+                        });
+                      });
+                    }}
+                  >
+                    Post PR summary comment
+                  </button>
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

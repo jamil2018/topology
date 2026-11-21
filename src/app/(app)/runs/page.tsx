@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { pageTitle } from "@/lib/format-labels";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { RunsWorkspace } from "@/components/runs-workspace";
 import { RunsPageSkeleton } from "@/components/skeletons";
 import { resolveActiveProject } from "@/lib/project";
@@ -29,7 +29,7 @@ export default async function RunsPage({ searchParams }: Props) {
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const workspaceId = ctx.project.id;
   const params = new URLSearchParams();

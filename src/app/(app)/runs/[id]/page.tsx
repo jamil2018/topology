@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { listIssueProviders } from "@topology/issue-providers";
 import { auth } from "@/auth";
 import { pageTitle } from "@/lib/format-labels";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { RunExecutor } from "@/components/run-executor";
 import { getRunWithResults, isUuid } from "@/lib/queries";
 import { resolveActiveProject } from "@/lib/project";
@@ -36,7 +36,7 @@ export default async function RunDetailPage({ params }: Props) {
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const workspaceId = ctx.project.id;
   const members = await db.query.workspaceMembers.findMany({

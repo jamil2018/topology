@@ -57,6 +57,20 @@
       "when": 1795000000000,
       "tag": "0007_collab_and_integrations",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795200000000,
+      "tag": "0008_triage_resolution",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795400000000,
+      "tag": "0009_scm_feedback",
+      "breakpoints": true
     }
   ]
 }

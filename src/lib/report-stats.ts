@@ -25,6 +25,12 @@ export type ReportResultInput = {
     priority?: string | null;
     folder?: { id: string; name: string } | null;
   } | null;
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    contentType?: string | null;
+    kind?: string | null;
+  }>;
 };
 
 export type StatusCounts = {
@@ -66,6 +72,14 @@ export type TimelinePoint = {
   cumulativeFailed: number;
 };
 
+export type FailureEvidenceAttachment = {
+  id: string;
+  filename: string;
+  contentType: string;
+  kind: string;
+  url: string;
+};
+
 export type FailureRow = {
   resultId: string;
   caseId: string | null;
@@ -78,7 +92,50 @@ export type FailureRow = {
   executedAt: string | null;
   isFlaky: boolean;
   flakeHint: string | null;
+  attachments: FailureEvidenceAttachment[];
 };
+
+export type ReportVerdict = "pass" | "fail" | "live" | "empty";
+
+export type ReportExecutiveSummary = {
+  verdict: ReportVerdict;
+  verdictLabel: string;
+  linkedDefects: number;
+  /** Current pass rate minus previous completed peer; null when either side is unknown. */
+  passRateDelta: number | null;
+};
+
+export function buildReportExecutiveSummary(input: {
+  status: string;
+  passRate: number | null;
+  failed: number;
+  blocked: number;
+  executed: number;
+  linkedDefects: number;
+  previousPassRate?: number | null;
+}): ReportExecutiveSummary {
+  const linkedDefects = Math.max(0, input.linkedDefects);
+  let verdict: ReportVerdict;
+  let verdictLabel: string;
+  if (input.status === "in_progress") {
+    verdict = "live";
+    verdictLabel = "Live";
+  } else if (input.executed === 0) {
+    verdict = "empty";
+    verdictLabel = "No results";
+  } else if (input.failed > 0 || input.blocked > 0) {
+    verdict = "fail";
+    verdictLabel = "Failed";
+  } else {
+    verdict = "pass";
+    verdictLabel = "Passed";
+  }
+  const passRateDelta =
+    input.passRate == null || input.previousPassRate == null
+      ? null
+      : input.passRate - input.previousPassRate;
+  return { verdict, verdictLabel, linkedDefects, passRateDelta };
+}
 
 function emptyCounts(): StatusCounts {
   return {
@@ -301,6 +358,15 @@ export function failureRowsFromResults(
       const caseId = r.case?.id ?? r.caseId ?? null;
       const flake = caseId ? flakeByCaseId.get(caseId) : undefined;
       const suite = suiteKeyForResult(r).label;
+      const attachments: FailureEvidenceAttachment[] = (r.attachments ?? []).map(
+        (a) => ({
+          id: a.id,
+          filename: a.filename,
+          contentType: a.contentType ?? "application/octet-stream",
+          kind: a.kind ?? "other",
+          url: `/api/attachments/${a.id}`,
+        }),
+      );
       return {
         resultId: r.id,
         caseId,
@@ -317,6 +383,7 @@ export function failureRowsFromResults(
             : null,
         isFlaky: flake?.isFlaky ?? false,
         flakeHint: flake?.hint ?? null,
+        attachments,
       };
     })
     .sort((a, b) => {

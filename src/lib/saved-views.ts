@@ -11,6 +11,8 @@ export const caseViewConfigSchema = z.object({
     .enum(["key", "title", "folder", "priority", "status"])
     .default("key"),
   sortDir: z.enum(["asc", "desc"]).default("asc"),
+  /** Active custom-field filters keyed by field key (URL `cf.*` params). */
+  customFieldFilters: z.record(z.string(), z.string()).default({}),
 });
 
 export const runViewConfigSchema = z.object({
@@ -70,6 +72,7 @@ export function serializeCaseViewConfig(config: {
   priorityFilter: string;
   sort: CaseListSort;
   sortDir: CaseListSortDir;
+  customFieldFilters?: Record<string, string>;
 }): string {
   return JSON.stringify(caseViewConfigSchema.parse(config));
 }

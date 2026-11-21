@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { ReleaseCompare } from "@/components/release-compare";
 import { db } from "@/db";
 import { releases } from "@/db/schema";
@@ -21,7 +21,7 @@ export default async function ReleaseComparePage({
   if (!session?.user?.id) redirect("/login");
 
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const params = await searchParams;
   const rows = await db.query.releases.findMany({

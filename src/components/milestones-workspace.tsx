@@ -2,6 +2,7 @@
 import { useProjectActions } from "./project-actions";
 import { useMutationFeedback } from "./use-mutation-feedback";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button, Input } from "@heroui/react";
@@ -179,7 +180,12 @@ export function MilestonesWorkspace({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-semibold text-[color:var(--topo-ink)]">
-                      {view.milestone.name}
+                      <Link
+                        href={`/milestones/${view.milestone.id}`}
+                        className="hover:underline"
+                      >
+                        {view.milestone.name}
+                      </Link>
                     </h2>
                     <StatusChip
                       tone={statusToneForRun(view.readiness.status)}
@@ -288,10 +294,17 @@ export function MilestonesWorkspace({
                   <Button
                     size="sm"
                     variant="secondary"
-                    isDisabled={!can("milestones.manage")} onPress={() => beginEdit(view)}
+                    isDisabled={!can("milestones.manage")}
+                    onPress={() => beginEdit(view)}
                   >
                     Edit thresholds
                   </Button>
+                  <Link
+                    href={`/milestones/${view.milestone.id}`}
+                    className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)]"
+                  >
+                    Open detail
+                  </Link>
                 </div>
               )}
             </motion.li>

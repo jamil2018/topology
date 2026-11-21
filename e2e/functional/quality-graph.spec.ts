@@ -8,9 +8,9 @@ test("quality graph preference reveals Intents and Releases", async ({
     nav().getByRole("link", { name: "Intents", exact: true });
 
   try {
-    await page.goto("/settings?section=account");
+    await page.goto("/settings?section=projects");
     await expect(
-      page.getByRole("heading", { name: "Preferences" }),
+      page.getByRole("heading", { name: "Advanced Quality Graph" }),
     ).toBeVisible();
 
     const toggle = page.getByRole("button", {

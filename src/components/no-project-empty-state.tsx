@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { userIsProjectAdminAnywhere } from "@/lib/project";
 
 export function NoProjectEmptyState({
   canManage = false,
@@ -30,4 +31,10 @@ export function NoProjectEmptyState({
       ) : null}
     </div>
   );
+}
+
+/** Server helper: resolves admin capability for empty-state CTAs. */
+export async function NoProjectEmpty({ userId }: { userId: string }) {
+  const canManage = await userIsProjectAdminAnywhere(userId);
+  return <NoProjectEmptyState canManage={canManage} />;
 }

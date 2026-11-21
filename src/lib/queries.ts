@@ -30,6 +30,7 @@ import {
   parseRunViewConfig,
 } from "@/lib/saved-views";
 import {
+  buildReportExecutiveSummary,
   buildReportKpis,
   buildResultTimeline,
   buildSuiteBreakdown,
@@ -360,6 +361,7 @@ export {
 } from "@/lib/queries/flake";
 export {
   getActiveMilestoneReadiness,
+  getMilestoneDetail,
   listMilestonesWithReadiness,
 } from "@/lib/queries/milestones";
 export { getReportsDashboard } from "@/lib/queries/reports-dashboard";
@@ -683,12 +685,12 @@ export async function getAutomationReliabilityHint(workspaceId: string) {
   };
 }
 
-/** One report per completed run — list summaries for the Reports surface. */
+/** Living reports: completed + in-progress runs for the Reports surface. */
 export async function listRunReports(workspaceId: string) {
   const allRuns = await db.query.runs.findMany({
     where: and(
       eq(runs.workspaceId, workspaceId),
-      eq(runs.status, "completed"),
+      inArray(runs.status, ["completed", "in_progress"]),
     ),
     orderBy: [desc(runs.updatedAt)],
     limit: 100,
@@ -772,22 +774,24 @@ export async function listRunReports(workspaceId: string) {
   });
 }
 
-/** Full report for a single completed run (manual or CI). */
+/** Full report for a completed or in-progress run (manual or CI). */
 export async function getRunReport(workspaceId: string, runId: string) {
   if (!isUuid(runId)) return null;
   const run = await db.query.runs.findFirst({
     where: and(
       eq(runs.id, runId),
       eq(runs.workspaceId, workspaceId),
-      eq(runs.status, "completed"),
+      inArray(runs.status, ["completed", "in_progress"]),
     ),
     with: {
       results: {
         with: {
           case: { with: { folder: true } },
           linkedIssues: true,
+          attachments: true,
         },
       },
+      linkedIssues: true,
     },
   });
   if (!run) return null;
@@ -814,6 +818,12 @@ export async function getRunReport(workspaceId: string, runId: string) {
             : null,
         }
       : null,
+    attachments: (r.attachments ?? []).map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      contentType: a.contentType,
+      kind: a.kind,
+    })),
   }));
 
   const failedCaseIds = [
@@ -839,16 +849,33 @@ export async function getRunReport(workspaceId: string, runId: string) {
     completedAt: run.completedAt,
   });
 
+  const linkedIds = new Set<string>();
+  for (const issue of run.linkedIssues ?? []) linkedIds.add(issue.id);
+  for (const result of run.results) {
+    for (const issue of result.linkedIssues ?? []) linkedIds.add(issue.id);
+  }
+
   const recentPeerRuns = await listRunReports(workspaceId);
-  const trend = recentPeerRuns
-    .slice(0, 12)
-    .map((r) => ({
-      id: r.runId,
-      name: r.name,
-      passed: r.passed,
-      failed: r.failed,
-      isCurrent: r.runId === runId,
-    }));
+  const trend = recentPeerRuns.slice(0, 12).map((r) => ({
+    id: r.runId,
+    name: r.name,
+    passed: r.passed,
+    failed: r.failed,
+    isCurrent: r.runId === runId,
+  }));
+  const previousCompleted = recentPeerRuns.find(
+    (r) => r.runId !== runId && r.status === "completed" && r.passRate != null,
+  );
+
+  const executive = buildReportExecutiveSummary({
+    status: run.status,
+    passRate: kpis.passRate,
+    failed: kpis.failed,
+    blocked: kpis.blocked,
+    executed: kpis.executed,
+    linkedDefects: linkedIds.size,
+    previousPassRate: previousCompleted?.passRate ?? null,
+  });
 
   return {
     run: {
@@ -867,6 +894,7 @@ export async function getRunReport(workspaceId: string, runId: string) {
       updatedAt: run.updatedAt,
     },
     kpis,
+    executive,
     suiteBreakdown: buildSuiteBreakdown(resultInputs),
     timeline: buildResultTimeline(resultInputs),
     failures: failureRowsFromResults(resultInputs, flakeMap),

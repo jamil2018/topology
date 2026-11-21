@@ -57,11 +57,56 @@ export function ProposalsWorkspace({
   const [transitionPending, startTransition] = useTransition();
   const [items, setItems] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
   const { can } = useProjectActions();
   const { saving, submit } = useMutationFeedback(setError);
   const pending = transitionPending || saving;
 
   const queue = items.filter((p) => p.status === "pending");
+
+  async function draftCoverageProposal() {
+    if (!can("intents.edit") && !can("proposals.create")) return;
+    return submit(async () => {
+      setError(null);
+      setDraftMessage(null);
+      const res = await fetch("/api/ai/draft?heuristic=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job: "link_suggestions",
+          allowHeuristic: true,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        proposalId?: string;
+        heuristic?: boolean;
+        model?: string;
+        proposal?: ProposalListItem;
+      };
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "Could not draft coverage proposal",
+        );
+        return;
+      }
+      const listRes = await fetch("/api/proposals?status=pending");
+      if (listRes.ok) {
+        const listData = (await listRes.json()) as {
+          proposals?: ProposalListItem[];
+        };
+        if (listData.proposals) setItems(listData.proposals);
+      }
+      setDraftMessage(
+        data.proposalId
+          ? `Coverage proposal queued${data.heuristic ? " (local template)" : data.model ? ` (${data.model})` : ""}.`
+          : "Draft created.",
+      );
+      startTransition(() => router.refresh());
+    });
+  }
 
   async function review(id: string, status: "accepted" | "rejected") {
     if (!can("proposals.review")) return;
@@ -123,12 +168,28 @@ export function ProposalsWorkspace({
         </p>
       ) : null}
 
+      {draftMessage ? (
+        <p className="text-sm text-[color:var(--topo-muted)]">{draftMessage}</p>
+      ) : null}
+
       {queue.length === 0 ? (
-        <p className="text-sm text-[color:var(--topo-muted)]">
-          No pending proposals. Use MCP{" "}
-          <code className="font-mono text-xs">propose_coverage</code> to queue
-          a suggestion without writing the graph.
-        </p>
+        <div className="space-y-3 rounded-md border border-dashed border-[color:var(--topo-line)] px-4 py-6">
+          <p className="text-sm text-[color:var(--topo-muted)]">
+            No pending proposals. Draft a coverage suggestion in-app, or use MCP{" "}
+            <code className="font-mono text-xs">propose_coverage</code> without
+            writing the graph.
+          </p>
+          {(can("intents.edit") || can("proposals.create")) ? (
+            <Button
+              size="sm"
+              variant="primary"
+              isDisabled={pending}
+              onPress={() => void draftCoverageProposal()}
+            >
+              Draft coverage proposal
+            </Button>
+          ) : null}
+        </div>
       ) : (
         <ul className="space-y-3">
           {queue.map((item, index) => (

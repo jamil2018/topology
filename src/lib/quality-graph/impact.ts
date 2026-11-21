@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { computeImpact, type ImpactPathRule, type ImpactReport } from "@topology/domain";
 import { db } from "@/db";
 import {
+  cases,
   components,
   pathComponentRules,
   qualityEdges,
@@ -13,6 +14,50 @@ import {
   mapDbPathRules,
   mapPathRulesByComponentKey,
 } from "@/lib/impact-path-rules";
+import { collectCaseIdsForIntents } from "@/lib/resolve-impact-cases";
+
+/**
+ * Resolve catalog case IDs linked to the given intent IDs (via case.intentId
+ * or implementation.caseId).
+ */
+export async function resolveCaseIdsForIntents(
+  workspaceId: string,
+  intentIds: readonly string[],
+): Promise<string[]> {
+  const uniqueIntentIds = [...new Set(intentIds.filter(Boolean))];
+  if (uniqueIntentIds.length === 0) return [];
+
+  const [caseRows, implRows] = await Promise.all([
+    db
+      .select({ id: cases.id, intentId: cases.intentId })
+      .from(cases)
+      .where(
+        and(
+          eq(cases.workspaceId, workspaceId),
+          inArray(cases.intentId, uniqueIntentIds),
+        ),
+      ),
+    db
+      .select({
+        intentId: testImplementations.intentId,
+        caseId: testImplementations.caseId,
+      })
+      .from(testImplementations)
+      .where(
+        and(
+          eq(testImplementations.workspaceId, workspaceId),
+          inArray(testImplementations.intentId, uniqueIntentIds),
+          isNotNull(testImplementations.caseId),
+        ),
+      ),
+  ]);
+
+  return collectCaseIdsForIntents({
+    intentIds: uniqueIntentIds,
+    cases: caseRows,
+    implementations: implRows,
+  });
+}
 
 /**
  * Load workspace graph entities and walk change impact for the given paths.
@@ -24,6 +69,7 @@ export async function getWorkspaceImpact(
   rules?: { pattern: string; componentKey: string }[],
 ): Promise<{
   impact: ImpactReport;
+  caseIds: string[];
   pathRulesApplied: number;
   unknownComponentKeys: string[];
   rulesSource: "request" | "database";
@@ -100,8 +146,14 @@ export async function getWorkspaceImpact(
     })),
   });
 
+  const caseIds = await resolveCaseIdsForIntents(
+    workspaceId,
+    impact.intents.map((i) => i.id),
+  );
+
   return {
     impact,
+    caseIds,
     pathRulesApplied: pathRules.length,
     unknownComponentKeys: unknownKeys,
     rulesSource,

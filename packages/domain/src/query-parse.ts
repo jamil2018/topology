@@ -38,7 +38,7 @@ import {
   type QueryScalar,
   type QuerySort,
   type QueryValidationIssue,
-} from "./query-ast";
+} from "./query-ast.js";
 
 export type QueryParseResult =
   | { ok: true; query: QualityQuery }

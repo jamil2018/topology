@@ -26,6 +26,7 @@ export function CaseTcmPanel({
   onDatasetsChange,
   onCustomFieldsChange,
   disabled,
+  hideCustomFields = false,
   onRestored,
 }: {
   caseId: string;
@@ -37,6 +38,8 @@ export function CaseTcmPanel({
   onDatasetsChange: (next: DatasetDraft[]) => void;
   onCustomFieldsChange: (next: Record<string, unknown>) => void;
   disabled?: boolean;
+  /** When true, custom fields are rendered elsewhere (e.g. case metadata strip). */
+  hideCustomFields?: boolean;
   onRestored?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -205,7 +208,7 @@ export function CaseTcmPanel({
             </div>
           ) : null}
 
-          {customFieldDefs.length > 0 ? (
+          {!hideCustomFields && customFieldDefs.length > 0 ? (
             <div className="space-y-1.5">
               <p className="font-medium text-xs text-[color:var(--topo-muted)]">
                 Custom fields

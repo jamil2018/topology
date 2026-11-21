@@ -24,10 +24,18 @@ export function NotificationsBell() {
       if (!response.ok) throw new Error("Could not load notifications");
       const data = await response.json();
       if (!signal?.aborted && version === loadVersion.current) { setItems(data.notifications ?? []); setUnread(data.unreadCount ?? 0); setError(null); }
-    } catch { if (!signal?.aborted && version === loadVersion.current) setError("Could not load notifications. Try again."); }
+    } catch (error) {
+      if (signal?.aborted) return;
+      if (typeof error === "object" && error !== null && "name" in error && (error as { name: string }).name === "AbortError") return;
+      if (version === loadVersion.current) setError("Could not load notifications. Try again.");
+    }
     finally { if (!signal?.aborted && version === loadVersion.current) setLoading(false); }
   }, [projectId]);
-  useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort("notifications-cleanup");
+  }, [load]);
   async function markRead(id: string) {
     if (markLock.current) return;
     markLock.current = true;
@@ -39,13 +47,50 @@ export function NotificationsBell() {
     } catch { setError("Could not mark notification read. Try again."); }
     finally { markLock.current = false; setPending(null); }
   }
+  async function markAllRead() {
+    if (markLock.current || unread === 0) return;
+    markLock.current = true;
+    setPending("all");
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(projectId ? { "x-topology-project-id": projectId } : {}),
+        },
+        body: JSON.stringify({ markAllRead: true }),
+      });
+      if (!response.ok) throw new Error();
+      await load();
+    } catch {
+      setError("Could not mark all notifications read. Try again.");
+    } finally {
+      markLock.current = false;
+      setPending(null);
+    }
+  }
   const visible = onlyUnread ? items.filter((item) => !item.readAt) : items;
   return <>
     <Button size="sm" variant="secondary" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`} onPress={() => { setOpen(true); void load(); }}><BellIcon size={16} />{unread ? <span className="text-xs">{unread}</span> : null}</Button>
     <Modal.Backdrop isOpen={open} onOpenChange={setOpen}><Modal.Container placement="center" size="lg"><Modal.Dialog>
       <Modal.Header className="pe-12"><Modal.Heading>Notifications</Modal.Heading><Modal.CloseTrigger aria-label="Close notifications" /></Modal.Header>
       <Modal.Body>
-        <div role="group" aria-label="Notification filter" className="mb-3 flex gap-2"><Button size="sm" variant={onlyUnread ? "primary" : "secondary"} onPress={() => setOnlyUnread(true)}>Unread</Button><Button size="sm" variant={!onlyUnread ? "primary" : "secondary"} onPress={() => setOnlyUnread(false)}>All</Button></div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div role="group" aria-label="Notification filter" className="flex gap-2">
+            <Button size="sm" variant={onlyUnread ? "primary" : "secondary"} onPress={() => setOnlyUnread(true)}>Unread</Button>
+            <Button size="sm" variant={!onlyUnread ? "primary" : "secondary"} onPress={() => setOnlyUnread(false)}>All</Button>
+          </div>
+          {unread > 0 ? (
+            <Button
+              size="sm"
+              variant="tertiary"
+              isDisabled={Boolean(pending)}
+              onPress={() => void markAllRead()}
+            >
+              Mark all read
+            </Button>
+          ) : null}
+        </div>
         {error ? <p role="alert" className="topo-feedback">{error}<button onClick={() => void load()}>Retry</button></p> : null}
         {loading ? <p role="status">Loading notifications…</p> : null}
         {!loading && !error && !visible.length ? <p className="py-6 text-sm text-[color:var(--topo-muted)]">{onlyUnread ? "You’re caught up." : "No notifications yet."}</p> : null}

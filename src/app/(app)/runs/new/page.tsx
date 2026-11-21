@@ -7,7 +7,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { pageTitle } from "@/lib/format-labels";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { StartRunWorkspace } from "@/components/start-run-workspace";
 import { assigneeDecision } from "@/lib/assignee";
 import { membershipActions, resolveActiveProject } from "@/lib/project";
@@ -25,7 +25,7 @@ export default async function StartRunPage({ searchParams }: { searchParams: Pro
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const workspaceId = ctx.project.id;
   const params = await searchParams;

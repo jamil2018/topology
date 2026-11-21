@@ -71,10 +71,12 @@ function useResultTimer(resultId: string | null) {
   const [running, setRunning] = useState(false);
   const startedAt = useRef<number | null>(null);
   const baseMs = useRef(0);
+  const runningRef = useRef(false);
 
   useEffect(() => {
     setElapsedMs(0);
     setRunning(false);
+    runningRef.current = false;
     startedAt.current = null;
     baseMs.current = 0;
   }, [resultId]);
@@ -91,32 +93,35 @@ function useResultTimer(resultId: string | null) {
   }, [running]);
 
   const start = useCallback(() => {
-    if (running) return;
+    if (runningRef.current) return;
     startedAt.current = performance.now();
+    runningRef.current = true;
     setRunning(true);
-  }, [running]);
+  }, []);
 
   const pause = useCallback(() => {
-    if (!running || startedAt.current == null) return;
+    if (!runningRef.current || startedAt.current == null) return;
     baseMs.current += performance.now() - startedAt.current;
     startedAt.current = null;
     setElapsedMs(baseMs.current);
+    runningRef.current = false;
     setRunning(false);
-  }, [running]);
+  }, []);
 
   const reset = useCallback(() => {
     startedAt.current = null;
     baseMs.current = 0;
     setElapsedMs(0);
+    runningRef.current = false;
     setRunning(false);
   }, []);
 
   const readMs = useCallback(() => {
-    if (running && startedAt.current != null) {
+    if (runningRef.current && startedAt.current != null) {
       return Math.round(baseMs.current + (performance.now() - startedAt.current));
     }
     return Math.round(baseMs.current || elapsedMs);
-  }, [elapsedMs, running]);
+  }, [elapsedMs]);
 
   return { elapsedMs, running, start, pause, reset, readMs };
 }
@@ -145,6 +150,9 @@ export function RunCaseDetail({
   onLinkKeyChange,
   onIssueAction,
   onTimerReader,
+  runName,
+  runId,
+  environment,
 }: {
   result: ResultRow | null;
   members: MemberOption[];
@@ -169,14 +177,42 @@ export function RunCaseDetail({
   onLinkKeyChange: (value: string) => void;
   onIssueAction: (body: Record<string, unknown>) => void;
   onTimerReader?: (readMs: () => number) => void;
+  runName?: string;
+  runId?: string;
+  environment?: string;
 }) {
   const [dropActive, setDropActive] = useState(false);
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const timer = useResultTimer(result?.id ?? null);
+  const autoStartEligible =
+    Boolean(result) && !frozen && result?.status === "untested";
 
   useEffect(() => {
     onTimerReader?.(timer.readMs);
   }, [onTimerReader, timer.readMs]);
+
+  const { start: startTimer, pause: pauseTimer } = timer;
+  useEffect(() => {
+    if (!autoStartEligible) return;
+    startTimer();
+    const pauseForBackground = () => {
+      if (document.hidden) pauseTimer();
+      else startTimer();
+    };
+    const pauseForWindowBlur = () => pauseTimer();
+    const resumeForWindowFocus = () => {
+      if (!document.hidden) startTimer();
+    };
+    document.addEventListener("visibilitychange", pauseForBackground);
+    window.addEventListener("blur", pauseForWindowBlur);
+    window.addEventListener("focus", resumeForWindowFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", pauseForBackground);
+      window.removeEventListener("blur", pauseForWindowBlur);
+      window.removeEventListener("focus", resumeForWindowFocus);
+      pauseTimer();
+    };
+  }, [autoStartEligible, result?.id, startTimer, pauseTimer]);
 
   useEffect(() => {
     return () => revokePendingUploads(pendingUploads);
@@ -387,6 +423,13 @@ export function RunCaseDetail({
           availableProviders={availableProviders}
           onLinkKeyChange={onLinkKeyChange}
           onIssueAction={onIssueAction}
+          caseKey={result.case.key}
+          caseTitle={result.case.title}
+          notes={notes}
+          attachments={result.attachments}
+          runName={runName}
+          runId={runId}
+          environment={environment}
         />
       </div>
 

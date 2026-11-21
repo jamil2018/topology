@@ -4,12 +4,11 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import {
-  cases,
   customFieldDefs,
   customFieldValues,
-  folders,
 } from "@/db/schema";
 import { parseCasesCsv, serializeCasesCsv } from "@/lib/csv";
+import { persistCsvCases } from "@/lib/import/csv-import";
 import {
   getMembershipForProject,
   readPreferredProjectId,
@@ -17,7 +16,6 @@ import {
 } from "@/lib/project";
 import { recordAuditEvent } from "@/lib/audit";
 import { listCases } from "@/lib/queries";
-import { upsertCustomFieldValues } from "@/lib/tcm/case-tcm";
 
 /**
  * `requireProjectAccess` uses `pickAccessibleProject` in `src/lib/project.ts`,
@@ -36,6 +34,10 @@ async function rejectUnknownProject(userId: string, request: Request) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
   return null;
+}
+
+function parseDryRunFlag(raw: unknown): boolean {
+  return raw === true || raw === "true" || raw === "1" || raw === 1;
 }
 
 export async function GET(request: Request) {
@@ -154,6 +156,7 @@ export async function POST(request: Request) {
 
   const contentType = request.headers.get("content-type") ?? "";
   let raw = "";
+  let dryRun = false;
 
   if (contentType.includes("multipart/form-data")) {
     let form: FormData;
@@ -170,14 +173,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "file is required" }, { status: 400 });
     }
     raw = await file.text();
+    dryRun = parseDryRunFlag(form.get("dryRun"));
   } else {
-    let body: { csv?: unknown };
+    let body: { csv?: unknown; dryRun?: unknown };
     try {
       body = await request.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
     raw = typeof body?.csv === "string" ? body.csv : "";
+    dryRun = parseDryRunFlag(body?.dryRun);
   }
 
   const fieldDefs = await db.query.customFieldDefs.findMany({
@@ -190,87 +195,45 @@ export async function POST(request: Request) {
   const { rows, errors } = parseCasesCsv(raw, { customFieldKeys });
   if (rows.length === 0) {
     return NextResponse.json(
-      { error: "No valid rows", details: errors },
+      { error: "No valid rows", details: errors, dryRun },
       { status: 400 },
     );
   }
 
-  const existingFolders = await db
-    .select()
-    .from(folders)
-    .where(eq(folders.workspaceId, workspaceId));
-  const folderByName = new Map(
-    existingFolders.map((f) => [f.name.toLowerCase(), f]),
-  );
+  const result = await persistCsvCases({
+    workspaceId,
+    actorId: session.user.id,
+    rows,
+    dryRun,
+  });
 
-  const created = [];
-  const skipped: string[] = [];
-
-  for (const row of rows) {
-    let folderId: string | null = null;
-    if (row.folder) {
-      const key = row.folder.toLowerCase();
-      let folder = folderByName.get(key);
-      if (!folder) {
-        const [inserted] = await db
-          .insert(folders)
-          .values({ workspaceId, name: row.folder })
-          .returning();
-        folder = inserted;
-        folderByName.set(key, inserted);
-      }
-      folderId = folder.id;
-    }
-
-    const tags = row.tags
-      .split(/[;,]/)
-      .map((t) => t.trim())
-      .filter(Boolean);
-
-    try {
-      const existing = await db.query.cases.findFirst({
-        where: and(eq(cases.key, row.key), eq(cases.workspaceId, workspaceId)),
-      });
-      if (existing) {
-        skipped.push(row.key);
-        continue;
-      }
-
-      const [c] = await db
-        .insert(cases)
-        .values({
-          workspaceId,
-          key: row.key,
-          title: row.title,
-          description: row.description,
-          preconditions: row.preconditions,
-          steps: row.steps,
-          expectedResult: row.expectedResult,
-          priority: row.priority,
-          status: row.status,
-          folderId,
-          tags,
-          createdById: session.user.id,
-        })
-        .returning();
-      if (row.customFields && Object.keys(row.customFields).length > 0) {
-        await upsertCustomFieldValues({
-          workspaceId,
-          entityType: "case",
-          entityId: c.id,
-          values: row.customFields,
-        });
-      }
-      created.push(c);
-    } catch {
-      skipped.push(row.key);
-    }
+  if (!dryRun) {
+    await recordAuditEvent({
+      action: "import.cases",
+      actorId: session.user.id,
+      actorEmail: session.user.email,
+      workspaceId,
+      targetType: "cases",
+      request,
+      metadata: {
+        created: result.created.length,
+        skipped: result.skipped.length,
+        folderIds: result.folderIds,
+      },
+    });
   }
 
   return NextResponse.json({
-    created: created.length,
-    skipped,
+    dryRun,
+    created: result.created.length,
+    skipped: result.skipped,
+    wouldCreate: result.wouldCreate,
+    wouldSkip: result.wouldSkip,
     errors,
-    cases: created,
+    sample: result.sample,
+    customFieldKeys,
+    folderIds: result.folderIds,
+    primaryFolderId: result.primaryFolderId,
+    cases: dryRun ? [] : result.created,
   });
 }

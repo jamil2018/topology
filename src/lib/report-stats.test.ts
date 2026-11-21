@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildReportExecutiveSummary,
   buildReportKpis,
   buildResultTimeline,
   buildSuiteBreakdown,
@@ -116,6 +117,66 @@ describe("failureRowsFromResults", () => {
     expect(rows[0].caseKey).toBe("TC-2");
     expect(rows[0].isFlaky).toBe(true);
     expect(rows[0].suite).toBe("Cart");
+    expect(rows[0].attachments).toEqual([]);
+  });
+
+  it("embeds attachment evidence on failure rows", () => {
+    const rows = failureRowsFromResults([
+      {
+        id: "fail-1",
+        status: "failed",
+        case: { id: "c9", key: "TC-9", title: "Shot", priority: "P0" },
+        attachments: [
+          {
+            id: "att-1",
+            filename: "fail.png",
+            contentType: "image/png",
+            kind: "screenshot",
+          },
+        ],
+      },
+    ]);
+    expect(rows[0].attachments).toEqual([
+      {
+        id: "att-1",
+        filename: "fail.png",
+        contentType: "image/png",
+        kind: "screenshot",
+        url: "/api/attachments/att-1",
+      },
+    ]);
+  });
+});
+
+describe("buildReportExecutiveSummary", () => {
+  it("labels live runs and computes pass-rate delta", () => {
+    const live = buildReportExecutiveSummary({
+      status: "in_progress",
+      passRate: 80,
+      failed: 1,
+      blocked: 0,
+      executed: 5,
+      linkedDefects: 2,
+      previousPassRate: 90,
+    });
+    expect(live).toMatchObject({
+      verdict: "live",
+      verdictLabel: "Live",
+      linkedDefects: 2,
+      passRateDelta: -10,
+    });
+
+    const pass = buildReportExecutiveSummary({
+      status: "completed",
+      passRate: 100,
+      failed: 0,
+      blocked: 0,
+      executed: 4,
+      linkedDefects: 0,
+      previousPassRate: 95,
+    });
+    expect(pass).toMatchObject({ verdict: "pass", verdictLabel: "Passed" });
+    expect(pass.passRateDelta).toBe(5);
   });
 });
 

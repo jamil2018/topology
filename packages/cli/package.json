@@ -7,12 +7,20 @@
   "bin": {
     "topology": "./bin/topology.js"
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "files": [
     "bin",
-    "src",
+    "dist",
     "examples",
-    "README.md",
-    "!src/**/*.test.ts"
+    "README.md"
   ],
   "repository": {
     "type": "git",
@@ -30,10 +38,12 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "tsx src/index.ts"
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@topology/domain": "0.1.0",
-    "tsx": "^4.23.13"
+    "@topology/domain": "0.1.0"
   }
 }

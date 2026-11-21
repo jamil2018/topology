@@ -4,14 +4,20 @@ import { auth } from "@/auth";
 import {
   countUnreadNotifications,
   listNotificationsForUser,
+  markAllNotificationsRead,
   markNotificationRead,
 } from "@/lib/notifications";
 import { authorizeNotificationsAccess } from "@/lib/coverage-snapshot-auth";
 
-const patchSchema = z.object({
-  id: z.string().uuid(),
-  read: z.literal(true),
-});
+const patchSchema = z.union([
+  z.object({
+    id: z.string().uuid(),
+    read: z.literal(true),
+  }),
+  z.object({
+    markAllRead: z.literal(true),
+  }),
+]);
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -59,7 +65,19 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const ok = await markNotificationRead(session.user.id, parsed.data.id, access.ctx.project.id);
+  if ("markAllRead" in parsed.data) {
+    const updated = await markAllNotificationsRead(
+      session.user.id,
+      access.ctx.project.id,
+    );
+    return NextResponse.json({ ok: true, updated });
+  }
+
+  const ok = await markNotificationRead(
+    session.user.id,
+    parsed.data.id,
+    access.ctx.project.id,
+  );
   if (!ok) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   pgTable,
@@ -26,6 +27,14 @@ export const repositories = pgTable(
     defaultBranch: text("default_branch").default("main").notNull(),
     /** Optional HMAC secret for inbound GitHub webhooks for this remote. */
     webhookSecret: text("webhook_secret"),
+    /** Post GitHub Check Run / GitLab commit status on CI completion. */
+    postPrStatusChecks: boolean("post_pr_status_checks")
+      .default(false)
+      .notNull(),
+    /** Post/update sticky PR/MR summary comment on CI completion. */
+    postPrSummaryComment: boolean("post_pr_summary_comment")
+      .default(false)
+      .notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },

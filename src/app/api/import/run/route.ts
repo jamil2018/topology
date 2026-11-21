@@ -83,6 +83,8 @@ export async function POST(request: Request) {
     wouldSkip: result.wouldSkip,
     errors: built.errors,
     sample: built.preview.sampleMappedRows,
+    folderIds: result.folderIds,
+    primaryFolderId: result.primaryFolderId,
     cases: parsed.body.dryRun ? [] : result.created,
   });
 }

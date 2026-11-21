@@ -73,19 +73,18 @@ const dashboard = {
 };
 
 describe("ReportsWorkspace", () => {
-  it("explains that only completed runs produce reports", () => {
+  it("explains living reports when the list is empty", () => {
     render(
       <ReportsWorkspace reports={[]} dashboard={emptyReportsDashboard()} />,
     );
     expect(screen.getByText("No run reports yet")).toBeInTheDocument();
     expect(
-      screen.getByText(/Reports appear after a run is completed/i),
+      screen.getByText(/Reports appear for in-progress and completed runs/i),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/in-progress/i)).not.toBeInTheDocument();
     expect(screen.getByText("Pass-rate trend")).toBeInTheDocument();
   });
 
-  it("renders the cross-run dashboard and drill-down list", () => {
+  it("renders the cross-run dashboard and labels in-progress runs Live", () => {
     render(
       <ReportsWorkspace
         dashboard={dashboard}
@@ -113,6 +112,29 @@ describe("ReportsWorkspace", () => {
             passRate: 91,
             durationMs: 3600000,
           },
+          {
+            runId: "run-live",
+            name: "Sprint smoke",
+            status: "in_progress",
+            kind: "manual",
+            source: "manual",
+            environment: "staging",
+            planId: null,
+            branch: null,
+            commitSha: null,
+            startedAt: "2026-10-22T02:00:00.000Z",
+            completedAt: null,
+            updatedAt: "2026-10-22T02:10:00.000Z",
+            createdAt: "2026-10-22T02:00:00.000Z",
+            passed: 3,
+            failed: 1,
+            skipped: 0,
+            blocked: 0,
+            untested: 4,
+            total: 8,
+            passRate: 75,
+            durationMs: null,
+          },
         ]}
       />,
     );
@@ -131,6 +153,11 @@ describe("ReportsWorkspace", () => {
       "href",
       "/reports/run-1",
     );
+    expect(screen.getByRole("link", { name: /Sprint smoke/i })).toHaveAttribute(
+      "href",
+      "/reports/run-live",
+    );
+    expect(screen.getByText("Live")).toBeInTheDocument();
     expect(screen.getByLabelText("Date range")).toBeInTheDocument();
     expect(screen.getByLabelText("Filter by plan")).toBeInTheDocument();
     expect(screen.getByLabelText("Filter by environment")).toBeInTheDocument();

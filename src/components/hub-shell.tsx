@@ -215,10 +215,9 @@ function SidebarChrome({
             className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/40 p-2.5"
           >
             <p className="text-xs leading-relaxed text-[color:var(--topo-muted)]">
-              Quality graph adds intents, journeys, requirements, risks,
-              components, impact, and proposals — the model behind coverage and
-              change analysis. Test cases, plans, and test runs stay in the
-              main nav.
+              Quality graph adds intents, releases, journeys, requirements,
+              risks, and components — the model behind coverage analysis.
+              Milestones, impact, and proposals stay in the main nav.
             </p>
             <button
               type="button"

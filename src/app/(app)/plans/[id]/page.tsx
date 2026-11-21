@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { pageTitle } from "@/lib/format-labels";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { PlanDetail } from "@/components/plan-detail";
 import { db } from "@/db";
 import { environments, milestones } from "@/db/schema";
@@ -30,7 +30,7 @@ export default async function PlanDetailPage({ params }: Props) {
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const { id } = await params;
   if (!isUuid(id)) notFound();

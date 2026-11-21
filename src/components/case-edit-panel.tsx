@@ -10,9 +10,11 @@ import {
   Label,
   TextField,
   ListBox,
+  Modal,
   Select,
 } from "@heroui/react";
 import { CopyIcon, FloppyDiskIcon, SparkleIcon, XIcon } from "@phosphor-icons/react";
+import { classifyCaseStatusTransition } from "@/lib/case-review";
 import { folderPathLabel } from "@/lib/folder-tree";
 import type { OrderedStep } from "@/lib/tcm/steps";
 import { CaseHistoryPanel } from "./case-history-panel";
@@ -103,6 +105,31 @@ function parseTags(raw: string) {
     .filter(Boolean);
 }
 
+function aiDraftSourceLabel(data: { heuristic?: unknown; model?: unknown }) {
+  const heuristic =
+    data.heuristic === true ||
+    data.model === "heuristic" ||
+    data.model == null;
+  if (heuristic) {
+    return "Local template — connect an AI provider in Settings for tailored drafts";
+  }
+  return typeof data.model === "string" && data.model.trim()
+    ? `Drafted with ${data.model}`
+    : "Drafted with AI model";
+}
+
+function reviewerLabel(
+  members: WorkspaceMember[],
+  reviewerId: string | null | undefined,
+) {
+  if (!reviewerId) return null;
+  const member = members.find((m) => m.user.id === reviewerId);
+  if (!member) return "Reviewer assigned";
+  const name = member.user.name?.trim();
+  if (name) return `${name} (${member.user.email})`;
+  return member.user.email;
+}
+
 export function CaseEditPanel({
   caseId,
   caseKey,
@@ -169,6 +196,8 @@ export function CaseEditPanel({
   const [reviewComment, setReviewComment] = useState("");
   const [reviewBusy, setReviewBusy] = useState(false);
   const [draftingSteps, setDraftingSteps] = useState(false);
+  const [draftSourceLabel, setDraftSourceLabel] = useState<string | null>(null);
+  const [confirmDuplicateOpen, setConfirmDuplicateOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -278,14 +307,18 @@ export function CaseEditPanel({
   async function duplicate() {
     if (!can("cases.create") || duplicateLock.current || duplicating) return;
     if (dirty) {
-      const proceed = window.confirm(
-        "This case has unsaved changes. Duplicate the saved version anyway?",
-      );
-      if (!proceed) return;
+      setConfirmDuplicateOpen(true);
+      return;
     }
+    await performDuplicate();
+  }
+
+  async function performDuplicate() {
+    if (!can("cases.create") || duplicateLock.current || duplicating) return;
     duplicateLock.current = true;
     setDuplicating(true);
     setSaveError(null);
+    setConfirmDuplicateOpen(false);
     try {
       const res = await fetch(`/api/cases/${caseId}/clone`, {
         method: "POST",
@@ -323,8 +356,8 @@ export function CaseEditPanel({
     }
   }
 
-  async function save() {
-    if (!form || !detail || readOnly || saveLock.current) return;
+  async function save(): Promise<boolean> {
+    if (!form || !detail || readOnly || saveLock.current) return false;
     saveLock.current = true;
     setSaving(true);
     setSaveError(null);
@@ -362,13 +395,13 @@ export function CaseEditPanel({
             ? data.error
             : "You do not have permission to edit cases",
         );
-        return;
+        return false;
       }
       if (!res.ok) {
         setSaveError(
           typeof data.error === "string" ? data.error : "Failed to save case",
         );
-        return;
+        return false;
       }
       const saved = data.case as CaseDetail & {
         folder?: { id: string; name: string } | null;
@@ -387,6 +420,8 @@ export function CaseEditPanel({
         folderId: saved.folderId ?? null,
         intentId: saved.intentId ?? detail.intentId,
         intent: saved.intent ?? detail.intent,
+        reviewerId: saved.reviewerId ?? detail.reviewerId,
+        reviewedAt: saved.reviewedAt ?? detail.reviewedAt,
         structuredSteps: useStructured
           ? structuredSteps
           : (saved.structuredSteps ?? []),
@@ -418,8 +453,10 @@ export function CaseEditPanel({
         tags: nextDetail.tags,
         folder,
       });
+      return true;
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Could not save. Your draft is preserved.");
+      return false;
     } finally {
       saveLock.current = false;
       setSaving(false);
@@ -442,6 +479,10 @@ export function CaseEditPanel({
     if (action === "request_changes" && !reviewComment.trim()) {
       setSaveError("Add a review comment when requesting changes");
       return;
+    }
+    if (dirty) {
+      const saved = await save();
+      if (!saved) return;
     }
     setReviewBusy(true);
     setSaveError(null);
@@ -510,6 +551,7 @@ export function CaseEditPanel({
     if (!form || readOnly || draftingSteps) return;
     setDraftingSteps(true);
     setSaveError(null);
+    setDraftSourceLabel(null);
     try {
       const res = await fetch("/api/ai/draft?heuristic=1", {
         method: "POST",
@@ -550,6 +592,7 @@ export function CaseEditPanel({
       }));
       setStructuredSteps(nextSteps);
       setUseStructured(true);
+      setDraftSourceLabel(aiDraftSourceLabel(data));
       void fetch("/api/shared-steps")
         .then((sharedRes) => sharedRes.json())
         .then((shared) => {
@@ -575,6 +618,21 @@ export function CaseEditPanel({
   const headerKey = detail?.key ?? caseKey;
   const headerTitle = form?.title || detail?.title || caseTitle;
   const statusValue = form?.status ?? detail?.status ?? "draft";
+  const reviewGateActive =
+    Boolean(reviewerId || detail?.reviewerId) || statusValue === "in_review";
+  const assignedReviewerLabel = reviewerLabel(
+    members,
+    detail?.reviewerId || reviewerId || null,
+  );
+  const selectableStatuses = useMemo(() => {
+    if (statusValue === "in_review") {
+      return statuses.filter((s) => s === "in_review");
+    }
+    if (reviewGateActive && statusValue === "draft") {
+      return statuses.filter((s) => s !== "ready" && s !== "in_review");
+    }
+    return [...statuses];
+  }, [reviewGateActive, statusValue]);
 
   return (
     <aside className="flex h-full max-h-[calc(100vh-6rem)] flex-col overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
@@ -700,6 +758,11 @@ export function CaseEditPanel({
                   disabled={readOnly || saving}
                   sharedSteps={sharedSteps}
                 />
+                {draftSourceLabel ? (
+                  <p className="text-xs text-[color:var(--topo-muted)]">
+                    {draftSourceLabel}
+                  </p>
+                ) : null}
               </div>
             ) : (
               <>
@@ -764,6 +827,11 @@ export function CaseEditPanel({
                     Use structured steps
                   </Button>
                 </div>
+                {draftSourceLabel ? (
+                  <p className="text-xs text-[color:var(--topo-muted)]">
+                    {draftSourceLabel}
+                  </p>
+                ) : null}
               </>
             )}
             <div className="grid gap-3">
@@ -801,10 +869,36 @@ export function CaseEditPanel({
                 variant="secondary"
                 placeholder="Status"
                 value={form.status}
-                isDisabled={readOnly || saving}
+                isDisabled={
+                  readOnly || saving || statusValue === "in_review"
+                }
                 onChange={(value) => {
                   if (value == null) return;
-                  setForm((f) => (f ? { ...f, status: String(value) } : f));
+                  const next = String(value);
+                  const from = detail?.status ?? form.status;
+                  const transition = classifyCaseStatusTransition(from, next);
+                  if (
+                    transition.kind === "submit" ||
+                    transition.kind === "approve" ||
+                    transition.kind === "request_changes"
+                  ) {
+                    setSaveError(
+                      "Use the review workflow actions to change this status",
+                    );
+                    return;
+                  }
+                  if (
+                    reviewGateActive &&
+                    from === "draft" &&
+                    next === "ready"
+                  ) {
+                    setSaveError(
+                      "Submit for review before marking this case ready",
+                    );
+                    return;
+                  }
+                  setSaveError(null);
+                  setForm((f) => (f ? { ...f, status: next } : f));
                 }}
               >
                 <Label>Status</Label>
@@ -814,7 +908,7 @@ export function CaseEditPanel({
                 </Select.Trigger>
                 <Select.Popover>
                   <ListBox>
-                    {statuses.map((s) => (
+                    {selectableStatuses.map((s) => (
                       <ListBox.Item
                         key={s}
                         id={s}
@@ -881,6 +975,78 @@ export function CaseEditPanel({
                 className="w-full"
               />
             </TextField>
+            {customFieldDefs.length > 0 ? (
+              <div className="space-y-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-canvas)] px-2.5 py-2.5">
+                <p className="text-xs font-medium text-[color:var(--topo-muted)]">
+                  Custom fields
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {customFieldDefs.map((def) => (
+                    <label key={def.key} className="block space-y-1 text-xs">
+                      <span className="text-[color:var(--topo-muted)]">
+                        {def.label}
+                        {def.required ? " *" : ""}
+                      </span>
+                      {def.type === "select" ? (
+                        <select
+                          className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
+                          value={String(customFields[def.key] ?? "")}
+                          disabled={readOnly || saving}
+                          onChange={(e) =>
+                            setCustomFields({
+                              ...customFields,
+                              [def.key]: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="">Select…</option>
+                          {(def.options ?? []).map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : def.type === "boolean" ? (
+                        <input
+                          type="checkbox"
+                          className="accent-[color:var(--topo-accent)]"
+                          checked={Boolean(customFields[def.key])}
+                          disabled={readOnly || saving}
+                          onChange={(e) =>
+                            setCustomFields({
+                              ...customFields,
+                              [def.key]: e.target.checked,
+                            })
+                          }
+                        />
+                      ) : (
+                        <Input
+                          type={
+                            def.type === "number"
+                              ? "number"
+                              : def.type === "date"
+                                ? "date"
+                                : "text"
+                          }
+                          value={
+                            customFields[def.key] == null
+                              ? ""
+                              : String(customFields[def.key])
+                          }
+                          disabled={readOnly || saving}
+                          onChange={(e) =>
+                            setCustomFields({
+                              ...customFields,
+                              [def.key]: e.target.value,
+                            })
+                          }
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="space-y-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-canvas)] px-2.5 py-2.5">
               <p className="text-xs font-medium text-[color:var(--topo-muted)]">
                 Review workflow
@@ -927,13 +1093,22 @@ export function CaseEditPanel({
                       </ListBox>
                     </Select.Popover>
                   </Select>
+                  {assignedReviewerLabel ? (
+                    <p className="text-xs text-[color:var(--topo-muted)]">
+                      Reviewer: {assignedReviewerLabel}
+                    </p>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="secondary"
                     isDisabled={reviewBusy || saving || !reviewerId}
                     onPress={() => void applyReview("submit")}
                   >
-                    {reviewBusy ? "Submitting…" : "Submit for review"}
+                    {reviewBusy
+                      ? "Submitting…"
+                      : dirty
+                        ? "Save & submit for review"
+                        : "Submit for review"}
                   </Button>
                 </div>
               ) : null}
@@ -941,8 +1116,8 @@ export function CaseEditPanel({
                 <div className="space-y-2">
                   <p className="text-xs text-[color:var(--topo-ink)]">
                     This case is in review
-                    {detail?.reviewerId
-                      ? ` · reviewer assigned`
+                    {assignedReviewerLabel
+                      ? ` · ${assignedReviewerLabel}`
                       : ""}
                     .
                   </p>
@@ -965,7 +1140,7 @@ export function CaseEditPanel({
                           isDisabled={reviewBusy || saving}
                           onPress={() => void applyReview("approve")}
                         >
-                          Approve
+                          {dirty ? "Save & approve" : "Approve"}
                         </Button>
                         <Button
                           size="sm"
@@ -975,7 +1150,9 @@ export function CaseEditPanel({
                           }
                           onPress={() => void applyReview("request_changes")}
                         >
-                          Request changes
+                          {dirty
+                            ? "Save & request changes"
+                            : "Request changes"}
                         </Button>
                       </div>
                     </>
@@ -1051,6 +1228,7 @@ export function CaseEditPanel({
               onDatasetsChange={setDatasets}
               onCustomFieldsChange={setCustomFields}
               disabled={readOnly || saving}
+              hideCustomFields
               onRestored={() => {
                 setHistoryKey((k) => k + 1);
                 void fetch(`/api/cases/${caseId}`)
@@ -1093,6 +1271,42 @@ export function CaseEditPanel({
           </>
         ) : null}
       </div>
+
+      <Modal.Backdrop
+        isOpen={confirmDuplicateOpen}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDuplicateOpen(false);
+        }}
+      >
+        <Modal.Container placement="center" size="sm">
+          <Modal.Dialog className="outline-none">
+            <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+              <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                Duplicate with unsaved changes?
+              </Modal.Heading>
+              <p className="text-sm text-[color:var(--topo-muted)]">
+                This case has edits that have not been saved. Duplicate will
+                use the last saved version.
+              </p>
+            </Modal.Header>
+            <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
+              <Button
+                variant="tertiary"
+                onPress={() => setConfirmDuplicateOpen(false)}
+              >
+                Keep editing
+              </Button>
+              <Button
+                variant="secondary"
+                isDisabled={duplicating}
+                onPress={() => void performDuplicate()}
+              >
+                {duplicating ? "Duplicating…" : "Duplicate saved version"}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </aside>
   );
 }

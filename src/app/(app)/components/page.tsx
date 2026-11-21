@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { GraphEntityWorkspace } from "@/components/graph-entity-workspace";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { db } from "@/db";
 import { components } from "@/db/schema";
 import { resolveActiveProject } from "@/lib/project";
@@ -17,7 +17,7 @@ export default async function ComponentsPage() {
   if (!session?.user?.id) redirect("/login");
 
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const rows = await db.query.components.findMany({
     where: eq(components.workspaceId, ctx.project.id),

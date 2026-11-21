@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
+import { AutomationReporters } from "./automation-reporters";
 
 type RunRow = {
   id: string;
@@ -100,6 +101,8 @@ npx topology runs complete --run-id <id>`}
           .
         </p>
       </div>
+
+      <AutomationReporters />
 
       {reliabilityHint ? (
         <section className="space-y-2">

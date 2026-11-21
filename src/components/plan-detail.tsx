@@ -4,8 +4,8 @@ import { useMutationFeedback } from "./use-mutation-feedback";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
-import { Button, Input, TextArea } from "@heroui/react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { Button, Input, Modal, TextArea, useOverlayState } from "@heroui/react";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 import { fanOutMatrix, type PlanMatrixInput } from "@/lib/tcm/matrix";
@@ -27,7 +27,15 @@ type PickerCase = { id: string; key: string; title: string; status: string };
 
 type MilestoneOption = { id: string; name: string; status: string };
 
+type LaunchedRun = { id: string; name: string; status: string };
+
 const PLAN_STATUSES = ["draft", "active", "completed", "archived"] as const;
+
+function sameIdSet(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
 
 export function PlanDetail({
   plan,
@@ -55,6 +63,9 @@ export function PlanDetail({
   const { can } = useProjectActions();
   const { saving, submit } = useMutationFeedback(setError);
   const pending = transitionPending || saving;
+  const [savedCaseIds, setSavedCaseIds] = useState<Set<string>>(
+    () => new Set(plan.cases.map((c) => c.caseId)),
+  );
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(plan.cases.map((c) => c.caseId)),
   );
@@ -73,6 +84,20 @@ export function PlanDetail({
     ...(plan.matrix.environmentIds ?? []),
   ]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [launchedRuns, setLaunchedRuns] = useState<LaunchedRun[]>([]);
+  const launchSummary = useOverlayState();
+
+  const casesDirty = !sameIdSet(selected, savedCaseIds);
+
+  useEffect(() => {
+    if (!casesDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [casesDirty]);
 
   const cellCount = fanOutMatrix({
     browsers,
@@ -137,22 +162,27 @@ export function PlanDetail({
     });
   }
 
+  async function persistCases(ids: Set<string>) {
+    const res = await fetch(`/api/plans/${plan.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ caseIds: [...ids] }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(
+        typeof data.error === "string"
+          ? data.error
+          : "Could not save cases",
+      );
+    }
+    setSavedCaseIds(new Set(ids));
+  }
+
   async function saveCases() {
     if (!can("runs.edit")) return;
     return submit(async () => {
-      const res = await fetch(`/api/plans/${plan.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caseIds: [...selected] }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(
-          typeof data.error === "string"
-            ? data.error
-            : "Could not save cases",
-        );
-      }
+      await persistCases(selected);
       startTransition(() => router.refresh());
     });
   }
@@ -193,6 +223,12 @@ export function PlanDetail({
   async function launch() {
     if (!can("runs.create")) return;
     return submit(async () => {
+      if (casesDirty) {
+        if (!can("runs.edit")) {
+          throw new Error("Save case selection before launching");
+        }
+        await persistCases(selected);
+      }
       const res = await fetch(`/api/plans/${plan.id}/launch`, {
         method: "POST",
       });
@@ -202,8 +238,10 @@ export function PlanDetail({
           typeof data.error === "string" ? data.error : "Launch failed",
         );
       }
-      const first = data.runs?.[0]?.id as string | undefined;
-      startTransition(() => router.push(first ? `/runs/${first}` : "/runs"));
+      const runs = (data.runs ?? []) as LaunchedRun[];
+      setLaunchedRuns(runs);
+      launchSummary.open();
+      startTransition(() => router.refresh());
     });
   }
 
@@ -222,6 +260,9 @@ export function PlanDetail({
             <StatusChip mono>
               {selected.size} cases · {cellCount} runs
             </StatusChip>
+            {casesDirty ? (
+              <StatusChip tone="warning">Unsaved case selection</StatusChip>
+            ) : null}
           </>
         }
         actions={
@@ -288,6 +329,16 @@ export function PlanDetail({
       {error ? (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {error}
+        </p>
+      ) : null}
+
+      {casesDirty ? (
+        <p
+          role="status"
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-[color:var(--topo-ink)]"
+        >
+          Case selection has unsaved changes. Save the case list, or launch will
+          auto-save before creating matrix runs.
         </p>
       ) : null}
 
@@ -413,7 +464,7 @@ export function PlanDetail({
               <Button
                 size="sm"
                 variant="secondary"
-                isDisabled={pending}
+                isDisabled={pending || !casesDirty}
                 onPress={() => void saveCases()}
               >
                 Save case list
@@ -464,6 +515,69 @@ export function PlanDetail({
           </ul>
         </section>
       ) : null}
+
+      <Modal.Backdrop
+        isOpen={launchSummary.isOpen}
+        onOpenChange={launchSummary.setOpen}
+      >
+        <Modal.Container placement="center" size="md">
+          <Modal.Dialog className="outline-none">
+            <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+              <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                Matrix launch summary
+              </Modal.Heading>
+              <p className="text-sm text-[color:var(--topo-muted)]">
+                Created {launchedRuns.length} run
+                {launchedRuns.length === 1 ? "" : "s"} from this plan matrix.
+              </p>
+            </Modal.Header>
+            <Modal.Body className="space-y-2 px-4 py-4">
+              {launchedRuns.length === 0 ? (
+                <p className="text-sm text-[color:var(--topo-muted)]">
+                  No runs were returned from launch.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {launchedRuns.map((run) => (
+                    <li key={run.id}>
+                      <Link
+                        href={`/runs/${run.id}`}
+                        className="flex items-center justify-between rounded-md border border-[color:var(--topo-line)] px-3 py-2 text-sm hover:bg-[color:var(--topo-chip)]/60"
+                        onClick={() => launchSummary.close()}
+                      >
+                        <span className="font-medium">{run.name}</span>
+                        <StatusChip tone="neutral">{run.status}</StatusChip>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Modal.Body>
+            <Modal.Footer className="flex justify-end gap-2 border-t border-[color:var(--topo-line)] px-4 py-3">
+              {launchedRuns[0] ? (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onPress={() => {
+                    const first = launchedRuns[0];
+                    launchSummary.close();
+                    startTransition(() => router.push(`/runs/${first.id}`));
+                  }}
+                >
+                  Open first run
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="secondary"
+                onPress={() => launchSummary.close()}
+              >
+                Stay on plan
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

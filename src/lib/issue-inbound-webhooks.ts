@@ -23,6 +23,42 @@ export function isInboundIssueProvider(
   return (INBOUND_ISSUE_PROVIDERS as readonly string[]).includes(value);
 }
 
+/** Env keys checked for HMAC / shared-secret verification (provider-specific first). */
+export const INBOUND_ISSUE_SECRET_ENV: Record<
+  InboundIssueProvider,
+  readonly string[]
+> = {
+  github: ["TOPOLOGY_GITHUB_WEBHOOK_SECRET", "TOPOLOGY_ISSUE_WEBHOOK_SECRET"],
+  gitlab: ["TOPOLOGY_GITLAB_WEBHOOK_SECRET", "TOPOLOGY_ISSUE_WEBHOOK_SECRET"],
+  jira: ["TOPOLOGY_JIRA_WEBHOOK_SECRET", "TOPOLOGY_ISSUE_WEBHOOK_SECRET"],
+  linear: ["TOPOLOGY_LINEAR_WEBHOOK_SECRET", "TOPOLOGY_ISSUE_WEBHOOK_SECRET"],
+};
+
+export type InboundIssueSigningRow = {
+  provider: InboundIssueProvider;
+  path: string;
+  signingConfigured: boolean;
+  secretEnvKeys: readonly string[];
+};
+
+/** Whether each inbound issue provider has a signing secret configured in env. */
+export function inboundIssueSigningStatus(
+  env: NodeJS.ProcessEnv = process.env,
+): InboundIssueSigningRow[] {
+  return INBOUND_ISSUE_PROVIDERS.map((provider) => {
+    const secretEnvKeys = INBOUND_ISSUE_SECRET_ENV[provider];
+    const signingConfigured = secretEnvKeys.some(
+      (key) => Boolean(env[key]?.trim()),
+    );
+    return {
+      provider,
+      path: `/api/webhooks/issues/${provider}`,
+      signingConfigured,
+      secretEnvKeys,
+    };
+  });
+}
+
 export function resolveInboundWorkspaceId(request: Request): string | null {
   const { searchParams } = new URL(request.url);
   const fromQuery = searchParams.get("workspaceId")?.trim();

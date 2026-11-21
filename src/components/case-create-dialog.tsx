@@ -74,13 +74,39 @@ export function CaseCreateDialog({
   const [saving, setSaving] = useState(false);
   const [draftingSteps, setDraftingSteps] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftSourceLabel, setDraftSourceLabel] = useState<string | null>(null);
+  const [sharedSteps, setSharedSteps] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
   const lock = useRef(false);
 
   useEffect(() => {
     setForm(blankForm(initialKey, initialFolderId));
     setSteps([emptyStructuredStep()]);
     setDraftError(null);
+    setDraftSourceLabel(null);
   }, [initialKey, initialFolderId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/shared-steps")
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setSharedSteps(
+          (data.sharedSteps ?? []).map(
+            (s: { id: string; name: string }) => ({
+              id: s.id,
+              name: s.name,
+            }),
+          ),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const busy = pending || saving || draftingSteps;
 
@@ -92,6 +118,7 @@ export function CaseCreateDialog({
     }
     setDraftingSteps(true);
     setDraftError(null);
+    setDraftSourceLabel(null);
     onError("");
     try {
       const res = await fetch("/api/ai/draft?heuristic=1", {
@@ -132,6 +159,17 @@ export function CaseCreateDialog({
           expected: step.expected ?? "",
           data: step.data ?? "",
         })),
+      );
+      const heuristic =
+        data.heuristic === true ||
+        data.model === "heuristic" ||
+        data.model == null;
+      setDraftSourceLabel(
+        heuristic
+          ? "Local template — connect an AI provider in Settings for tailored drafts"
+          : typeof data.model === "string" && data.model.trim()
+            ? `Drafted with ${data.model}`
+            : "Drafted with AI model",
       );
     } catch (error) {
       setDraftError(
@@ -243,7 +281,13 @@ export function CaseCreateDialog({
           steps={steps}
           onChange={setSteps}
           disabled={busy || draftingSteps}
+          sharedSteps={sharedSteps}
         />
+        {draftSourceLabel ? (
+          <p className="text-xs text-[color:var(--topo-muted)]">
+            {draftSourceLabel}
+          </p>
+        ) : null}
         {draftError ? (
           <p className="text-sm text-red-600 dark:text-red-300">{draftError}</p>
         ) : null}

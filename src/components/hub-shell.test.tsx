@@ -46,7 +46,7 @@ afterEach(() => {
 });
 
 describe("HubShell nav diet", () => {
-  it("hides quality-graph destinations by default", () => {
+  it("shows promoted core destinations and hides quality-graph by default", () => {
     render(
       <HubShell activeProjectId={workspaceId} userEmail="qa@example.com">
         <p>child</p>
@@ -54,16 +54,19 @@ describe("HubShell nav diet", () => {
     );
 
     const nav = screen.getByRole("navigation", { name: "Primary" });
+    expect(nav).toHaveTextContent("Workspace");
     expect(nav).toHaveTextContent("Home");
     expect(nav).toHaveTextContent("Test cases");
     expect(nav).toHaveTextContent("Plans");
     expect(nav).toHaveTextContent("Test runs");
+    expect(nav).toHaveTextContent("Milestones");
     expect(nav).toHaveTextContent("Triage");
+    expect(nav).toHaveTextContent("Impact");
+    expect(nav).toHaveTextContent("Proposals");
     expect(nav).not.toHaveTextContent("Intents");
-    expect(nav).not.toHaveTextContent("Impact");
     expect(nav).not.toHaveTextContent("Risks");
     expect(nav).not.toHaveTextContent("Components");
-    expect(nav).not.toHaveTextContent("Proposals");
+    expect(nav).not.toHaveTextContent("Releases");
     expect(
       screen.queryByRole("button", { name: "Quality graph" }),
     ).not.toBeInTheDocument();
@@ -86,5 +89,6 @@ describe("HubShell nav diet", () => {
     expect(nav).toHaveTextContent("Milestones");
     expect(nav).toHaveTextContent("Risks");
     expect(nav).toHaveTextContent("Components");
+    expect(nav).toHaveTextContent("Proposals");
   });
 });

@@ -21,7 +21,7 @@ import {
   type FolderNode,
   type FolderTreeNode,
 } from "@/lib/folder-tree";
-import { CASE_DRAG_MIME } from "./cases-model";
+import { CASE_DRAG_MIME, FOLDER_DRAG_MIME } from "./cases-model";
 
 export type FolderTreeSelection = "all" | "unfiled" | string;
 
@@ -37,6 +37,7 @@ type Props = {
   onRename: (folderId: string) => void;
   onDelete: (folderId: string) => void;
   onDropCases?: (folderId: string | null, caseIds: string[]) => void;
+  onReparentFolder?: (folderId: string, parentId: string | null) => void;
   collapsed: boolean;
   inline?: boolean;
   onToggleCollapsed: () => void;
@@ -61,9 +62,18 @@ function parseCaseDragIds(event: DragEvent): string[] {
     .filter(Boolean);
 }
 
+function parseFolderDragId(event: DragEvent): string | null {
+  const raw = event.dataTransfer.getData(FOLDER_DRAG_MIME);
+  return raw.trim() || null;
+}
+
 function acceptCaseDrag(event: DragEvent) {
   const types = Array.from(event.dataTransfer.types);
   return types.includes(CASE_DRAG_MIME) || types.includes("text/plain");
+}
+
+function acceptFolderDrag(event: DragEvent) {
+  return Array.from(event.dataTransfer.types).includes(FOLDER_DRAG_MIME);
 }
 
 function TreeRows({
@@ -78,6 +88,7 @@ function TreeRows({
   onRename,
   onDelete,
   onDropCases,
+  onReparentFolder,
   dropTarget,
   setDropTarget,
 }: {
@@ -92,6 +103,7 @@ function TreeRows({
   onRename: (folderId: string) => void;
   onDelete: (folderId: string) => void;
   onDropCases?: (folderId: string | null, caseIds: string[]) => void;
+  onReparentFolder?: (folderId: string, parentId: string | null) => void;
   dropTarget: string | null;
   setDropTarget: (id: string | null) => void;
 }) {
@@ -104,6 +116,7 @@ function TreeRows({
         const isSelected = selected === node.id;
         const count = folderCounts.get(node.id) ?? 0;
         const isDrop = dropTarget === node.id;
+        const canDragFolder = Boolean(onReparentFolder) && can("folders.manage");
         return (
           <div key={node.id}>
             <div
@@ -115,8 +128,23 @@ function TreeRows({
                     : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
               }`}
               style={{ paddingLeft: 4 + depth * 12 }}
+              draggable={canDragFolder}
+              onDragStart={(event) => {
+                if (!canDragFolder) return;
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData(FOLDER_DRAG_MIME, node.id);
+                event.dataTransfer.setData("text/plain", node.id);
+              }}
               onDragOver={(event) => {
-                if (!onDropCases || !can("cases.edit") || !acceptCaseDrag(event)) {
+                const folderDrag = acceptFolderDrag(event);
+                const caseDrag = acceptCaseDrag(event);
+                if (folderDrag && onReparentFolder && can("folders.manage")) {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  if (dropTarget !== node.id) setDropTarget(node.id);
+                  return;
+                }
+                if (!onDropCases || !can("cases.edit") || !caseDrag) {
                   return;
                 }
                 event.preventDefault();
@@ -127,9 +155,19 @@ function TreeRows({
                 if (dropTarget === node.id) setDropTarget(null);
               }}
               onDrop={(event) => {
-                if (!onDropCases || !can("cases.edit")) return;
                 event.preventDefault();
                 setDropTarget(null);
+                const folderId = parseFolderDragId(event);
+                if (
+                  folderId &&
+                  onReparentFolder &&
+                  can("folders.manage") &&
+                  folderId !== node.id
+                ) {
+                  onReparentFolder(folderId, node.id);
+                  return;
+                }
+                if (!onDropCases || !can("cases.edit")) return;
                 const ids = parseCaseDragIds(event);
                 if (ids.length > 0) onDropCases(node.id, ids);
               }}
@@ -230,6 +268,7 @@ function TreeRows({
                 onRename={onRename}
                 onDelete={onDelete}
                 onDropCases={onDropCases}
+                onReparentFolder={onReparentFolder}
                 dropTarget={dropTarget}
                 setDropTarget={setDropTarget}
               />
@@ -253,6 +292,7 @@ export function FolderTreePane({
   onRename,
   onDelete,
   onDropCases,
+  onReparentFolder,
   collapsed,
   inline = false,
   onToggleCollapsed,
@@ -325,10 +365,34 @@ export function FolderTreePane({
         type="button"
         onClick={() => onSelect("all")}
         className={`${navClass} ${
-          selected === "all"
-            ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
-            : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
+          dropTarget === "root"
+            ? "bg-[color:var(--topo-accent-soft)] ring-1 ring-[color:var(--topo-accent)]"
+            : selected === "all"
+              ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+              : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
         }`}
+        onDragOver={(event) => {
+          if (
+            !onReparentFolder ||
+            !can("folders.manage") ||
+            !acceptFolderDrag(event)
+          ) {
+            return;
+          }
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          if (dropTarget !== "root") setDropTarget("root");
+        }}
+        onDragLeave={() => {
+          if (dropTarget === "root") setDropTarget(null);
+        }}
+        onDrop={(event) => {
+          if (!onReparentFolder || !can("folders.manage")) return;
+          event.preventDefault();
+          setDropTarget(null);
+          const folderId = parseFolderDragId(event);
+          if (folderId) onReparentFolder(folderId, null);
+        }}
       >
         <FoldersIcon
           size={14}
@@ -351,6 +415,7 @@ export function FolderTreePane({
               : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
         }`}
         onDragOver={(event) => {
+          if (acceptFolderDrag(event)) return;
           if (!onDropCases || !can("cases.edit") || !acceptCaseDrag(event)) {
             return;
           }
@@ -362,6 +427,7 @@ export function FolderTreePane({
           if (dropTarget === "unfiled") setDropTarget(null);
         }}
         onDrop={(event) => {
+          if (acceptFolderDrag(event) || parseFolderDragId(event)) return;
           if (!onDropCases || !can("cases.edit")) return;
           event.preventDefault();
           setDropTarget(null);
@@ -399,6 +465,7 @@ export function FolderTreePane({
           onRename={onRename}
           onDelete={onDelete}
           onDropCases={onDropCases}
+          onReparentFolder={onReparentFolder}
           dropTarget={dropTarget}
           setDropTarget={setDropTarget}
         />

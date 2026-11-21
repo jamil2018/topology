@@ -123,7 +123,11 @@ export async function createIssueFromResult(input: {
 
   await db
     .update(triageItems)
-    .set({ status: "resolved", updatedAt: new Date() })
+    .set({
+      status: "resolved",
+      resolution: "linked_issue",
+      updatedAt: new Date(),
+    })
     .where(eq(triageItems.resultId, result.id));
 
   void dispatchWebhook(
@@ -191,7 +195,11 @@ export async function linkExistingIssue(input: {
   if (result.id) {
     await db
       .update(triageItems)
-      .set({ status: "resolved", updatedAt: new Date() })
+      .set({
+        status: "resolved",
+        resolution: "linked_issue",
+        updatedAt: new Date(),
+      })
       .where(eq(triageItems.resultId, result.id));
   }
 

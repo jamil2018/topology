@@ -17,7 +17,10 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const access = await requireProjectAccess(session.user.id, { request });
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    admin: true,
+  });
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }

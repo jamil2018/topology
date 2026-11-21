@@ -21,4 +21,4 @@ export {
   type ExecutionHistoryEntry,
 } from "./history";
 export { LinkImplementationError, linkImplementationToIntent } from "./link";
-export { getWorkspaceImpact } from "./impact";
+export { getWorkspaceImpact, resolveCaseIdsForIntents } from "./impact";

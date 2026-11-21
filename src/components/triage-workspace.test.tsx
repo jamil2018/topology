@@ -184,14 +184,171 @@ describe("TriageWorkspace signature clusters", () => {
 
     const resolveButtons = screen.getAllByRole("button", { name: /^Resolve$/i });
     await user.click(resolveButtons[resolveButtons.length - 1]!);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: /Resolution outcome/i }),
+      "wont_fix",
+    );
+    await user.click(screen.getByRole("button", { name: /Confirm resolve/i }));
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/triage",
       expect.objectContaining({
         method: "PATCH",
-        body: JSON.stringify({ id: queue[2].id, status: "resolved" }),
+        body: JSON.stringify({
+          id: queue[2].id,
+          status: "resolved",
+          resolution: "wont_fix",
+        }),
       }),
     );
     expect(screen.queryByText("TOP-3")).not.toBeInTheDocument();
+  });
+
+  it("requires a resolution outcome before resolving a single item", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <TriageWorkspace
+        initialQueue={[{ ...queue[2] }]}
+        flakeHints={[]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /^Resolve$/i }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: /Resolution outcome/i }),
+      "duplicate",
+    );
+    await user.click(screen.getByRole("button", { name: /Confirm resolve/i }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/triage",
+      expect.objectContaining({
+        body: JSON.stringify({
+          id: queue[2].id,
+          status: "resolved",
+          resolution: "duplicate",
+        }),
+      }),
+    );
+  });
+
+  it("labels heuristic cluster summaries as a local template", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        summary: "Both checkouts time out waiting on the payment iframe.",
+        heuristic: true,
+        model: "heuristic",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TriageWorkspace initialQueue={queue} flakeHints={[]} />);
+
+    await user.click(
+      screen.getByRole("button", { name: /Summarize cluster/i }),
+    );
+
+    expect(
+      await screen.findByText(
+        /Local template — connect an AI provider in Settings for tailored drafts/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Both checkouts time out waiting on the payment iframe\./i,
+      ),
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/ai/draft?heuristic=1",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("labels model-backed cluster summaries with the model name", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        summary: "Shared payment iframe flake across browsers.",
+        heuristic: false,
+        model: "gpt-4.1-mini",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TriageWorkspace initialQueue={queue} flakeHints={[]} />);
+
+    await user.click(
+      screen.getByRole("button", { name: /Summarize cluster/i }),
+    );
+
+    expect(
+      await screen.findByText(/Drafted with gpt-4\.1-mini/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Shared payment iframe flake across browsers\./i),
+    ).toBeInTheDocument();
+  });
+
+  it("files issues for every result in a signature cluster", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const clustered = [
+      { ...queue[0], resultId: "result-a" },
+      { ...queue[1], resultId: "result-b" },
+    ];
+
+    render(
+      <TriageWorkspace
+        initialQueue={clustered}
+        flakeHints={[]}
+        issueProvider="mock"
+        demoMode
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /File issues for cluster/i }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/issues",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          action: "create",
+          resultId: "result-a",
+          provider: "mock",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/issues",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          action: "create",
+          resultId: "result-b",
+          provider: "mock",
+        }),
+      }),
+    );
+    expect(screen.queryByText("TOP-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("TOP-2")).not.toBeInTheDocument();
   });
 });

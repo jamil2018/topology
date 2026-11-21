@@ -75,6 +75,9 @@ export async function POST(request: Request) {
     );
     void syncIntentStaleWebhooks(authResult.workspaceId).catch(() => {});
 
+    const { dispatchScmFeedbackForRun } = await import("@/lib/scm-feedback");
+    dispatchScmFeedbackForRun(ingested.runId);
+
     return NextResponse.json({
       ok: true,
       runId: ingested.runId,

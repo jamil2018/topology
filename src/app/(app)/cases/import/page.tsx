@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ImportWorkspace } from "@/components/import-workspace";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { resolveActiveProject } from "@/lib/project";
 import { ensureMembership } from "@/lib/workspace";
 
@@ -18,7 +18,7 @@ export default async function ImportCasesPage() {
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   return <ImportWorkspace />;
 }

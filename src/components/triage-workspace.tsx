@@ -2,7 +2,7 @@
 import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button, Input } from "@heroui/react";
 import { motion } from "motion/react";
 import { clusterTriageBySignature } from "@topology/domain/client";
@@ -43,6 +43,22 @@ type FlakeHint = {
   hint: string;
 };
 
+export const TRIAGE_RESOLUTIONS = [
+  "linked_issue",
+  "duplicate",
+  "wont_fix",
+  "retest_scheduled",
+] as const;
+
+export type TriageResolution = (typeof TRIAGE_RESOLUTIONS)[number];
+
+const RESOLUTION_LABELS: Record<TriageResolution, string> = {
+  linked_issue: "Linked issue",
+  duplicate: "Duplicate",
+  wont_fix: "Won't fix",
+  retest_scheduled: "Retest scheduled",
+};
+
 function signatureTitle(item: QueueItem): string {
   const line = item.notes.trim().split("\n")[0]?.trim();
   return line || item.caseTitle;
@@ -75,7 +91,6 @@ export function TriageWorkspace({
   demoMode?: boolean;
 }) {
   const { can } = useProjectActions();
-  const busy = useRef(false);
   const [pending, setPending] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [queue, setQueue] = useState(initialQueue);
@@ -85,10 +100,18 @@ export function TriageWorkspace({
   );
   const [error, setError] = useState<string | null>(null);
   const [linkKey, setLinkKey] = useState<Record<string, string>>({});
+  const [clusterSummaryMeta, setClusterSummaryMeta] = useState<
+    Record<string, string>
+  >({});
   const [clusterSummaries, setClusterSummaries] = useState<
     Record<string, string>
   >({});
   const [summarizingId, setSummarizingId] = useState<string | null>(null);
+  const [resolveFor, setResolveFor] = useState<string | null>(null);
+  const [resolveBulk, setResolveBulk] = useState(false);
+  const [resolutionDraft, setResolutionDraft] =
+    useState<TriageResolution>("wont_fix");
+  const [clusterFilingId, setClusterFilingId] = useState<string | null>(null);
   const mockProvider = issueProvider === "mock";
   const showDemoIssue = mockProvider && demoMode;
   const showIssueLink = !mockProvider || demoMode;
@@ -174,9 +197,22 @@ export function TriageWorkspace({
         setError("AI returned an empty summary");
         return;
       }
+      const heuristic =
+        data.heuristic === true ||
+        data.model === "heuristic" ||
+        data.model == null;
+      const sourceLabel = heuristic
+        ? "Local template — connect an AI provider in Settings for tailored drafts"
+        : typeof data.model === "string" && data.model.trim()
+          ? `Drafted with ${data.model}`
+          : "Drafted with AI model";
       setClusterSummaries((current) => ({
         ...current,
         [signatureId]: summary,
+      }));
+      setClusterSummaryMeta((current) => ({
+        ...current,
+        [signatureId]: sourceLabel,
       }));
     } catch {
       setError("Could not summarize cluster");
@@ -185,31 +221,67 @@ export function TriageWorkspace({
     }
   }
 
-  async function setStatus(id: string, status: "resolved" | "snoozed") {
-    if (!can("triage.manage") || busy.current) return;
-    busy.current = true; setPending(true);
-    try {
-    setError(null);
-    const res = await fetch("/api/triage", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status }),
-    });
-    if (!res.ok) {
-      setError("Could not update triage item");
+  async function setStatus(
+    id: string,
+    status: "resolved" | "snoozed",
+    resolution?: TriageResolution,
+  ) {
+    if (!can("triage.manage") || pending) return;
+    if (status === "resolved" && !resolution) {
+      setResolveFor(id);
+      setResolveBulk(false);
+      setResolutionDraft(
+        queue.find((item) => item.id === id)?.issueKey
+          ? "linked_issue"
+          : "wont_fix",
+      );
       return;
     }
-    setQueue((prev) => prev.filter((item) => item.id !== id));
-    setSelected((ids) => ids.filter((selectedId) => selectedId !== id));
-    } catch { setError("The request failed. Your input is preserved; try again."); }
-    finally { busy.current = false; setPending(false); }
-
+    setPending(true);
+    try {
+      setError(null);
+      const res = await fetch("/api/triage", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          status,
+          ...(status === "resolved" ? { resolution } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { error?: unknown }
+          | null;
+        setError(
+          typeof data?.error === "string"
+            ? data.error
+            : "Could not update triage item",
+        );
+        return;
+      }
+      setQueue((prev) => prev.filter((item) => item.id !== id));
+      setSelected((ids) => ids.filter((selectedId) => selectedId !== id));
+      setResolveFor(null);
+    } catch {
+      setError("The request failed. Your input is preserved; try again.");
+    } finally {
+      setPending(false);
+    }
   }
 
-  async function bulkSetStatus(status: "resolved" | "snoozed") {
-    if (!can("triage.manage") || busy.current || selected.length === 0) return;
+  async function bulkSetStatus(
+    status: "resolved" | "snoozed",
+    resolution?: TriageResolution,
+  ) {
+    if (!can("triage.manage") || pending || selected.length === 0) return;
+    if (status === "resolved" && !resolution) {
+      setResolveBulk(true);
+      setResolveFor(null);
+      setResolutionDraft("wont_fix");
+      return;
+    }
     const ids = [...selected];
-    busy.current = true;
     setPending(true);
     try {
       setError(null);
@@ -218,7 +290,11 @@ export function TriageWorkspace({
           const res = await fetch("/api/triage", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id, status }),
+            body: JSON.stringify({
+              id,
+              status,
+              ...(status === "resolved" ? { resolution } : {}),
+            }),
           });
           return { id, ok: res.ok };
         }),
@@ -233,12 +309,90 @@ export function TriageWorkspace({
       }
       setQueue((prev) => prev.filter((item) => !succeeded.has(item.id)));
       setSelected((prev) => prev.filter((id) => !succeeded.has(id)));
+      setResolveBulk(false);
     } catch {
       setError("The request failed. Your input is preserved; try again.");
     } finally {
-      busy.current = false;
       setPending(false);
     }
+  }
+
+  async function fileClusterIssues(members: QueueItem[]) {
+    const targets = members.filter((item) => item.resultId);
+    if (targets.length === 0) {
+      setError("This cluster has no results to attach an issue to");
+      return;
+    }
+    if (!can("triage.manage") || pending) return;
+    setPending(true);
+    setClusterFilingId(members[0]?.signatureId ?? members[0]?.id ?? null);
+    try {
+      setError(null);
+      const results = await Promise.all(
+        targets.map(async (item) => {
+          const res = await fetch("/api/issues", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "create",
+              resultId: item.resultId,
+              provider: issueProvider,
+            }),
+          });
+          return { id: item.id, ok: res.ok };
+        }),
+      );
+      const succeeded = new Set(results.filter((r) => r.ok).map((r) => r.id));
+      if (succeeded.size === 0) {
+        setError("Could not file issues for this cluster");
+        return;
+      }
+      if (succeeded.size < targets.length) {
+        setError("Some cluster issues could not be filed");
+      }
+      setQueue((prev) => prev.filter((item) => !succeeded.has(item.id)));
+      setSelected((prev) => prev.filter((id) => !succeeded.has(id)));
+    } catch {
+      setError("The request failed. Your input is preserved; try again.");
+    } finally {
+      setPending(false);
+      setClusterFilingId(null);
+    }
+  }
+
+  function renderResolutionPicker(onConfirm: () => void, onCancel: () => void) {
+    return (
+      <div className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-2">
+        <label className="space-y-1 text-xs text-[color:var(--topo-muted)]">
+          Resolution
+          <select
+            aria-label="Resolution outcome"
+            value={resolutionDraft}
+            onChange={(e) =>
+              setResolutionDraft(e.target.value as TriageResolution)
+            }
+            className="block rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs text-[color:var(--topo-ink)]"
+          >
+            {TRIAGE_RESOLUTIONS.map((value) => (
+              <option key={value} value={value}>
+                {RESOLUTION_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button
+          size="sm"
+          variant="primary"
+          isDisabled={pending}
+          onPress={onConfirm}
+        >
+          Confirm resolve
+        </Button>
+        <Button size="sm" variant="tertiary" isDisabled={pending} onPress={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    );
   }
 
   async function fileIssue(item: QueueItem) {
@@ -246,8 +400,8 @@ export function TriageWorkspace({
       setError("This failure has no result to attach an issue to");
       return;
     }
-    if (!can("triage.manage") || busy.current) return;
-    busy.current = true; setPending(true);
+    if (!can("triage.manage") || pending) return;
+    setPending(true);
     try {
     setError(null);
     const res = await fetch("/api/issues", {
@@ -269,7 +423,7 @@ export function TriageWorkspace({
     setQueue((prev) => prev.filter((q) => q.id !== item.id));
     setSelected((ids) => ids.filter((id) => id !== item.id));
     } catch { setError("The request failed. Your input is preserved; try again."); }
-    finally { busy.current = false; setPending(false); }
+    finally { setPending(false); }
 
   }
 
@@ -280,8 +434,8 @@ export function TriageWorkspace({
     }
     const remoteKey = (linkKey[item.id] ?? "").trim();
     if (!remoteKey) return;
-    if (!can("triage.manage") || busy.current) return;
-    busy.current = true; setPending(true);
+    if (!can("triage.manage") || pending) return;
+    setPending(true);
     try {
     setError(null);
     const res = await fetch("/api/issues", {
@@ -304,7 +458,7 @@ export function TriageWorkspace({
     setQueue((prev) => prev.filter((q) => q.id !== item.id));
     setSelected((ids) => ids.filter((id) => id !== item.id));
     } catch { setError("The request failed. Your input is preserved; try again."); }
-    finally { busy.current = false; setPending(false); }
+    finally { setPending(false); }
 
   }
 
@@ -448,11 +602,17 @@ export function TriageWorkspace({
               size="sm"
               variant="secondary"
               isDisabled={pending || !can("triage.manage")}
-              onPress={() => setStatus(item.id, "resolved")}
+              onPress={() => void setStatus(item.id, "resolved")}
             >
               Resolve
             </Button>
           </div>
+          {resolveFor === item.id
+            ? renderResolutionPicker(
+                () => void setStatus(item.id, "resolved", resolutionDraft),
+                () => setResolveFor(null),
+              )
+            : null}
           {item.resultId && showIssueLink ? (
             <div className="flex flex-col items-end gap-1">
               {showDemoIssue ? (
@@ -547,6 +707,12 @@ export function TriageWorkspace({
           <button type="button" className="text-xs" onClick={() => setSelected([])}>
             Clear
           </button>
+          {resolveBulk
+            ? renderResolutionPicker(
+                () => void bulkSetStatus("resolved", resolutionDraft),
+                () => setResolveBulk(false),
+              )
+            : null}
         </div>
       ) : null}
       {error ? (
@@ -640,6 +806,21 @@ export function TriageWorkspace({
                         ? "Summarizing…"
                         : "Summarize cluster"}
                     </Button>
+                    {members.some((item) => item.resultId) &&
+                    can("triage.manage") ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        isDisabled={
+                          pending || clusterFilingId === cluster.signatureId
+                        }
+                        onPress={() => void fileClusterIssues(members)}
+                      >
+                        {clusterFilingId === cluster.signatureId
+                          ? "Filing…"
+                          : "File issues for cluster"}
+                      </Button>
+                    ) : null}
                     <span
                       aria-hidden
                       className="font-mono text-xs text-[color:var(--topo-muted)]"
@@ -649,9 +830,16 @@ export function TriageWorkspace({
                   </div>
                 </div>
                 {summary ? (
-                  <p className="border-t border-[color:var(--topo-line)] px-3 py-2 text-xs text-[color:var(--topo-ink)]">
-                    {summary}
-                  </p>
+                  <div className="space-y-1 border-t border-[color:var(--topo-line)] px-3 py-2">
+                    {clusterSummaryMeta[cluster.signatureId] ? (
+                      <p className="text-[0.7rem] text-[color:var(--topo-muted)]">
+                        {clusterSummaryMeta[cluster.signatureId]}
+                      </p>
+                    ) : null}
+                    <p className="text-xs text-[color:var(--topo-ink)]">
+                      {summary}
+                    </p>
+                  </div>
                 ) : null}
                 {isOpen
                   ? members.map((item) => (

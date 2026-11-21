@@ -10,14 +10,17 @@ export type NavGroupDef = {
   items: NavItemDef[];
 };
 
-/** Always-on TCM nav. Plans stay here — they are core test management, not the quality graph. */
+/** Always-on TCM nav. Plans, milestones, impact, and proposals stay here. */
 export const DEFAULT_NAV_HREFS = [
   "/",
   "/cases",
   "/plans",
   "/runs",
   "/automation",
+  "/milestones",
   "/triage",
+  "/impact",
+  "/proposals",
   "/reports",
   "/settings",
 ] as const;
@@ -25,20 +28,17 @@ export const DEFAULT_NAV_HREFS = [
 /** Hidden until the per-workspace Quality graph toggle is on. */
 export const QUALITY_GRAPH_HREFS = [
   "/intents",
-  "/impact",
-  "/milestones",
   "/releases",
   "/journeys",
   "/requirements",
   "/risks",
   "/components",
-  "/proposals",
 ] as const;
 
 export const DEFAULT_NAV_GROUPS: NavGroupDef[] = [
   {
-    id: "overview",
-    label: "Overview",
+    id: "workspace",
+    label: "Workspace",
     items: [{ href: "/", label: "Home", hint: "Your work" }],
   },
   {
@@ -49,6 +49,7 @@ export const DEFAULT_NAV_GROUPS: NavGroupDef[] = [
       { href: "/plans", label: "Plans", hint: "Matrix" },
       { href: "/runs", label: "Test runs", hint: "Manual" },
       { href: "/automation", label: "Automation", hint: "CI" },
+      { href: "/milestones", label: "Milestones", hint: "Readiness" },
     ],
   },
   {
@@ -56,6 +57,8 @@ export const DEFAULT_NAV_GROUPS: NavGroupDef[] = [
     label: "Insights",
     items: [
       { href: "/triage", label: "Triage", hint: "Failures" },
+      { href: "/impact", label: "Impact", hint: "Blast radius" },
+      { href: "/proposals", label: "Proposals", hint: "Review" },
       { href: "/reports", label: "Reports", hint: "Charts" },
     ],
   },
@@ -71,14 +74,11 @@ export const QUALITY_GRAPH_NAV_GROUP: NavGroupDef = {
   label: "Quality graph",
   items: [
     { href: "/intents", label: "Intents", hint: "Behavior" },
-    { href: "/impact", label: "Impact", hint: "Blast radius" },
-    { href: "/milestones", label: "Milestones", hint: "Readiness" },
     { href: "/releases", label: "Releases", hint: "Control" },
     { href: "/journeys", label: "Journeys", hint: "Paths" },
     { href: "/requirements", label: "Requirements", hint: "Graph" },
     { href: "/risks", label: "Risks", hint: "Mitigations" },
     { href: "/components", label: "Components", hint: "Ownership" },
-    { href: "/proposals", label: "Proposals", hint: "Review" },
   ],
 };
 
@@ -89,18 +89,18 @@ export const PALETTE_PAGES: NavItemDef[] = [
   { href: "/plans", label: "Plans", hint: "Matrix" },
   { href: "/runs", label: "Test runs", hint: "Manual" },
   { href: "/automation", label: "Automation", hint: "CI" },
+  { href: "/milestones", label: "Milestones", hint: "Readiness" },
   { href: "/triage", label: "Triage", hint: "Failures" },
+  { href: "/impact", label: "Impact", hint: "Blast radius" },
+  { href: "/proposals", label: "Proposals", hint: "Review" },
   { href: "/reports", label: "Reports", hint: "Charts" },
   { href: "/settings", label: "Settings", hint: "Account" },
   { href: "/intents", label: "Intents", hint: "Behavior" },
-  { href: "/impact", label: "Impact", hint: "Blast radius" },
-  { href: "/milestones", label: "Milestones", hint: "Readiness" },
   { href: "/releases", label: "Releases", hint: "Control" },
   { href: "/journeys", label: "Journeys", hint: "Paths" },
   { href: "/requirements", label: "Requirements", hint: "Graph" },
   { href: "/risks", label: "Risks", hint: "Mitigations" },
   { href: "/components", label: "Components", hint: "Ownership" },
-  { href: "/proposals", label: "Proposals", hint: "Review" },
   { href: "/connect", label: "Connect", hint: "Agent" },
 ];
 

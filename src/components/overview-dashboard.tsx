@@ -250,7 +250,7 @@ export function OverviewDashboard({
         </WidgetCard>
       ) : null}
 
-      {sections.gaps ? (
+      {sections.gaps && qualityGraphEnabled ? (
         <WidgetCard
           reduceMotion={reduceMotion}
           delay={0.12}
@@ -302,6 +302,43 @@ export function OverviewDashboard({
             </ul>
           )}
         </WidgetCard>
+      ) : null}
+
+      {!qualityGraphEnabled ? (
+        <>
+          <WidgetCard
+            reduceMotion={reduceMotion}
+            delay={0.11}
+            className="flex flex-col p-4 sm:col-span-1 lg:col-span-3 lg:col-start-1 lg:row-start-3"
+          >
+            <WidgetLabel>Change impact</WidgetLabel>
+            <p className="mt-2 text-sm text-[color:var(--topo-muted)]">
+              Map a diff or PR to affected tests and coverage gaps.
+            </p>
+            <Link
+              href="/impact"
+              className="mt-3 text-sm font-medium text-[color:var(--topo-accent)] hover:underline"
+            >
+              Open Impact
+            </Link>
+          </WidgetCard>
+          <WidgetCard
+            reduceMotion={reduceMotion}
+            delay={0.12}
+            className="flex flex-col p-4 sm:col-span-1 lg:col-span-3 lg:col-start-4 lg:row-start-3"
+          >
+            <WidgetLabel>AI proposals</WidgetLabel>
+            <p className="mt-2 text-sm text-[color:var(--topo-muted)]">
+              Review governed coverage diffs before they touch the catalog.
+            </p>
+            <Link
+              href="/proposals"
+              className="mt-3 text-sm font-medium text-[color:var(--topo-accent)] hover:underline"
+            >
+              Open Proposals
+            </Link>
+          </WidgetCard>
+        </>
       ) : null}
 
       {sections.recentRuns ? (

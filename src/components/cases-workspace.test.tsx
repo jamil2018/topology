@@ -335,6 +335,108 @@ describe("CasesWorkspace authoring", () => {
   });
 });
 
+describe("CasesWorkspace CSV import", () => {
+  it("dry-runs a CSV then imports and offers view-imported CTA", async () => {
+    const user = userEvent.setup();
+    const folderId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/custom-fields")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ fields: [] }),
+        };
+      }
+      if (url === "/api/import/csv" && init?.method === "POST") {
+        const body = init.body as FormData;
+        const dryRun = String(body.get("dryRun")) === "true";
+        if (dryRun) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              dryRun: true,
+              wouldCreate: 1,
+              wouldSkip: [],
+              errors: [],
+              customFieldKeys: ["owner"],
+              sample: [
+                {
+                  key: "IMP-1",
+                  title: "Imported case",
+                  folder: "Import",
+                  priority: "P2",
+                  status: "draft",
+                  customFields: { owner: "qa" },
+                  structuredStepCount: 2,
+                },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            dryRun: false,
+            created: 1,
+            skipped: [],
+            primaryFolderId: folderId,
+            folderIds: [folderId],
+            cases: [{ id: "c1", key: "IMP-1", title: "Imported case", folderId }],
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({ error: "missing" }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <CasesWorkspace
+        initialCases={[sampleCase]}
+        folders={[{ id: folderId, name: "Import", parentId: null }]}
+        initialViews={[]}
+      />,
+    );
+
+    const fileInput = document.querySelector(
+      'input[type="file"][accept=".csv,text/csv"]',
+    ) as HTMLInputElement;
+    expect(fileInput).toBeTruthy();
+    const file = new File(
+      ["key,title\nIMP-1,Imported case\n"],
+      "cases.csv",
+      { type: "text/csv" },
+    );
+    await user.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(screen.getByText("CSV import preview")).toBeInTheDocument();
+    });
+    expect(screen.getByText("1 would create")).toBeInTheDocument();
+    expect(screen.getByText("IMP-1")).toBeInTheDocument();
+    expect(screen.getByText("owner=qa")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Import 1 cases/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Imported 1 cases/i)).toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole("button", { name: "View imported cases" }),
+    ).toBeInTheDocument();
+    expect(refresh).toHaveBeenCalled();
+
+    const posts = fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url) === "/api/import/csv" &&
+        (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(posts).toHaveLength(2);
+  });
+});
+
 describe("CasesWorkspace permissions and recovery", () => {
   it("blocks viewer creation, inline edits, deletion and dispatched create", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);

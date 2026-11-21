@@ -14,6 +14,8 @@ const createSchema = z.object({
   provider: z.enum(["github", "gitlab", "other"]).optional().default("github"),
   defaultBranch: z.string().min(1).max(200).optional().default("main"),
   webhookSecret: z.string().max(512).optional(),
+  postPrStatusChecks: z.boolean().optional(),
+  postPrSummaryComment: z.boolean().optional(),
 });
 
 function publicRepository(row: typeof repositories.$inferSelect) {
@@ -78,13 +80,26 @@ export async function POST(request: Request) {
       defaultBranch: parsed.data.defaultBranch,
     });
     let saved = repository;
+    const createExtras: Partial<typeof repositories.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    let needsCreatePatch = false;
     if (parsed.data.webhookSecret?.trim()) {
+      createExtras.webhookSecret = parsed.data.webhookSecret.trim();
+      needsCreatePatch = true;
+    }
+    if (parsed.data.postPrStatusChecks !== undefined) {
+      createExtras.postPrStatusChecks = parsed.data.postPrStatusChecks;
+      needsCreatePatch = true;
+    }
+    if (parsed.data.postPrSummaryComment !== undefined) {
+      createExtras.postPrSummaryComment = parsed.data.postPrSummaryComment;
+      needsCreatePatch = true;
+    }
+    if (needsCreatePatch) {
       const [updated] = await db
         .update(repositories)
-        .set({
-          webhookSecret: parsed.data.webhookSecret.trim(),
-          updatedAt: new Date(),
-        })
+        .set(createExtras)
         .where(eq(repositories.id, repository.id))
         .returning();
       if (updated) saved = updated;
@@ -115,6 +130,8 @@ const patchSchema = z.object({
   id: z.string().uuid(),
   webhookSecret: z.string().max(512).nullable().optional(),
   defaultBranch: z.string().min(1).max(200).optional(),
+  postPrStatusChecks: z.boolean().optional(),
+  postPrSummaryComment: z.boolean().optional(),
 });
 
 export async function PATCH(request: Request) {
@@ -150,6 +167,12 @@ export async function PATCH(request: Request) {
   if (parsed.data.webhookSecret !== undefined) {
     updates.webhookSecret = parsed.data.webhookSecret?.trim() || null;
   }
+  if (parsed.data.postPrStatusChecks !== undefined) {
+    updates.postPrStatusChecks = parsed.data.postPrStatusChecks;
+  }
+  if (parsed.data.postPrSummaryComment !== undefined) {
+    updates.postPrSummaryComment = parsed.data.postPrSummaryComment;
+  }
 
   const [updated] = await db
     .update(repositories)
@@ -174,7 +197,11 @@ export async function PATCH(request: Request) {
     targetType: "repository",
     targetId: updated.id,
     request,
-    metadata: { webhookSecretUpdated: parsed.data.webhookSecret !== undefined },
+    metadata: {
+      webhookSecretUpdated: parsed.data.webhookSecret !== undefined,
+      postPrStatusChecks: parsed.data.postPrStatusChecks,
+      postPrSummaryComment: parsed.data.postPrSummaryComment,
+    },
   });
 
   return NextResponse.json({ repository: publicRepository(updated) });

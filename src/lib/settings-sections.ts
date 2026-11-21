@@ -16,6 +16,7 @@ export type SettingsAnchor =
   | "repositories"
   | "ai"
   | "webhooks"
+  | "inbound"
   | "notifications"
   | "tokens"
   | "audit"
@@ -58,6 +59,8 @@ const SECTION_ALIASES: Record<string, ResolvedSettingsSection> = {
   repositories: { page: "integrations", anchor: "repositories" },
   ai: { page: "integrations", anchor: "ai" },
   webhooks: { page: "integrations", anchor: "webhooks" },
+  inbound: { page: "integrations", anchor: "inbound" },
+  "issue-sync": { page: "integrations", anchor: "inbound" },
   notifications: { page: "integrations", anchor: "notifications" },
   security: { page: "security" },
   tokens: { page: "security", anchor: "tokens" },

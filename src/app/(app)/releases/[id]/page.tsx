@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { and, desc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { ReleaseDetail } from "@/components/release-detail";
 import { db } from "@/db";
 import { releaseSnapshots, releases } from "@/db/schema";
@@ -24,7 +24,7 @@ export default async function ReleaseDetailPage({ params }: Props) {
   if (!session?.user?.id) redirect("/login");
 
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const { id } = await params;
   if (!isUuid(id)) notFound();

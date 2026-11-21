@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { pageTitle } from "@/lib/format-labels";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { ReportDetail } from "@/components/report-detail";
 import { resolveActiveProject } from "@/lib/project";
 import { getRunReport, isUuid } from "@/lib/queries";
@@ -26,7 +26,7 @@ export default async function ReportDetailPage({ params }: Props) {
 
   await ensureMembership(session.user.id);
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const { id } = await params;
   if (!isUuid(id)) notFound();
@@ -44,6 +44,7 @@ export default async function ReportDetailPage({ params }: Props) {
             updatedAt: report.run.updatedAt,
           },
           kpis: report.kpis,
+          executive: report.executive,
           suiteBreakdown: report.suiteBreakdown,
           timeline: report.timeline,
           failures: report.failures,

@@ -25,10 +25,28 @@ export async function GET(request: Request) {
   return NextResponse.json({ queue, clusters });
 }
 
-const patchSchema = z.object({
-  id: z.string().uuid(),
-  status: z.enum(["open", "snoozed", "resolved"]),
-});
+const TRIAGE_RESOLUTIONS = [
+  "linked_issue",
+  "duplicate",
+  "wont_fix",
+  "retest_scheduled",
+] as const;
+
+const patchSchema = z
+  .object({
+    id: z.string().uuid(),
+    status: z.enum(["open", "snoozed", "resolved"]),
+    resolution: z.enum(TRIAGE_RESOLUTIONS).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.status === "resolved" && !value.resolution) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "resolution is required when resolving",
+        path: ["resolution"],
+      });
+    }
+  });
 
 export async function PATCH(request: Request) {
   const session = await auth();
@@ -60,12 +78,23 @@ export async function PATCH(request: Request) {
     );
   }
 
+  const patchValues: {
+    status: typeof parsed.data.status;
+    updatedAt: Date;
+    resolution?: string | null;
+  } = {
+    status: parsed.data.status,
+    updatedAt: new Date(),
+  };
+  if (parsed.data.status === "resolved") {
+    patchValues.resolution = parsed.data.resolution ?? null;
+  } else if (parsed.data.status === "open") {
+    patchValues.resolution = null;
+  }
+
   const [updated] = await db
     .update(triageItems)
-    .set({
-      status: parsed.data.status,
-      updatedAt: new Date(),
-    })
+    .set(patchValues)
     .where(
       and(
         eq(triageItems.id, parsed.data.id),

@@ -2,7 +2,7 @@
 import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
-import type { DragEvent } from "react";
+import { useEffect, useRef, type DragEvent } from "react";
 import {
   Button,
   Chip,
@@ -204,6 +204,16 @@ export function CasesTable({
   onPageChange: (page: number) => void;
 }) {
   const { can } = useProjectActions();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || cursorIndex < 0) return;
+    const current = root.querySelector<HTMLElement>('[aria-current="true"]');
+    if (typeof current?.scrollIntoView === "function") {
+      current.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [cursorIndex]);
 
   function beginCaseDrag(event: DragEvent, row: CaseRow) {
     if (!can("cases.edit")) {
@@ -220,7 +230,10 @@ export function CasesTable({
   }
 
   return (
-    <div className="min-w-0 overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
+    <div
+      ref={rootRef}
+      className="min-w-0 overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]"
+    >
       <div className="flex flex-col gap-2 border-b border-[color:var(--topo-line)] p-2.5 sm:flex-row sm:items-center sm:gap-3">
         <TextField name="case-list-search" className="min-w-0 flex-1">
           <Label className="sr-only">Search cases</Label>

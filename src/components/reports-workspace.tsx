@@ -111,11 +111,11 @@ export function ReportsWorkspace({
       <PageHeader
         eyebrow="Analytics"
         title="Reports"
-        description="Cross-run pass rate, suite health, and tester throughput. Open a completed run for the full visual report and export."
+        description="Cross-run pass rate, suite health, and tester throughput. Open a completed or live in-progress run for the full visual report."
         meta={
           <>
             <StatusChip tone="accent" mono>
-              {kpis.runs} runs
+              {kpis.runs} completed
             </StatusChip>
             <StatusChip tone="neutral" mono>
               {RANGE_LABELS[dashboard.query.range]}
@@ -399,10 +399,11 @@ export function ReportsWorkspace({
         <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
-              Completed runs
+              Run reports
             </h2>
             <p className="text-xs text-[color:var(--topo-muted)]">
-              Drill into a run for charts, failures, and PDF/CSV export.
+              In-progress runs show as Live. Drill in for charts, evidence, and
+              export when complete.
             </p>
           </div>
           <StatusChip tone="neutral" mono>
@@ -461,9 +462,9 @@ export function ReportsWorkspace({
               No run reports yet
             </p>
             <p className="mx-auto mt-1 max-w-md text-xs text-[color:var(--topo-muted)]">
-              Reports appear after a run is completed. Finish a manual run or let
-              CI mark one complete — unfinished runs stay on the Runs page until
-              then.
+              Reports appear for in-progress and completed runs. Start a manual
+              run or ingest CI results — living reports update as execution
+              progresses.
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               <Link
@@ -504,9 +505,15 @@ export function ReportsWorkspace({
                       <span className="truncate font-medium text-[color:var(--topo-ink)]">
                         {report.name}
                       </span>
-                      <StatusChip tone={statusToneForRun(report.status)}>
-                        {formatStatusLabel(report.status)}
-                      </StatusChip>
+                      {report.status === "in_progress" ? (
+                        <StatusChip tone="warning" mono>
+                          Live
+                        </StatusChip>
+                      ) : (
+                        <StatusChip tone={statusToneForRun(report.status)}>
+                          {formatStatusLabel(report.status)}
+                        </StatusChip>
+                      )}
                       <StatusChip
                         tone={report.kind === "automation" ? "info" : "neutral"}
                       >

@@ -4,10 +4,12 @@ import { cases, folders } from "@/db/schema";
 import type { MappedCase } from "./types";
 
 export type PersistImportResult = {
-  created: Array<{ id: string; key: string; title: string }>;
+  created: Array<{ id: string; key: string; title: string; folderId: string | null }>;
   skipped: string[];
   wouldCreate: number;
   wouldSkip: string[];
+  folderIds: string[];
+  primaryFolderId: string | null;
 };
 
 export async function persistImportedCases(options: {
@@ -40,6 +42,8 @@ export async function persistImportedCases(options: {
       skipped: wouldSkip,
       wouldCreate: toInsert.length,
       wouldSkip,
+      folderIds: [],
+      primaryFolderId: null,
     };
   }
 
@@ -51,8 +55,9 @@ export async function persistImportedCases(options: {
     existingFolders.map((folder) => [folder.name.toLowerCase(), folder]),
   );
 
-  const created: Array<{ id: string; key: string; title: string }> = [];
+  const created: PersistImportResult["created"] = [];
   const skipped = [...wouldSkip];
+  const folderIdSet = new Set<string>();
 
   for (const row of toInsert) {
     let folderId: string | null = null;
@@ -68,6 +73,7 @@ export async function persistImportedCases(options: {
         folderByName.set(key, inserted);
       }
       folderId = folder.id;
+      folderIdSet.add(folder.id);
     }
 
     const tags = row.tags
@@ -106,17 +112,22 @@ export async function persistImportedCases(options: {
           id: cases.id,
           key: cases.key,
           title: cases.title,
+          folderId: cases.folderId,
         });
       created.push(createdRow);
+      if (createdRow.folderId) folderIdSet.add(createdRow.folderId);
     } catch {
       skipped.push(row.key);
     }
   }
 
+  const folderIds = [...folderIdSet];
   return {
     created,
     skipped,
     wouldCreate: created.length,
     wouldSkip: skipped,
+    folderIds,
+    primaryFolderId: folderIds.length === 1 ? folderIds[0]! : null,
   };
 }

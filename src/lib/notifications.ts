@@ -139,6 +139,24 @@ export async function markNotificationRead(
   return true;
 }
 
+export async function markAllNotificationsRead(
+  userId: string,
+  workspaceId: string,
+): Promise<number> {
+  const rows = await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(
+      and(
+        eq(notifications.userId, userId),
+        eq(notifications.workspaceId, workspaceId),
+        isNull(notifications.readAt),
+      ),
+    )
+    .returning({ id: notifications.id });
+  return rows.length;
+}
+
 const EMAIL_MENTION = /@([a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
 const UUID_MENTION =
   /@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;

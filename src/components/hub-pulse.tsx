@@ -107,7 +107,7 @@ export function HubPulse({
                 {milestone.badge}
               </StatusChip>
             ) : null}
-            {isOverview && selectedRelease ? (
+            {isOverview && qualityGraphEnabled && selectedRelease ? (
               <StatusChip mono>{selectedRelease.name}</StatusChip>
             ) : null}
             {isOverview && persona ? (

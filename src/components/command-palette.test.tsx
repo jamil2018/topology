@@ -51,7 +51,10 @@ describe("CommandPalette coverage", () => {
       "Plans",
       "Test runs",
       "Automation",
+      "Milestones",
       "Triage",
+      "Impact",
+      "Proposals",
       "Reports",
       "Settings",
       "Import cases",
@@ -59,7 +62,7 @@ describe("CommandPalette coverage", () => {
       expect(optionLabels).toContain(label);
     }
     expect(optionLabels).not.toContain("Intents");
-    expect(optionLabels).not.toContain("Impact");
+    expect(optionLabels).not.toContain("Risks");
   });
 
   it("lists quality-graph destinations when the workspace toggle is on", async () => {

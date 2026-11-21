@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 const STEPS = [
   {
@@ -27,27 +30,68 @@ const STEPS = [
   },
 ] as const;
 
+const DISMISS_KEY = "topology:guided-first-run-dismissed";
+
 export function GuidedFirstRun({
   title = "Get started",
   completed = [],
   description = "Four steps to a working test workspace: case, run, CI, then triage.",
+  dismissible = false,
 }: {
   title?: string;
   completed?: string[];
   description?: string;
+  dismissible?: boolean;
 }) {
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    if (!dismissible) return;
+    try {
+      setDismissed(window.localStorage.getItem(DISMISS_KEY) === "1");
+    } catch {
+      /* Storage unavailable. */
+    }
+  }, [dismissible]);
+
+  function dismiss() {
+    setDismissed(true);
+    try {
+      window.localStorage.setItem(DISMISS_KEY, "1");
+    } catch {
+      /* Storage unavailable. */
+    }
+  }
+
+  if (dismissible && dismissed) return null;
+
+  const allDone = STEPS.every((step) => completed.includes(step.n));
+
   return (
     <section
       role="region"
       aria-label="Guided first run"
       className="rounded-md border border-dashed border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4"
     >
-      <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
-        {title}
-      </h2>
-      <p className="mt-1 max-w-xl text-sm text-[color:var(--topo-muted)]">
-        {description}
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
+            {title}
+          </h2>
+          <p className="mt-1 max-w-xl text-sm text-[color:var(--topo-muted)]">
+            {description}
+          </p>
+        </div>
+        {dismissible ? (
+          <button
+            type="button"
+            onClick={dismiss}
+            className="shrink-0 text-xs font-medium text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+          >
+            {allDone ? "Dismiss" : "Dismiss checklist"}
+          </button>
+        ) : null}
+      </div>
       <ol className="mt-4 grid gap-2 sm:grid-cols-2">
         {STEPS.map((step) => (
           <li key={step.n}>
@@ -60,7 +104,8 @@ export function GuidedFirstRun({
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-[color:var(--topo-ink)]">
-                  {step.title}{completed.includes(step.n) ? " · Complete" : ""}
+                  {step.title}
+                  {completed.includes(step.n) ? " · Complete" : ""}
                 </span>
                 <span className="mt-0.5 block text-xs text-[color:var(--topo-muted)]">
                   {step.hint}

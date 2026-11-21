@@ -12,9 +12,16 @@ import {
   StatusDonut,
   SuiteBars,
 } from "./report-charts";
-import { formatDuration, type ReportKpis, type SuiteBreakdownRow, type TimelinePoint } from "@/lib/report-stats";
+import {
+  formatDuration,
+  type ReportExecutiveSummary,
+  type ReportKpis,
+  type SuiteBreakdownRow,
+  type TimelinePoint,
+} from "@/lib/report-stats";
 import { formatStatusLabel } from "@/lib/format-labels";
 import { ReportExportActions } from "./report-export-actions";
+import { isImageAttachment } from "./run-paste-upload";
 
 export type ReportDetailModel = {
   run: {
@@ -33,6 +40,7 @@ export type ReportDetailModel = {
     updatedAt: string | Date;
   };
   kpis: ReportKpis;
+  executive: ReportExecutiveSummary;
   suiteBreakdown: SuiteBreakdownRow[];
   timeline: TimelinePoint[];
   failures: Array<{
@@ -47,6 +55,13 @@ export type ReportDetailModel = {
     executedAt: string | null;
     isFlaky: boolean;
     flakeHint: string | null;
+    attachments: Array<{
+      id: string;
+      filename: string;
+      contentType: string;
+      kind: string;
+      url: string;
+    }>;
   }>;
   trend: Array<{
     id: string;
@@ -64,9 +79,27 @@ function formatWhen(value: string | Date | null | undefined) {
   return formatDateTime(d);
 }
 
+function verdictTone(
+  verdict: ReportExecutiveSummary["verdict"],
+): "success" | "danger" | "warning" | "neutral" {
+  if (verdict === "pass") return "success";
+  if (verdict === "fail") return "danger";
+  if (verdict === "live") return "warning";
+  return "neutral";
+}
+
+function formatPassRateDelta(delta: number | null): string {
+  if (delta == null) return "—";
+  if (delta === 0) return "0 pts";
+  const sign = delta > 0 ? "+" : "";
+  return `${sign}${delta} pts`;
+}
+
 export function ReportDetail({ report }: { report: ReportDetailModel }) {
   const reduceMotion = useReducedMotion();
-  const { run, kpis, suiteBreakdown, timeline, failures, trend } = report;
+  const { run, kpis, executive, suiteBreakdown, timeline, failures, trend } =
+    report;
+  const isLive = run.status === "in_progress";
 
   const kpiTiles = [
     {
@@ -112,17 +145,25 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Report · linked run"
+        eyebrow={isLive ? "Report · live run" : "Report · linked run"}
         title={run.name}
         description={
           run.description?.trim() ||
-          "Visual report for this test run — KPIs, charts, suite breakdown, and failures."
+          (isLive
+            ? "Living report — KPIs and failures update as the run progresses."
+            : "Visual report for this test run — KPIs, charts, suite breakdown, and failures.")
         }
         meta={
           <>
-            <StatusChip tone={statusToneForRun(run.status)}>
-              {formatStatusLabel(run.status)}
-            </StatusChip>
+            {isLive ? (
+              <StatusChip tone="warning" mono>
+                Live
+              </StatusChip>
+            ) : (
+              <StatusChip tone={statusToneForRun(run.status)}>
+                {formatStatusLabel(run.status)}
+              </StatusChip>
+            )}
             <StatusChip tone={run.kind === "automation" ? "info" : "neutral"}>
               {run.kind === "automation" ? "CI / automation" : "manual"}
             </StatusChip>
@@ -156,7 +197,7 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
             >
               All reports
             </Link>
-            <ReportExportActions runId={run.id} />
+            {!isLive ? <ReportExportActions runId={run.id} /> : null}
             {kpis.failed > 0 ? (
               <Link
                 href="/triage"
@@ -168,6 +209,41 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
           </div>
         }
       />
+
+      <section
+        aria-label="Executive summary"
+        className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-line)] sm:grid-cols-3"
+      >
+        <div className="bg-[color:var(--topo-panel)] px-3 py-3">
+          <div className="font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
+            Verdict
+          </div>
+          <div className="mt-1.5">
+            <StatusChip tone={verdictTone(executive.verdict)} mono>
+              {executive.verdictLabel}
+            </StatusChip>
+          </div>
+        </div>
+        <div className="bg-[color:var(--topo-panel)] px-3 py-3">
+          <div className="font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
+            Linked defects
+          </div>
+          <div className="mt-1.5 font-mono text-2xl font-semibold tabular-nums tracking-tight text-[color:var(--topo-ink)]">
+            {executive.linkedDefects}
+          </div>
+        </div>
+        <div className="bg-[color:var(--topo-panel)] px-3 py-3">
+          <div className="font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
+            Pass-rate delta
+          </div>
+          <div className="mt-1.5 font-mono text-2xl font-semibold tabular-nums tracking-tight text-[color:var(--topo-ink)]">
+            {formatPassRateDelta(executive.passRateDelta)}
+          </div>
+          <div className="mt-1 text-xs text-[color:var(--topo-muted)]">
+            vs previous completed peer
+          </div>
+        </div>
+      </section>
 
       <p className="font-mono text-xs text-[color:var(--topo-muted)]">
         Run {run.id.slice(0, 8)} · started {formatWhen(run.startedAt)} · finished{" "}
@@ -255,12 +331,13 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[40rem] text-left text-sm">
+            <table className="w-full min-w-[44rem] text-left text-sm">
               <thead className="border-b border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/40 font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
                 <tr>
                   <th className="px-3 py-2 font-medium">Case</th>
                   <th className="px-3 py-2 font-medium">Suite</th>
                   <th className="px-3 py-2 font-medium">Pri</th>
+                  <th className="px-3 py-2 font-medium">Evidence</th>
                   <th className="px-3 py-2 font-medium">Notes</th>
                   <th className="px-3 py-2 font-medium">Duration</th>
                   <th className="px-3 py-2 font-medium">Flags</th>
@@ -298,6 +375,52 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
                         </StatusChip>
                       ) : (
                         <span className="text-[color:var(--topo-muted)]">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {row.attachments.length === 0 ? (
+                        <span className="text-xs text-[color:var(--topo-muted)]">
+                          —
+                        </span>
+                      ) : (
+                        <ul className="flex flex-wrap gap-1.5">
+                          {row.attachments.slice(0, 4).map((attachment) => {
+                            const image = isImageAttachment(
+                              attachment.contentType,
+                              attachment.filename,
+                            );
+                            return (
+                              <li key={attachment.id}>
+                                {image ? (
+                                  <a
+                                    href={attachment.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="block overflow-hidden rounded border border-[color:var(--topo-line)]"
+                                    title={attachment.filename}
+                                  >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={attachment.url}
+                                      alt={attachment.filename}
+                                      className="h-10 w-10 object-cover"
+                                    />
+                                  </a>
+                                ) : (
+                                  <a
+                                    href={attachment.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-block max-w-[7rem] truncate font-mono text-[10px] text-[color:var(--topo-accent)] hover:underline"
+                                    title={attachment.filename}
+                                  >
+                                    {attachment.filename}
+                                  </a>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
                       )}
                     </td>
                     <td className="max-w-sm px-3 py-2.5 text-xs text-[color:var(--topo-muted)]">

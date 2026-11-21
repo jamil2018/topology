@@ -56,6 +56,7 @@ export default async function SharedReportPage({ params }: Props) {
         report={{
           run: report.run,
           kpis: report.kpis,
+          executive: report.executive,
           suiteBreakdown: report.suiteBreakdown,
           timeline: report.timeline,
           failures: report.failures,

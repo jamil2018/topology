@@ -2,21 +2,53 @@
   "name": "@topology/mcp",
   "version": "0.1.0",
   "license": "Apache-2.0",
-  "description": "MCP server for Topology cases, runs, results, and issue filing",
+  "description": "MCP server for Topology: Daily QA (cases, runs, results, issues), Graph/Impact (intents, coverage, affected tests, quality search), and Governed Proposals (propose_coverage)",
   "type": "module",
   "bin": {
     "topology-mcp": "./bin/topology-mcp.js"
   },
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
     "bin",
-    "src",
-    "README.md",
-    "!src/**/*.test.ts"
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "topology",
+    "qa",
+    "test-management",
+    "list_cases",
+    "create_case",
+    "list_runs",
+    "create_run",
+    "list_results",
+    "record_result",
+    "whats_pending",
+    "get_scenario_context",
+    "get_failure_evidence",
+    "create_issue",
+    "link_issue",
+    "list_intents",
+    "get_test_intent",
+    "create_test_intent",
+    "get_coverage",
+    "get_requirement",
+    "get_execution_history",
+    "link_automation",
+    "compare_releases",
+    "get_affected_tests",
+    "quality_search",
+    "search_tests",
+    "propose_coverage"
   ],
   "repository": {
     "type": "git",
@@ -34,12 +66,14 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "tsx src/server.ts",
-    "test": "vitest run --config ../../vitest.packages.config.ts"
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "test": "vitest run --config ../../vitest.packages.config.ts",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "tsx": "^4.23.13",
     "zod": "^4.6.2"
   }
 }

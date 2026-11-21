@@ -27,10 +27,39 @@ describe("ProjectSwitcher", () => {
     const trigger = screen.getByRole("button", { name: /Alpha/i });
     await user.click(trigger);
     expect(screen.getByRole("listbox")).toBeInTheDocument();
+    expect(screen.getByLabelText("Search projects")).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(trigger).toHaveFocus();
+  });
+
+  it("filters projects by search query", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectSwitcher projects={projects} activeProjectId="p1" />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Alpha/i }));
+    await user.type(screen.getByLabelText("Search projects"), "beta");
+    expect(screen.getByRole("option", { name: /Beta/i })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Alpha/i })).toBeNull();
+  });
+
+  it("shows New project for admins", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectSwitcher
+        projects={projects}
+        activeProjectId="p1"
+        canManage
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Alpha/i }));
+    expect(
+      screen.getByRole("option", { name: /New project/i }),
+    ).toBeInTheDocument();
   });
 
   it("closes when clicking outside", async () => {

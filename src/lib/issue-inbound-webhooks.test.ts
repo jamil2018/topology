@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  inboundIssueSigningStatus,
   parseInboundIssuePayload,
   verifyInboundIssueWebhook,
 } from "./issue-inbound-webhooks";
@@ -68,5 +69,25 @@ describe("inbound issue webhook verification", () => {
       }),
     });
     expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("inboundIssueSigningStatus", () => {
+  it("reports per-provider webhook paths and signing readiness", () => {
+    const rows = inboundIssueSigningStatus({
+      TOPOLOGY_GITHUB_WEBHOOK_SECRET: "gh",
+      TOPOLOGY_LINEAR_WEBHOOK_SECRET: "lin",
+    } as NodeJS.ProcessEnv);
+    expect(rows).toHaveLength(4);
+    expect(rows.find((r) => r.provider === "github")).toMatchObject({
+      path: "/api/webhooks/issues/github",
+      signingConfigured: true,
+    });
+    expect(rows.find((r) => r.provider === "gitlab")).toMatchObject({
+      signingConfigured: false,
+    });
+    expect(rows.find((r) => r.provider === "linear")?.signingConfigured).toBe(
+      true,
+    );
   });
 });

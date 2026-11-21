@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { RequirementsWorkspace } from "@/components/requirements-workspace";
 import { db } from "@/db";
 import { qualityEdges, requirements } from "@/db/schema";
@@ -12,14 +12,19 @@ export const metadata: Metadata = {
   title: "Requirements · Topology",
 };
 
-export default async function RequirementsPage() {
+export default async function RequirementsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ requirement?: string }>;
+}) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const workspaceId = ctx.project.id;
+  const params = await searchParams;
   const rows = await db.query.requirements.findMany({
     where: eq(requirements.workspaceId, workspaceId),
     orderBy: [asc(requirements.key)],
@@ -44,5 +49,10 @@ export default async function RequirementsPage() {
     coversIntentIds: coveredIntentIdsByReq.get(r.id) ?? [],
   }));
 
-  return <RequirementsWorkspace initial={initial} />;
+  return (
+    <RequirementsWorkspace
+      initial={initial}
+      selectedId={params.requirement ?? null}
+    />
+  );
 }

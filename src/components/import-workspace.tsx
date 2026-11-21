@@ -75,6 +75,7 @@ export function ImportWorkspace() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [importedFolderId, setImportedFolderId] = useState<string | null>(null);
   const [pending, setPending] = useState<"preview" | "dry" | "run" | null>(null);
 
   const apiEnabled = provider !== "xray";
@@ -151,6 +152,8 @@ export function ImportWorkspace() {
         created?: number;
         skipped?: string[];
         errors?: string[];
+        primaryFolderId?: string | null;
+        folderIds?: string[];
       };
       if (!res.ok) {
         setError(data.error ?? "Import failed");
@@ -164,6 +167,10 @@ export function ImportWorkspace() {
         });
         return;
       }
+      const folderId =
+        data.primaryFolderId ??
+        (data.folderIds?.length === 1 ? data.folderIds[0]! : null);
+      setImportedFolderId(folderId);
       setMessage(
         `Imported ${data.created ?? 0} cases` +
           (data.skipped?.length ? ` · skipped ${data.skipped.length}` : ""),
@@ -211,9 +218,24 @@ export function ImportWorkspace() {
         </p>
       ) : null}
       {message ? (
-        <p className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 text-sm text-[color:var(--topo-ink)]">
-          {message}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 text-sm text-[color:var(--topo-ink)]">
+          <span>{message}</span>
+          {importedFolderId ? (
+            <Link
+              href={`/cases?folder=${importedFolderId}`}
+              className="button button--sm button--primary inline-flex items-center"
+            >
+              View imported cases
+            </Link>
+          ) : (
+            <Link
+              href="/cases"
+              className="button button--sm button--secondary inline-flex items-center"
+            >
+              View cases
+            </Link>
+          )}
+        </div>
       ) : null}
 
       <section className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">

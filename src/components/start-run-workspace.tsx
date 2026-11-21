@@ -56,8 +56,17 @@ export function StartRunWorkspace({
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const casesFromQuery = (() => {
+    if (initialTemplate || retest) return [] as string[];
+    return (searchParams.get("cases") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => cases.some((row) => row.id === id));
+  })();
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<string>(initialTemplate || retest ? "all" : "ready");
+  const [status, setStatus] = useState<string>(
+    initialTemplate || retest || casesFromQuery.length > 0 ? "all" : "ready",
+  );
   const [priority, setPriority] = useState<string>("all");
   const [folderId, setFolderId] = useState<string>("all");
   const [tag, setTag] = useState<string>("all");
@@ -65,11 +74,7 @@ export function StartRunWorkspace({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
     if (initialTemplate) return new Set(initialTemplate.caseIds);
     if (retest) return new Set(retest.caseIds);
-    const fromQuery = (searchParams.get("cases") ?? "")
-      .split(",")
-      .map((id) => id.trim())
-      .filter((id) => cases.some((row) => row.id === id));
-    if (fromQuery.length > 0) return new Set(fromQuery);
+    if (casesFromQuery.length > 0) return new Set(casesFromQuery);
     return new Set(defaultReadySelection(cases));
   });
 

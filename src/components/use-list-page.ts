@@ -28,22 +28,23 @@ export function useListPage<T>(endpoint: string, query: string, initial: Paginat
   const sequence = useRef(0);
   useEffect(() => {
     if (!initial) return;
+    let cancelled = false;
     const generation = ++sequence.current;
-    const controller = new AbortController();
     const timer = window.setTimeout(async () => {
+      if (cancelled) return;
       setLoading(true); setError(null);
       try {
-        const response = await fetch(`${endpoint}?${query}`, { signal: controller.signal });
+        const response = await fetch(`${endpoint}?${query}`);
         if (!response.ok) throw new Error("Could not load this list. Your filters are preserved.");
         const payload = await response.json();
-        if (generation === sequence.current) setData({ ...payload, items: payload[field] });
+        if (!cancelled && generation === sequence.current) setData({ ...payload, items: payload[field] });
       } catch (error) {
-        if (!controller.signal.aborted && generation === sequence.current) setError(error instanceof Error ? error.message : "Could not load list");
+        if (!cancelled && generation === sequence.current) setError(error instanceof Error ? error.message : "Could not load list");
       } finally {
-        if (!controller.signal.aborted && generation === sequence.current) setLoading(false);
+        if (!cancelled && generation === sequence.current) setLoading(false);
       }
     }, 180);
-    return () => { controller.abort(); window.clearTimeout(timer); };
+    return () => { cancelled = true; window.clearTimeout(timer); };
   // Initial data is a bootstrap; query changes drive subsequent requests.
   }, [endpoint, query, field, revision, initial]);
   return { data, error, loading, retry: () => setRevision((value) => value + 1) };

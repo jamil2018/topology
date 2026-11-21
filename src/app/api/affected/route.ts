@@ -92,8 +92,13 @@ export async function POST(request: Request) {
   }
 
   const impactPaths = resolved.paths;
-  const { impact, pathRulesApplied, unknownComponentKeys, rulesSource } =
-    await getWorkspaceImpact(access.workspaceId, impactPaths, rules);
+  const {
+    impact,
+    caseIds,
+    pathRulesApplied,
+    unknownComponentKeys,
+    rulesSource,
+  } = await getWorkspaceImpact(access.workspaceId, impactPaths, rules);
 
   return NextResponse.json({
     paths: impactPaths,
@@ -101,12 +106,14 @@ export async function POST(request: Request) {
     commitSha: commitSha ?? null,
     pr: pr ?? null,
     impact,
+    caseIds,
     summary: {
       components: impact.components.length,
       requirements: impact.requirements.length,
       intents: impact.intents.length,
       implementations: impact.implementations.length,
       gaps: impact.gaps.length,
+      cases: caseIds.length,
     },
     pathRulesApplied,
     rulesSource,

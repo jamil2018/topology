@@ -1,4 +1,4 @@
-import type { CoverageDimension } from "./coverage";
+import type { CoverageDimension } from "./coverage.js";
 
 /**
  * Plain snapshot of release quality metrics suitable for compare-releases.

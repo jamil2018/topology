@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { NoProjectEmptyState } from "@/components/no-project-empty-state";
+import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import {
   ProposalsWorkspace,
   type ProposalListItem,
@@ -18,7 +18,7 @@ export default async function ProposalsPage() {
   if (!session?.user?.id) redirect("/login");
 
   const ctx = await resolveActiveProject(session.user.id);
-  if (!ctx) return <NoProjectEmptyState />;
+  if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const rows = await listProposals(ctx.project.id, { status: "pending" });
   const initial: ProposalListItem[] = rows.map((row) => ({

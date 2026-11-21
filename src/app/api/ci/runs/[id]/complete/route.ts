@@ -92,6 +92,9 @@ export async function POST(request: Request, { params }: Params) {
     );
     void syncIntentStaleWebhooks(authResult.workspaceId).catch(() => {});
 
+    const { dispatchScmFeedbackForRun } = await import("@/lib/scm-feedback");
+    dispatchScmFeedbackForRun(id);
+
     return NextResponse.json({
       run: completed.run,
       summary: completed.summary,

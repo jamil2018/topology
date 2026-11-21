@@ -15,13 +15,27 @@ export function RunTemplatesPanel() {
   const [revision, setRevision] = useState(0);
   const [deleting, setDeleting] = useState<string | null>(null);
   useEffect(() => {
-    const controller = new AbortController();
+    let cancelled = false;
     setLoading(true);
-    fetch("/api/run-templates", { signal: controller.signal }).then(async (response) => {
-      if (!response.ok) throw new Error("Could not load templates");
-      const data = await response.json(); setTemplates(data.templates); setError(null);
-    }).catch((error) => { if (!controller.signal.aborted) setError(error.message); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
+    void fetch("/api/run-templates")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load templates");
+        const data = await response.json();
+        if (cancelled) return;
+        setTemplates(data.templates);
+        setError(null);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setError(error instanceof Error ? error.message : "Could not load templates");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [revision]);
   async function remove(id: string) {
     return submit(async () => {

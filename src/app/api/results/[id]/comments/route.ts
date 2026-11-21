@@ -4,6 +4,8 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { resultComments, runResults } from "@/db/schema";
+import { emitLive } from "@/lib/live";
+import { notifyEntityCommentMentions } from "@/lib/notifications";
 import { requireProjectAccess } from "@/lib/project";
 
 type Params = { params: Promise<{ id: string }> };
@@ -110,5 +112,37 @@ export async function POST(request: Request, { params }: Params) {
     })
     .returning();
 
-  return NextResponse.json({ comment }, { status: 201 });
+  const workspaceId = access.ctx.project.id;
+  const commentPayload = {
+    id: comment.id,
+    body: comment.body,
+    createdAt:
+      comment.createdAt instanceof Date
+        ? comment.createdAt.toISOString()
+        : String(comment.createdAt),
+    user: {
+      id: session.user.id,
+      name: session.user.name ?? null,
+      email: session.user.email ?? "",
+    },
+  };
+
+  emitLive({
+    workspaceId,
+    topic: "run",
+    entityId: result.runId,
+    resultId,
+    kind: "comment",
+    comment: commentPayload,
+  });
+
+  void notifyEntityCommentMentions({
+    workspaceId,
+    authorUserId: session.user.id,
+    entityType: "result",
+    entityId: resultId,
+    body: parsed.data.body,
+  }).catch(() => {});
+
+  return NextResponse.json({ comment: commentPayload }, { status: 201 });
 }

@@ -35,7 +35,7 @@ describe("journaled migrator", () => {
       readFileSync(path.join(folder, "meta/_journal.json"), "utf8"),
     ) as { entries: { tag: string; idx: number }[] };
 
-    expect(journal.entries).toHaveLength(8);
+    expect(journal.entries).toHaveLength(10);
     expect(journal.entries[0]?.idx).toBe(0);
     expect(journal.entries[0]?.tag).toBe("0000_baseline");
     expect(journal.entries[1]?.idx).toBe(1);
@@ -46,9 +46,13 @@ describe("journaled migrator", () => {
     expect(journal.entries[3]?.tag).toBe("0003_quality_graph_pref");
     expect(journal.entries[7]?.idx).toBe(7);
     expect(journal.entries[7]?.tag).toBe("0007_collab_and_integrations");
+    expect(journal.entries[8]?.idx).toBe(8);
+    expect(journal.entries[8]?.tag).toBe("0008_triage_resolution");
+    expect(journal.entries[9]?.idx).toBe(9);
+    expect(journal.entries[9]?.tag).toBe("0009_scm_feedback");
 
     const files = readMigrationFiles({ migrationsFolder: folder });
-    expect(files).toHaveLength(8);
+    expect(files).toHaveLength(10);
     const baseline = files[0]!.sql.join("\n");
     expect(baseline).toContain('CREATE TABLE "users"');
     expect(baseline).toContain('CREATE TABLE "attachments"');
@@ -76,6 +80,12 @@ describe("journaled migrator", () => {
     expect(collab).toContain('CREATE TABLE "notification_channels"');
     expect(collab).toContain("cases_search_vector_idx");
     expect(collab).toContain("case_steps_search_vector_idx");
+    const resolution = files[8]!.sql.join("\n");
+    expect(resolution).toContain('"resolution"');
+    expect(resolution).toContain("triage_items");
+    const scm = files[9]!.sql.join("\n");
+    expect(scm).toContain("post_pr_status_checks");
+    expect(scm).toContain("post_pr_summary_comment");
   });
 
   it("reconciles only when tables exist and the journal is empty", () => {
@@ -119,6 +129,9 @@ describe("journaled migrator", () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "notification_channels"');
     expect(sql).toContain("cases_search_vector_idx");
     expect(sql).toContain("case_steps_search_vector_idx");
+    expect(sql).toContain('"resolution"');
+    expect(sql).toContain("post_pr_status_checks");
+    expect(sql).toContain("post_pr_summary_comment");
   });
 
   it("refuses to run without DATABASE_URL", async () => {

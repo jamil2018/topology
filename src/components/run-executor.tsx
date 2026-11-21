@@ -26,6 +26,7 @@ import {
   initialFocusId,
   neighborId,
   nextUntestedId,
+  rollupStepStatuses,
   type CommentRow,
   type LinkedIssue,
   type MemberOption,
@@ -34,6 +35,16 @@ import {
   type RunDetail,
   type StatusFilter,
 } from "./run-executor-model";
+
+type StatusRetry = {
+  resultId: string;
+  caseId: string;
+  status: string;
+  notes: string;
+  durationMs?: number;
+  step?: { position: number; status: string };
+  message: string;
+};
 
 export function RunExecutor({
   run,
@@ -84,6 +95,7 @@ export function RunExecutor({
     applyRunAction,
   );
   const [error, setError] = useState<string | null>(null);
+  const [statusRetry, setStatusRetry] = useState<StatusRetry | null>(null);
   const [linkKey, setLinkKey] = useState<Record<string, string>>({});
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(run.results.map((row) => [row.id, row.notes])),
@@ -93,6 +105,10 @@ export function RunExecutor({
   const uploadCounts = useRef<Record<string, number>>({});
   const readTimerMs = useRef<() => number>(() => 0);
   const [issueBusy, setIssueBusy] = useState(false);
+  const filterRef = useRef({ statusFilter, mineOnly, query, currentUserId });
+  useEffect(() => {
+    filterRef.current = { statusFilter, mineOnly, query, currentUserId };
+  }, [statusFilter, mineOnly, query, currentUserId]);
   const completeModal = useOverlayState();
   const abortModal = useOverlayState();
   const reopenModal = useOverlayState();
@@ -122,10 +138,52 @@ export function RunExecutor({
     }
   }, [filtered, focusedId]);
 
+  const advanceAfterStatus = useCallback(
+    (results: ResultRow[], fromId: string, nextStatus: string) => {
+      if (nextStatus === "untested") return;
+      const { statusFilter: status, mineOnly: mine, query: q, currentUserId: uid } =
+        filterRef.current;
+      const nextId = nextUntestedId(
+        filterRunResults(results, {
+          status,
+          mine,
+          query: q,
+          currentUserId: uid,
+        }),
+        fromId,
+      );
+      if (nextId) setFocusedId(nextId);
+    },
+    [],
+  );
+
   const onLive = useCallback(
     (event: LiveEvent) => {
       if (event.topic !== "run") return;
       if (event.entityId && event.entityId !== runState.id) return;
+      if (event.kind === "comment" && event.resultId && event.comment) {
+        setRunState((current) =>
+          applyCommentToRun(current, event.resultId!, {
+            id: event.comment!.id,
+            body: event.comment!.body,
+            createdAt: event.comment!.createdAt,
+            user: event.comment!.user ?? null,
+          }),
+        );
+        return;
+      }
+      if (event.kind === "attachment" && event.resultId && event.attachment) {
+        setRunState((current) =>
+          applyAttachmentToRun(current, event.resultId!, {
+            id: event.attachment!.id,
+            filename: event.attachment!.filename,
+            contentType: event.attachment!.contentType,
+            sizeBytes: event.attachment!.sizeBytes,
+            url: event.attachment!.url ?? `/api/attachments/${event.attachment!.id}`,
+          }),
+        );
+        return;
+      }
       if (event.resultId) {
         setRunState((current) =>
           applyRunAction(current, {
@@ -177,7 +235,14 @@ export function RunExecutor({
     } catch { if (activeRunId.current === runId) setError("Reconnected, but the latest results could not be loaded. Reload to retry; keep a copy of unsaved notes."); }
   } });
 
-  async function patch(body: Record<string, unknown>, action?: RunAction, background = false): Promise<boolean> {
+  async function patch(
+    body: Record<string, unknown>,
+    action?: RunAction,
+    background = false,
+    opts?: { trackNotesFailure?: boolean; silentError?: boolean },
+  ): Promise<boolean> {
+    const trackNotesFailure = opts?.trackNotesFailure ?? background;
+    const silentError = opts?.silentError ?? false;
     const permission =
       body.action === "complete" || body.action === "reopen"
         ? "runs.complete"
@@ -195,7 +260,7 @@ export function RunExecutor({
         setError("Save your unsaved notes before completing, aborting, or reopening this run.");
         return false;
       }
-      setError(null);
+      if (!silentError) setError(null);
       if (action && !background) addOptimisticRun(action);
       try {
         const response = await fetch(`/api/runs/${runId}`, {
@@ -208,8 +273,10 @@ export function RunExecutor({
         if (action) setRunState((current) => current.id === runId ? applyRunAction(current, action) : current);
         return true;
       } catch (error) {
-        if (background) failedNoteSaves.current.add(`${runId}:${body.resultId}`);
-        if (activeRunId.current === runId) setError(error instanceof Error ? error.message : "Unable to save. Your draft is still here.");
+        if (trackNotesFailure) failedNoteSaves.current.add(`${runId}:${body.resultId}`);
+        if (activeRunId.current === runId && !silentError) {
+          setError(error instanceof Error ? error.message : "Unable to save. Your draft is still here.");
+        }
         return false;
       }
     };
@@ -222,48 +289,96 @@ export function RunExecutor({
     return result;
   }
 
+  const persistResultStatus = useCallback(
+    async (
+      result: ResultRow,
+      action: Extract<RunAction, { type: "result" }>,
+      body: Record<string, unknown>,
+    ) => {
+      let previewResults: ResultRow[] | null = null;
+      setRunState((current) => {
+        const next = applyRunAction(current, action);
+        previewResults = next.results;
+        return next;
+      });
+      if (previewResults) {
+        advanceAfterStatus(
+          previewResults,
+          result.id,
+          action.status ?? result.status,
+        );
+      }
+      setStatusRetry(null);
+      const saved = await patch(body, undefined, true, {
+        trackNotesFailure: false,
+        silentError: true,
+      });
+      if (saved) return;
+      setStatusRetry({
+        resultId: result.id,
+        caseId: result.case.id,
+        status: String(body.status ?? action.status ?? result.status),
+        notes: String(body.notes ?? result.notes),
+        durationMs:
+          typeof body.durationMs === "number" ? body.durationMs : undefined,
+        step: action.step,
+        message: "Could not save result status. Retry without leaving the run.",
+      });
+    },
+    [advanceAfterStatus],
+  );
+
   const recordStatus = useCallback(
     async (result: ResultRow, status: string, durationMs?: number) => {
+      if (!can("runs.edit")) return;
+      const notes = notesDraft[result.id] ?? result.notes;
       const body: Record<string, unknown> = {
         caseId: result.case.id,
         resultId: result.id,
         status,
-        notes: notesDraft[result.id] ?? result.notes,
+        notes,
       };
       if (durationMs != null && durationMs > 0) body.durationMs = durationMs;
-      const saved = await patch(
-        body,
+      await persistResultStatus(
+        result,
         {
           type: "result",
           resultId: result.id,
           status,
           durationMs: durationMs != null && durationMs > 0 ? durationMs : undefined,
         },
+        body,
       );
-      if (!saved || status === "untested") return;
-      const preview = optimisticRun.results.map((row) =>
-        row.id === result.id ? { ...row, status } : row,
-      );
-      const nextId = nextUntestedId(
-        filterRunResults(preview, {
-          status: statusFilter,
-          mine: mineOnly,
-          query,
-          currentUserId,
-        }),
-        result.id,
-      );
-      if (nextId) setFocusedId(nextId);
     },
-    [
-      currentUserId,
-      mineOnly,
-      notesDraft,
-      optimisticRun.results,
-      query,
-      statusFilter,
-    ],
+    [can, notesDraft, persistResultStatus],
   );
+
+  const retryFailedStatus = useCallback(async () => {
+    if (!statusRetry) return;
+    const retry = statusRetry;
+    const body: Record<string, unknown> = {
+      caseId: retry.caseId,
+      resultId: retry.resultId,
+      status: retry.status,
+      notes: retry.notes,
+    };
+    if (retry.durationMs != null && retry.durationMs > 0) {
+      body.durationMs = retry.durationMs;
+    }
+    if (retry.step) body.stepResults = [retry.step];
+    setStatusRetry(null);
+    setError(null);
+    const saved = await patch(body, undefined, true, {
+      trackNotesFailure: false,
+      silentError: true,
+    });
+    if (!saved) {
+      setStatusRetry({
+        ...retry,
+        message: "Retry failed. Try again or reload if the problem continues.",
+      });
+    }
+  }, [statusRetry]);
 
   async function bulkUpdateResults(patchBody: {
     status?: string;
@@ -643,6 +758,29 @@ export function RunExecutor({
       <RunProgressBar results={optimisticRun.results} />
       {liveStatus !== "live" ? <p role="status" className="text-xs text-[color:var(--topo-muted)]">{liveStatus === "reconnecting" ? "Reconnecting — results may be out of date" : "Connecting to live updates…"}</p> : null}
 
+      {statusRetry ? (
+        <p
+          role="alert"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300"
+        >
+          <span>{statusRetry.message}</span>
+          <button
+            type="button"
+            className="rounded-md border border-red-500/40 px-2 py-0.5 text-xs font-medium hover:bg-red-500/10"
+            onClick={() => void retryFailedStatus()}
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            className="text-xs underline-offset-2 hover:underline"
+            onClick={() => setStatusRetry(null)}
+          >
+            Dismiss
+          </button>
+        </p>
+      ) : null}
+
       {error ? (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>
       ) : null}
@@ -710,22 +848,35 @@ export function RunExecutor({
             linkKey={focusedResult ? (linkKey[focusedResult.id] ?? "") : ""}
             defaultProvider={defaultProvider}
             availableProviders={issueProviders}
+            runName={optimisticRun.name}
+            runId={optimisticRun.id}
+            environment={optimisticRun.environment}
             onBack={() => setDetailOpen(false)}
             onRecordStatus={(status, durationMs) => {
               if (focusedResult) recordStatus(focusedResult, status, durationMs);
             }}
             onStepStatus={(position, status) => {
-              if (!focusedResult) return;
-              void patch(
-                {
-                  caseId: focusedResult.case.id,
-                  resultId: focusedResult.id,
-                  stepResults: [{ position, status }],
-                },
+              if (!focusedResult || !can("runs.edit")) return;
+              const steps = focusedResult.stepResults ?? [];
+              const nextSteps = steps.map((step) =>
+                step.position === position ? { ...step, status } : step,
+              );
+              const rolled = rollupStepStatuses(
+                nextSteps.map((step) => step.status),
+              );
+              void persistResultStatus(
+                focusedResult,
                 {
                   type: "result",
                   resultId: focusedResult.id,
                   step: { position, status },
+                  status: rolled,
+                },
+                {
+                  caseId: focusedResult.case.id,
+                  resultId: focusedResult.id,
+                  stepResults: [{ position, status }],
+                  notes: notesDraft[focusedResult.id] ?? focusedResult.notes,
                 },
               );
             }}

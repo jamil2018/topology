@@ -125,6 +125,17 @@ export type RunAction =
 
 export type StatusCounts = Record<ResultStatus, number>;
 
+/** Client-side mirror of server step rollup for optimistic UI. */
+export function rollupStepStatuses(statuses: readonly string[]): ResultStatus {
+  if (statuses.length === 0) return "untested";
+  if (statuses.some((s) => s === "failed")) return "failed";
+  if (statuses.some((s) => s === "blocked")) return "blocked";
+  if (statuses.every((s) => s === "skipped")) return "skipped";
+  if (statuses.every((s) => s === "passed" || s === "skipped")) return "passed";
+  if (statuses.every((s) => s === "untested")) return "untested";
+  return "untested";
+}
+
 export function applyRunAction(current: RunDetail, action: RunAction): RunDetail {
   if (action.type === "run") {
     return {
@@ -154,7 +165,6 @@ export function applyRunAction(current: RunDetail, action: RunAction): RunDetail
     results: current.results.map((row) => {
       if (row.id !== action.resultId) return row;
       const next = { ...row };
-      if (action.status) next.status = action.status;
       if (action.notes !== undefined) next.notes = action.notes;
       if (action.durationMs !== undefined) next.durationMs = action.durationMs;
       if (action.assigneeId !== undefined) next.assigneeId = action.assigneeId;
@@ -164,6 +174,11 @@ export function applyRunAction(current: RunDetail, action: RunAction): RunDetail
             ? { ...step, status: action.step!.status }
             : step,
         );
+        next.status =
+          action.status ??
+          rollupStepStatuses(next.stepResults.map((step) => step.status));
+      } else if (action.status) {
+        next.status = action.status;
       }
       return next;
     }),
@@ -202,11 +217,11 @@ export function applyCommentToRun(
 ): RunDetail {
   return {
     ...current,
-    results: current.results.map((row) =>
-      row.id === resultId
-        ? { ...row, comments: [...row.comments, comment] }
-        : row,
-    ),
+    results: current.results.map((row) => {
+      if (row.id !== resultId) return row;
+      if (row.comments.some((existing) => existing.id === comment.id)) return row;
+      return { ...row, comments: [...row.comments, comment] };
+    }),
   };
 }
 
@@ -217,11 +232,13 @@ export function applyAttachmentToRun(
 ): RunDetail {
   return {
     ...current,
-    results: current.results.map((row) =>
-      row.id === resultId
-        ? { ...row, attachments: [...row.attachments, attachment] }
-        : row,
-    ),
+    results: current.results.map((row) => {
+      if (row.id !== resultId) return row;
+      if (row.attachments.some((existing) => existing.id === attachment.id)) {
+        return row;
+      }
+      return { ...row, attachments: [...row.attachments, attachment] };
+    }),
   };
 }
 

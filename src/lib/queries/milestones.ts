@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   computeMilestoneReadiness,
   latestOutcomeByCase,
@@ -12,6 +12,7 @@ import {
   milestones,
   runResults,
   runs,
+  testPlans,
   type Case,
 } from "@/db/schema";
 
@@ -121,4 +122,98 @@ export async function getActiveMilestoneReadiness(workspaceId: string) {
     return view;
   }
   return null;
+}
+
+export type MilestoneDetailView = Awaited<
+  ReturnType<typeof getMilestoneDetail>
+>;
+
+/** Milestone readiness plus linked plans, runs, and scoped gate blockers. */
+export async function getMilestoneDetail(
+  workspaceId: string,
+  milestoneId: string,
+) {
+  const views = await listMilestonesWithReadiness(workspaceId);
+  const view = views.find((v) => v.milestone.id === milestoneId);
+  if (!view) return null;
+
+  const plans = await db.query.testPlans.findMany({
+    where: and(
+      eq(testPlans.workspaceId, workspaceId),
+      eq(testPlans.milestoneId, milestoneId),
+    ),
+    orderBy: [asc(testPlans.name)],
+    with: { runs: true },
+  });
+
+  const planRuns = plans.flatMap((plan) =>
+    plan.runs.map((run) => ({
+      id: run.id,
+      name: run.name,
+      status: run.status,
+      planId: plan.id,
+      planName: plan.name,
+      completedAt: run.completedAt,
+      updatedAt: run.updatedAt,
+    })),
+  );
+  const activeRuns = planRuns.filter(
+    (r) => r.status === "in_progress" || r.status === "planned",
+  );
+  const completedRuns = planRuns.filter((r) => r.status === "completed");
+
+  const { suiteCases, openBlockers } = await loadReadinessInputs(workspaceId);
+  const scoped = view.milestone.folderId
+    ? suiteCases.filter((c) => c.folderId === view.milestone.folderId)
+    : suiteCases;
+  const caseIdSet = new Set(scoped.map((c) => c.id));
+
+  const blockerIssues = openBlockers.filter(
+    (i) =>
+      (i.caseId && caseIdSet.has(i.caseId)) ||
+      (!view.milestone.folderId && !i.caseId),
+  );
+
+  const blockerCaseIds = [
+    ...new Set(
+      blockerIssues
+        .map((b) => b.caseId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const caseKeys =
+    blockerCaseIds.length === 0
+      ? new Map<string, string>()
+      : new Map(
+          (
+            await db
+              .select({ id: cases.id, key: cases.key })
+              .from(cases)
+              .where(inArray(cases.id, blockerCaseIds))
+          ).map((row) => [row.id, row.key]),
+        );
+
+  return {
+    ...view,
+    plans: plans.map((p) => ({
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      runCount: p.runs.length,
+    })),
+    activeRuns,
+    completedRuns,
+    gateBlockers: {
+      reasons: view.readiness.reasons,
+      issues: blockerIssues.map((issue) => ({
+        id: issue.id,
+        title: issue.title,
+        provider: issue.provider,
+        remoteKey: issue.remoteKey,
+        url: issue.url,
+        caseId: issue.caseId,
+        caseKey: issue.caseId ? (caseKeys.get(issue.caseId) ?? null) : null,
+      })),
+    },
+  };
 }

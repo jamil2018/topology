@@ -264,6 +264,8 @@ export const triageItems = pgTable(
     }),
     occurrenceCount: integer("occurrence_count").default(1).notNull(),
     notes: text("notes").default("").notNull(),
+    /** Structured close reason: linked_issue | duplicate | wont_fix | retest_scheduled */
+    resolution: text("resolution"),
     lastSeenAt: timestamp("last_seen_at", { mode: "date" }).defaultNow().notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),

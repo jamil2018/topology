@@ -135,6 +135,30 @@ export function CasesWorkspace({
     return next;
   });
   const [error, setError] = useState<string | null>(null);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [importViewFolderId, setImportViewFolderId] = useState<string | null>(
+    null,
+  );
+  const csvImportModal = useOverlayState();
+  const [csvPending, setCsvPending] = useState<"preview" | "import" | null>(
+    null,
+  );
+  const [csvPreview, setCsvPreview] = useState<{
+    file: File;
+    wouldCreate: number;
+    wouldSkip: string[];
+    errors: string[];
+    sample: Array<{
+      key: string;
+      title: string;
+      folder: string;
+      priority: string;
+      status: string;
+      customFields?: Record<string, string>;
+      structuredStepCount: number;
+    }>;
+    customFieldKeys: string[];
+  } | null>(null);
   const [showCreate, setShowCreate] = useState(
     () => searchParams.get("new") === "1",
   );
@@ -172,13 +196,12 @@ export function CasesWorkspace({
   const [editorDirty, setEditorDirty] = useState(false);
   const [pendingCase, setPendingCase] = useState<CaseRow | null>(null);
   useEffect(() => {
-    const controller = new AbortController();
-    void Promise.resolve(
-      fetch("/api/custom-fields?entity=case", { signal: controller.signal }),
-    )
+    let cancelled = false;
+    void Promise.resolve(fetch("/api/custom-fields?entity=case"))
       .then(async (res) => {
-        if (!res || !res.ok) return;
+        if (cancelled || !res || !res.ok) return;
         const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
         const fields = (data.fields ?? []) as Array<{
           key: string;
           label: string;
@@ -192,9 +215,11 @@ export function CasesWorkspace({
         );
       })
       .catch(() => {
-        /* ignore abort / load errors */
+        /* ignore load errors */
       });
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -298,13 +323,21 @@ export function CasesWorkspace({
   }
   function keepEditing() {
     setPendingCase(null);
+    setPendingClone(null);
     unsavedModal.close();
     const query = new URLSearchParams(window.location.search);
     if (historyCase) query.set("case", historyCase.key); else query.delete("case");
     window.history.replaceState(null, "", `/cases${query.size ? `?${query}` : ""}`);
   }
   const [caseToDelete, setCaseToDelete] = useState<CaseRow | null>(null);
+  const [bulkDeleteIds, setBulkDeleteIds] = useState<string[] | null>(null);
   const [caseDeletePending, setCaseDeletePending] = useState(false);
+  const [pendingClone, setPendingClone] = useState<CaseRow | null>(null);
+  const bulkDeleteModal = useOverlayState({
+    onOpenChange: (open) => {
+      if (!open) setBulkDeleteIds(null);
+    },
+  });
   const [folderName, setFolderName] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
   const [folderPending, setFolderPending] = useState(false);
@@ -560,6 +593,19 @@ export function CasesWorkspace({
     setPriorityFilter(config.priorityFilter);
     setSort(config.sort);
     setSortDir(config.sortDir);
+    const nextFilters = { ...(config.customFieldFilters ?? {}) };
+    setCustomFieldFilters(nextFilters);
+    const url = new URL(window.location.href);
+    for (const key of [...url.searchParams.keys()]) {
+      if (key.startsWith("cf.") || key.startsWith("cf_")) {
+        url.searchParams.delete(key);
+      }
+    }
+    for (const [key, value] of Object.entries(nextFilters)) {
+      if (value && value !== "all") url.searchParams.set(`cf.${key}`, value);
+    }
+    url.searchParams.delete("page");
+    window.history.pushState(null, "", url.pathname + url.search + url.hash);
     setActiveViewId(view.id);
   }
 
@@ -587,6 +633,7 @@ export function CasesWorkspace({
       return;
     }
     if (historyCase && editorDirty && historyCase.id !== row.id) {
+      setPendingClone(null);
       setPendingCase(row);
       unsavedModal.open();
       return;
@@ -596,6 +643,7 @@ export function CasesWorkspace({
 
   function requestClosePeek() {
     if (historyCase && editorDirty) {
+      setPendingClone(null);
       setPendingCase(null);
       unsavedModal.open();
       return;
@@ -844,10 +892,17 @@ export function CasesWorkspace({
       return;
     }
     if (historyCase?.id === row.id && editorDirty) {
-      const proceed = window.confirm(
-        "This case has unsaved changes. Duplicate the saved version anyway?",
-      );
-      if (!proceed) return;
+      setPendingClone(row);
+      setPendingCase(null);
+      unsavedModal.open();
+      return;
+    }
+    await performDuplicate(row);
+  }
+
+  async function performDuplicate(row: CaseRow) {
+    if (!can("cases.create") || mutationLocks.current.has(`clone:${row.id}`)) {
+      return;
     }
     mutationLocks.current.add(`clone:${row.id}`);
     setError(null);
@@ -867,6 +922,7 @@ export function CasesWorkspace({
         return;
       }
       const cloned = data.case as CaseRow;
+      setEditorDirty(false);
       mergeCase(cloned);
       commitOpen(cloned);
       startTransition(() => router.refresh());
@@ -874,6 +930,80 @@ export function CasesWorkspace({
       setError("Failed to duplicate case");
     } finally {
       mutationLocks.current.delete(`clone:${row.id}`);
+    }
+  }
+
+  async function reparentFolder(folderId: string, parentId: string | null) {
+    if (!can("folders.manage") || mutationLocks.current.has(`folder:${folderId}`)) {
+      return;
+    }
+    const current = folders.find((folder) => folder.id === folderId);
+    if (!current || (current.parentId ?? null) === parentId) return;
+    mutationLocks.current.add(`folder:${folderId}`);
+    setError(null);
+    try {
+      const res = await fetch(`/api/folders/${folderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "Failed to move folder",
+        );
+        return;
+      }
+      startTransition(() => router.refresh());
+    } catch {
+      setError("Failed to move folder");
+    } finally {
+      mutationLocks.current.delete(`folder:${folderId}`);
+    }
+  }
+
+  async function bulkDeleteCases() {
+    if (!can("cases.delete") || !bulkDeleteIds?.length) return;
+    const ids = bulkDeleteIds;
+    setCaseDeletePending(true);
+    setError(null);
+    try {
+      const failures: string[] = [];
+      for (const id of ids) {
+        const res = await fetch(`/api/cases/${id}`, { method: "DELETE" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          failures.push(
+            typeof data.error === "string" ? data.error : "Delete failed",
+          );
+          continue;
+        }
+        setRemovedCaseIds((prev) => new Set(prev).add(id));
+        setCaseOverrides((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        if (historyCase?.id === id) commitOpen(null);
+      }
+      setSelectedIds(new Set());
+      setBulkDeleteIds(null);
+      bulkDeleteModal.close();
+      if (failures.length > 0) {
+        setError(
+          failures.length === ids.length
+            ? failures[0] ?? "Failed to delete cases"
+            : `Deleted ${ids.length - failures.length} of ${ids.length}; ${failures[0]}`,
+        );
+      }
+      startTransition(() => router.refresh());
+    } catch {
+      setError("Failed to delete cases");
+    } finally {
+      setCaseDeletePending(false);
     }
   }
 
@@ -971,22 +1101,110 @@ export function CasesWorkspace({
     }
   }
 
-  async function importCsv(file: File) {
+  async function previewCsv(file: File) {
     if (!can("cases.create") || mutationLocks.current.has("import")) return;
     mutationLocks.current.add("import");
-    try {
+    setCsvPending("preview");
     setError(null);
-    const body = new FormData();
-    body.append("file", file);
-    const res = await fetch("/api/import/csv", { method: "POST", body });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(data.error ?? "Import failed");
+    setImportMessage(null);
+    setImportViewFolderId(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("dryRun", "true");
+      const res = await fetch("/api/import/csv", { method: "POST", body });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        wouldCreate?: number;
+        wouldSkip?: string[];
+        errors?: string[];
+        sample?: Array<{
+          key: string;
+          title: string;
+          folder: string;
+          priority: string;
+          status: string;
+          customFields?: Record<string, string>;
+          structuredStepCount: number;
+        }>;
+        customFieldKeys?: string[];
+      };
+      if (!res.ok) {
+        setError(data.error ?? "CSV preview failed");
+        return;
+      }
+      setCsvPreview({
+        file,
+        wouldCreate: data.wouldCreate ?? 0,
+        wouldSkip: data.wouldSkip ?? [],
+        errors: data.errors ?? [],
+        sample: data.sample ?? [],
+        customFieldKeys: data.customFieldKeys ?? [],
+      });
+      csvImportModal.open();
+    } catch {
+      setError("Could not preview the CSV. Try again.");
+    } finally {
+      setCsvPending(null);
+      mutationLocks.current.delete("import");
+    }
+  }
+
+  async function confirmCsvImport() {
+    if (
+      !can("cases.create") ||
+      !csvPreview ||
+      mutationLocks.current.has("import")
+    ) {
       return;
     }
-    startTransition(() => router.refresh());
-    } catch { setError("Could not confirm the import. Check the case list before retrying."); }
-    finally { mutationLocks.current.delete("import"); }
+    mutationLocks.current.add("import");
+    setCsvPending("import");
+    setError(null);
+    try {
+      const body = new FormData();
+      body.append("file", csvPreview.file);
+      body.append("dryRun", "false");
+      const res = await fetch("/api/import/csv", { method: "POST", body });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        created?: number;
+        skipped?: string[];
+        primaryFolderId?: string | null;
+        folderIds?: string[];
+      };
+      if (!res.ok) {
+        setError(data.error ?? "Import failed");
+        return;
+      }
+      const folderId =
+        data.primaryFolderId ??
+        (data.folderIds?.length === 1 ? data.folderIds[0]! : null);
+      setImportViewFolderId(folderId);
+      setImportMessage(
+        `Imported ${data.created ?? 0} cases` +
+          (data.skipped?.length ? ` · skipped ${data.skipped.length}` : ""),
+      );
+      setCsvPreview(null);
+      csvImportModal.close();
+      startTransition(() => router.refresh());
+    } catch {
+      setError(
+        "Could not confirm the import. Check the case list before retrying.",
+      );
+    } finally {
+      setCsvPending(null);
+      mutationLocks.current.delete("import");
+    }
+  }
+
+  function viewImportedCases() {
+    if (importViewFolderId) {
+      setFolderFilter(importViewFolderId);
+      setPage(1);
+    }
+    setImportMessage(null);
+    setImportViewFolderId(null);
   }
 
   return (
@@ -1087,7 +1305,7 @@ export function CasesWorkspace({
               tabIndex={-1}
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) void importCsv(file);
+                if (file) void previewCsv(file);
                 e.target.value = "";
               }}
             />
@@ -1100,6 +1318,157 @@ export function CasesWorkspace({
           {error}
         </p>
       ) : null}
+
+      {importMessage ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 text-sm text-[color:var(--topo-ink)]">
+          <span>{importMessage}</span>
+          <div className="flex items-center gap-2">
+            {importViewFolderId ? (
+              <Button size="sm" variant="primary" onPress={viewImportedCases}>
+                View imported cases
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={() => {
+                setImportMessage(null);
+                setImportViewFolderId(null);
+              }}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <Modal.Backdrop
+        isOpen={csvImportModal.isOpen}
+        onOpenChange={(open) => {
+          if (csvPending) return;
+          if (open) csvImportModal.open();
+          else {
+            csvImportModal.close();
+            setCsvPreview(null);
+          }
+        }}
+        isDismissable={!csvPending}
+      >
+        <Modal.Container placement="center" size="lg">
+          <Modal.Dialog className="outline-none">
+            <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+              <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                CSV import preview
+              </Modal.Heading>
+              <p className="text-sm text-[color:var(--topo-mute)]">
+                Dry run — nothing is written until you confirm.
+              </p>
+            </Modal.Header>
+            <Modal.Body className="space-y-3 px-4 py-4">
+              {csvPreview ? (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusChip tone="success">
+                      {csvPreview.wouldCreate} would create
+                    </StatusChip>
+                    {csvPreview.wouldSkip.length ? (
+                      <StatusChip tone="warning">
+                        {csvPreview.wouldSkip.length} would skip
+                      </StatusChip>
+                    ) : null}
+                    {csvPreview.customFieldKeys.length ? (
+                      <StatusChip mono>
+                        cf: {csvPreview.customFieldKeys.join(", ")}
+                      </StatusChip>
+                    ) : null}
+                  </div>
+                  {csvPreview.errors.length > 0 ? (
+                    <ul className="space-y-1 text-sm text-amber-700 dark:text-amber-300">
+                      {csvPreview.errors.slice(0, 6).map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {csvPreview.sample.length > 0 ? (
+                    <div className="overflow-x-auto rounded-md border border-[color:var(--topo-line)]">
+                      <table className="min-w-full text-left text-sm">
+                        <thead className="bg-[color:var(--topo-panel)] text-[color:var(--topo-mute)]">
+                          <tr>
+                            <th className="px-3 py-2 font-medium">Key</th>
+                            <th className="px-3 py-2 font-medium">Title</th>
+                            <th className="px-3 py-2 font-medium">Folder</th>
+                            <th className="px-3 py-2 font-medium">Steps</th>
+                            <th className="px-3 py-2 font-medium">Custom</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {csvPreview.sample.map((row) => (
+                            <tr
+                              key={row.key}
+                              className="border-t border-[color:var(--topo-line)]"
+                            >
+                              <td className="px-3 py-2 font-mono text-xs">
+                                {row.key}
+                              </td>
+                              <td className="px-3 py-2">{row.title}</td>
+                              <td className="px-3 py-2">
+                                {row.folder || "—"}
+                              </td>
+                              <td className="px-3 py-2">
+                                {row.structuredStepCount || "—"}
+                              </td>
+                              <td className="px-3 py-2 text-xs text-[color:var(--topo-mute)]">
+                                {row.customFields
+                                  ? Object.entries(row.customFields)
+                                      .map(([k, v]) => `${k}=${v}`)
+                                      .join(", ")
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <p className="text-sm text-[color:var(--topo-mute)]">
+                  {csvPending === "preview"
+                    ? "Reading CSV…"
+                    : "No preview loaded."}
+                </p>
+              )}
+            </Modal.Body>
+            <Modal.Footer className="flex justify-end gap-2 border-t border-[color:var(--topo-line)] px-4 py-3">
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={csvPending !== null}
+                onPress={() => {
+                  csvImportModal.close();
+                  setCsvPreview(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                isDisabled={
+                  !csvPreview ||
+                  csvPreview.wouldCreate === 0 ||
+                  csvPending !== null
+                }
+                onPress={() => void confirmCsvImport()}
+              >
+                {csvPending === "import"
+                  ? "Importing…"
+                  : `Import ${csvPreview?.wouldCreate ?? 0} cases`}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
       <Modal.Backdrop isOpen={folderModal.isOpen} onOpenChange={folderModal.setOpen} isDismissable={!folderPending}>
           <Modal.Container placement="center" size="sm">
@@ -1418,6 +1787,7 @@ export function CasesWorkspace({
             priorityFilter,
             sort,
             sortDir,
+            customFieldFilters,
           })}
           onApply={applySavedView}
           onSaved={(view) => setActiveViewId(view.id)}
@@ -1434,6 +1804,10 @@ export function CasesWorkspace({
             flatFolders={flatFolders}
             onBulkTags={setBulkTags}
             onBulkUpdate={(patch) => void bulkUpdate(patch)}
+            onBulkDelete={() => {
+              setBulkDeleteIds(Array.from(selectedIds));
+              bulkDeleteModal.open();
+            }}
             onClear={() => setSelectedIds(new Set())}
           />
         ) : null}
@@ -1489,6 +1863,9 @@ export function CasesWorkspace({
             onDelete={(folderId) => openDeleteFolder(folderId)}
             onDropCases={(folderId, caseIds) => {
               void dropCasesOnFolder(folderId, caseIds);
+            }}
+            onReparentFolder={(folderId, parentId) => {
+              void reparentFolder(folderId, parentId);
             }}
           />
         </CaseBrowserPanel>
@@ -1564,10 +1941,14 @@ export function CasesWorkspace({
             <Modal.Dialog className="outline-none">
               <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
                 <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
-                  Discard unsaved changes?
+                  {pendingClone
+                    ? "Duplicate with unsaved changes?"
+                    : "Discard unsaved changes?"}
                 </Modal.Heading>
                 <p className="text-sm text-[color:var(--topo-muted)]">
-                  This case has edits that have not been saved.
+                  {pendingClone
+                    ? "This case has edits that have not been saved. Duplicate will use the last saved version."
+                    : "This case has edits that have not been saved."}
                 </p>
               </Modal.Header>
               <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
@@ -1578,13 +1959,19 @@ export function CasesWorkspace({
                   Keep editing
                 </Button>
                 <Button
-                  variant="danger"
+                  variant={pendingClone ? "secondary" : "danger"}
                   onPress={() => {
+                    const cloneTarget = pendingClone;
                     unsavedModal.close();
+                    setPendingClone(null);
+                    if (cloneTarget) {
+                      void performDuplicate(cloneTarget);
+                      return;
+                    }
                     commitOpen(pendingCase);
                   }}
                 >
-                  Discard
+                  {pendingClone ? "Duplicate saved version" : "Discard"}
                 </Button>
               </Modal.Footer>
             </Modal.Dialog>
@@ -1593,6 +1980,48 @@ export function CasesWorkspace({
           </ResponsiveInspector>
         ) : null}
       </div>
+
+      <Modal.Backdrop
+        isOpen={bulkDeleteModal.isOpen}
+        onOpenChange={bulkDeleteModal.setOpen}
+        isDismissable={!caseDeletePending}
+      >
+        <Modal.Container placement="center" size="sm">
+          <Modal.Dialog className="outline-none">
+            <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+              <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                Delete selected cases?
+              </Modal.Heading>
+              <p className="text-sm text-[color:var(--topo-muted)]">
+                {bulkDeleteIds
+                  ? `Delete ${bulkDeleteIds.length} selected case${
+                      bulkDeleteIds.length === 1 ? "" : "s"
+                    }? This cannot be undone.`
+                  : "No cases selected."}
+              </p>
+            </Modal.Header>
+            <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
+              <Button
+                variant="tertiary"
+                isDisabled={caseDeletePending}
+                onPress={() => {
+                  setBulkDeleteIds(null);
+                  bulkDeleteModal.close();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                isDisabled={caseDeletePending || !bulkDeleteIds?.length}
+                onPress={() => void bulkDeleteCases()}
+              >
+                {caseDeletePending ? "Deleting…" : "Delete"}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

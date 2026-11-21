@@ -50,6 +50,8 @@ export type HubPulseData = {
   };
   triageOpen?: number;
   flakeSuspects?: number;
+  /** Open linked tracker issues — used for guided first-run step 4. */
+  openLinkedIssues?: number;
   retestQueue?: Array<{
     id: string;
     key: string;

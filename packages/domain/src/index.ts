@@ -9,13 +9,13 @@ export {
   type JUnitSuite,
   type JUnitReport,
   type NormalizedResult,
-} from "./junit";
+} from "./junit.js";
 
 export {
   computeQualityPulse,
   type PulseInput,
   type QualityPulse,
-} from "./pulse";
+} from "./pulse.js";
 
 export {
   computeMilestoneReadiness,
@@ -27,7 +27,7 @@ export {
   type MilestoneThresholds,
   type ReadinessInputs,
   type ReadinessResult,
-} from "./readiness";
+} from "./readiness.js";
 
 export {
   buildTriageQueue,
@@ -36,14 +36,14 @@ export {
   type TriageFailure,
   type TriageQueueItem,
   type TriageSignatureCluster,
-} from "./triage";
+} from "./triage.js";
 
 export {
   detectFlakeSignal,
   flakeBadgeLabel,
   type FlakeHistoryPoint,
   type FlakeSignal,
-} from "./flake";
+} from "./flake.js";
 
 export {
   computeReliability,
@@ -54,7 +54,7 @@ export {
   type ReliabilityReport,
   type ReliabilitySlice,
   type ReliabilityStatus,
-} from "./reliability";
+} from "./reliability.js";
 
 export {
   normalizeErrorMessage,
@@ -66,7 +66,7 @@ export {
   type FailureSignatureInput,
   type FailureSignatureCluster,
   type SignatureClusterMember,
-} from "./failure-signature";
+} from "./failure-signature.js";
 
 export {
   computeCoverage,
@@ -78,7 +78,7 @@ export {
   type CoverageReport,
   type CoverageRequirement,
   type CoverageRisk,
-} from "./coverage";
+} from "./coverage.js";
 
 export {
   computeFreshness,
@@ -87,7 +87,7 @@ export {
   type FreshnessState,
   type FreshnessInput,
   type FreshnessResult,
-} from "./freshness";
+} from "./freshness.js";
 
 export {
   computeImpact,
@@ -101,7 +101,7 @@ export {
   type ImpactInput,
   type ImpactGapHint,
   type ImpactReport,
-} from "./impact";
+} from "./impact.js";
 
 export {
   emptyRepresentation,
@@ -120,7 +120,7 @@ export {
   type StructuredRepresentation,
   type RepresentationStep,
   type TraditionalProjection,
-} from "./representation";
+} from "./representation.js";
 
 export {
   EXECUTION_PROTOCOL_VERSION,
@@ -140,7 +140,7 @@ export {
   type ExecutionReport,
   type ExecutionProtocolParseError,
   type ParseExecutionReportResult,
-} from "./execution-protocol";
+} from "./execution-protocol.js";
 
 export {
   queryEntities,
@@ -161,20 +161,20 @@ export {
   type QualityQuery,
   type QueryValidationIssue,
   type QueryValidationResult,
-} from "./query-ast";
+} from "./query-ast.js";
 
 export {
   parseQualityQuery,
   parseQualityQueryOrThrow,
   type QueryParseResult,
-} from "./query-parse";
+} from "./query-parse.js";
 export {
   computeReleaseQuality,
   type ReleaseExecutionSummary,
   type ReleaseQualityGap,
   type ReleaseQualityInput,
   type ReleaseQualitySummary,
-} from "./release-quality";
+} from "./release-quality.js";
 
 export {
   compareReleases,
@@ -182,7 +182,7 @@ export {
   type CoverageDimensionDelta,
   type ReleaseComparison,
   type ReleaseSnapshot,
-} from "./compare-releases";
+} from "./compare-releases.js";
 
 export {
   proposalEntityTypes,
@@ -203,4 +203,4 @@ export {
   type Proposal,
   type ProposalValidationIssue,
   type ProposalValidationResult,
-} from "./proposal";
+} from "./proposal.js";

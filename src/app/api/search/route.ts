@@ -5,12 +5,15 @@ import { db } from "@/db";
 import {
   cases,
   folders,
+  milestones,
   requirements,
   resultComments,
   risks,
   runResults,
   runs,
   testIntents,
+  testPlans,
+  triageItems,
 } from "@/db/schema";
 import { requireProjectAccess } from "@/lib/project";
 
@@ -45,6 +48,21 @@ type CommentHit = {
   matchField: "comment";
 };
 
+type NamedHit = {
+  id: string;
+  name: string;
+  status?: string;
+  snippet: string | null;
+};
+
+type TriageHit = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  snippet: string | null;
+};
+
 type KeyedHit = {
   id: string;
   key: string;
@@ -59,6 +77,9 @@ function emptyResponse(qualityGraphEnabled: boolean) {
     runs: [] as RunHit[],
     folders: [] as FolderHit[],
     comments: [] as CommentHit[],
+    plans: [] as NamedHit[],
+    milestones: [] as NamedHit[],
+    triage: [] as TriageHit[],
     ...(qualityGraphEnabled
       ? {
           requirements: [] as KeyedHit[],
@@ -328,6 +349,149 @@ export async function GET(request: Request) {
       .orderBy(desc(resultComments.createdAt))
       .limit(6);
 
+    const planPromise = db
+      .select({
+        id: testPlans.id,
+        name: testPlans.name,
+        status: testPlans.status,
+        snippet: sql<string | null>`
+          coalesce(
+            case
+              when ${hasTsq}
+                and to_tsvector(
+                  'english',
+                  coalesce(${testPlans.name}, '') || ' ' || coalesce(${testPlans.description}, '')
+                ) @@ ${tsq}
+              then nullif(
+                trim(
+                  ts_headline(
+                    'english',
+                    coalesce(${testPlans.description}, '') || ' ' || coalesce(${testPlans.name}, ''),
+                    ${tsq},
+                    ${HEADLINE_OPTS}
+                  )
+                ),
+                ''
+              )
+              else null
+            end,
+            ${testPlans.name}
+          )
+        `,
+      })
+      .from(testPlans)
+      .where(
+        and(
+          eq(testPlans.workspaceId, workspaceId),
+          or(
+            ilike(testPlans.name, pattern),
+            ilike(testPlans.description, pattern),
+            sql`${hasTsq} and to_tsvector(
+              'english',
+              coalesce(${testPlans.name}, '') || ' ' || coalesce(${testPlans.description}, '')
+            ) @@ ${tsq}`,
+          ),
+        ),
+      )
+      .orderBy(desc(testPlans.updatedAt))
+      .limit(6);
+
+    const milestonePromise = db
+      .select({
+        id: milestones.id,
+        name: milestones.name,
+        status: milestones.status,
+        snippet: sql<string | null>`
+          coalesce(
+            case
+              when ${hasTsq}
+                and to_tsvector(
+                  'english',
+                  coalesce(${milestones.name}, '') || ' ' || coalesce(${milestones.description}, '')
+                ) @@ ${tsq}
+              then nullif(
+                trim(
+                  ts_headline(
+                    'english',
+                    coalesce(${milestones.description}, '') || ' ' || coalesce(${milestones.name}, ''),
+                    ${tsq},
+                    ${HEADLINE_OPTS}
+                  )
+                ),
+                ''
+              )
+              else null
+            end,
+            ${milestones.name}
+          )
+        `,
+      })
+      .from(milestones)
+      .where(
+        and(
+          eq(milestones.workspaceId, workspaceId),
+          or(
+            ilike(milestones.name, pattern),
+            ilike(milestones.description, pattern),
+            sql`${hasTsq} and to_tsvector(
+              'english',
+              coalesce(${milestones.name}, '') || ' ' || coalesce(${milestones.description}, '')
+            ) @@ ${tsq}`,
+          ),
+        ),
+      )
+      .orderBy(desc(milestones.updatedAt))
+      .limit(6);
+
+    const triagePromise = db
+      .select({
+        id: triageItems.id,
+        title: triageItems.title,
+        status: triageItems.status,
+        priority: triageItems.priority,
+        snippet: sql<string | null>`
+          coalesce(
+            case
+              when ${hasTsq}
+                and to_tsvector(
+                  'english',
+                  coalesce(${triageItems.title}, '') || ' ' || coalesce(${triageItems.notes}, '')
+                ) @@ ${tsq}
+              then nullif(
+                trim(
+                  ts_headline(
+                    'english',
+                    coalesce(${triageItems.notes}, '') || ' ' || coalesce(${triageItems.title}, ''),
+                    ${tsq},
+                    ${HEADLINE_OPTS}
+                  )
+                ),
+                ''
+              )
+              else null
+            end,
+            ${triageItems.title}
+          )
+        `,
+      })
+      .from(triageItems)
+      .where(
+        and(
+          eq(triageItems.workspaceId, workspaceId),
+          or(
+            ilike(triageItems.title, pattern),
+            ilike(triageItems.notes, pattern),
+            ilike(triageItems.fingerprint, pattern),
+            sql`${hasTsq} and to_tsvector(
+              'english',
+              coalesce(${triageItems.title}, '') || ' ' || coalesce(${triageItems.notes}, '')
+            ) @@ ${tsq}`,
+          ),
+        ),
+      )
+      .orderBy(desc(triageItems.lastSeenAt))
+      .limit(6);
+
     const keyedSelect = (table: typeof requirements | typeof risks) =>
       db
         .select({
@@ -507,36 +671,49 @@ export async function GET(request: Request) {
           }>,
         );
 
-    const [caseRows, runRows, folderRows, commentRows, requirementRows, intentRows, riskRows] =
-      await Promise.all([
-        casePromise,
-        runPromise,
-        folderPromise,
-        commentPromise,
-        qualityGraphEnabled
-          ? keyedSelect(requirements)
-          : Promise.resolve(
-              [] as Array<{
-                id: string;
-                key: string;
-                title: string;
-                matchField: string;
-                snippet: string | null;
-              }>,
-            ),
-        intentPromise,
-        qualityGraphEnabled
-          ? keyedSelect(risks)
-          : Promise.resolve(
-              [] as Array<{
-                id: string;
-                key: string;
-                title: string;
-                matchField: string;
-                snippet: string | null;
-              }>,
-            ),
-      ]);
+    const [
+      caseRows,
+      runRows,
+      folderRows,
+      commentRows,
+      planRows,
+      milestoneRows,
+      triageRows,
+      requirementRows,
+      intentRows,
+      riskRows,
+    ] = await Promise.all([
+      casePromise,
+      runPromise,
+      folderPromise,
+      commentPromise,
+      planPromise,
+      milestonePromise,
+      triagePromise,
+      qualityGraphEnabled
+        ? keyedSelect(requirements)
+        : Promise.resolve(
+            [] as Array<{
+              id: string;
+              key: string;
+              title: string;
+              matchField: string;
+              snippet: string | null;
+            }>,
+          ),
+      intentPromise,
+      qualityGraphEnabled
+        ? keyedSelect(risks)
+        : Promise.resolve(
+            [] as Array<{
+              id: string;
+              key: string;
+              title: string;
+              matchField: string;
+              snippet: string | null;
+            }>,
+          ),
+    ]);
 
     const payload = {
       cases: caseRows.map((row) => ({
@@ -563,6 +740,25 @@ export async function GET(request: Request) {
         runId: row.runId,
         snippet: stripHeadline(row.snippet) ?? "",
         matchField: "comment" as const,
+      })),
+      plans: planRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        snippet: stripHeadline(row.snippet),
+      })),
+      milestones: milestoneRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        snippet: stripHeadline(row.snippet),
+      })),
+      triage: triageRows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        status: row.status,
+        priority: row.priority,
+        snippet: stripHeadline(row.snippet),
       })),
       ...(qualityGraphEnabled
         ? {
