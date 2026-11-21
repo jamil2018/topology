@@ -93,19 +93,27 @@ describe("HubPulse default QA home", () => {
 });
 
 describe("HubPulse graph containment", () => {
-  it("links gaps to cases and hides the coverage card when the graph is off", () => {
+  it("hides graph coverage and gaps when the graph is off", () => {
     renderHub(false, "overview");
 
-    const gap = screen.getByRole("link", { name: /HAR-12/i });
-    expect(gap).toHaveAttribute("href", "/cases?q=HAR-12");
     expect(screen.queryByText("Graph coverage")).not.toBeInTheDocument();
+    expect(screen.queryByText("Potential gaps")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /HAR-12/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open Impact" })).toHaveAttribute(
+      "href",
+      "/impact",
+    );
+    expect(screen.getByRole("link", { name: "Open Proposals" })).toHaveAttribute(
+      "href",
+      "/proposals",
+    );
     expect(screen.queryByRole("link", { name: "Intents" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Milestones" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "CI setup" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Test cases" })).toBeInTheDocument();
   });
 
-  it("shows coverage bars when the graph is on and points automation at cases", () => {
+  it("shows coverage bars and gaps when the graph is on", () => {
     renderHub(true, "overview");
 
     expect(screen.getByText("Graph coverage")).toBeInTheDocument();
@@ -117,6 +125,10 @@ describe("HubPulse graph containment", () => {
       "href",
       "/cases",
     );
+    expect(screen.getByRole("link", { name: /HAR-12/i })).toHaveAttribute(
+      "href",
+      "/cases?q=HAR-12",
+    );
   });
 
   it("opens Overview from QA home without making persona the default", async () => {
@@ -126,9 +138,7 @@ describe("HubPulse graph containment", () => {
     await user.click(screen.getByRole("button", { name: "Overview" }));
     expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "EM" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /HAR-12/i })).toHaveAttribute(
-      "href",
-      "/cases?q=HAR-12",
-    );
+    expect(screen.getByRole("link", { name: "Open Impact" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /HAR-12/i })).not.toBeInTheDocument();
   });
 });

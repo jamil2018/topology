@@ -6,7 +6,7 @@ test("open a seeded report and download its CSV export", async ({
   browser,
 }) => {
   await page.goto("/reports");
-  await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reports", exact: true })).toBeVisible();
   await expect(page.locator("main section").first().getByText("Pass rate", { exact: true })).toBeVisible();
 
   const reportLink = page.getByRole("link", { name: /Harbor smoke/ });

@@ -54,9 +54,13 @@ test("review template, create fresh run, retest failure and follow lineage", asy
   await page.getByRole("button", { name: "Save as template", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Template saved" })).toBeVisible();
   await page.goto("/runs");
-  const row = page.getByRole("listitem").filter({ has: page.getByText(name, { exact: true }) });
-  await row.getByRole("link", { name: "Review and launch" }).click();
-  await expect(page.getByLabel("Run name", { exact: true }).filter({visible:true})).toHaveValue(name);
+  const templates = page.getByRole("region", { name: "Run templates" });
+  const row = templates.getByRole("listitem").filter({ has: page.getByText(name, { exact: true }) });
+  await Promise.all([
+    page.waitForURL(/\/runs\/new\?template=/),
+    row.getByRole("link", { name: "Review and launch" }).click(),
+  ]);
+  await expect(page.getByLabel("Run name", { exact: true }).filter({ visible: true })).toHaveValue(name);
   const creation = page.waitForResponse((response) => response.request().method() === "POST" && /\/api\/runs(?:\/retest)?$/.test(new URL(response.url()).pathname));
   await page.getByRole("button", { name: /^Create run/ }).click();
   expect((await creation).status()).toBe(201);

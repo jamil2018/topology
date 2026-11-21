@@ -78,8 +78,11 @@ test("release gate: login → hub → case → run → fail → mock issue → t
     timeout: 15_000,
   });
 
-  // Create issue uses TOPOLOGY_ISSUE_PROVIDER=mock (no remote OAuth/issue APIs).
+  // Create issue opens a preview drawer, then files via TOPOLOGY_ISSUE_PROVIDER=mock.
   await page.getByRole("button", { name: "Create issue" }).first().click();
+  const preview = page.getByRole("dialog", { name: "Preview defect" });
+  await expect(preview).toBeVisible({ timeout: 10_000 });
+  await preview.getByRole("button", { name: "Create issue" }).click();
   await expect(page.getByText(/MOCK-\d+/).first()).toBeVisible({
     timeout: 20_000,
   });
