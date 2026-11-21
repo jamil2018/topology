@@ -29,8 +29,16 @@ async function assertSkipLinkIfPresent(page: Page, route: string) {
   const skip = page.getByRole("link", { name: /skip/i });
   await expect(skip, `Missing skip link on ${route}`).toHaveCount(1);
   const link = skip.first();
-  // Cases (and other workspaces) may autofocus search; clear that so Tab
-  // starts at the document beginning and lands on the skip link.
+  // Cases autofocuses search on an rAF after mount; wait for that, then reset
+  // so the next Tab starts at the document beginning on the skip link.
+  const search = page.getByLabel("Search cases");
+  if ((await search.count()) > 0) {
+    await expect
+      .poll(async () => search.evaluate((el) => el === document.activeElement), {
+        timeout: 5_000,
+      })
+      .toBe(true);
+  }
   await page.evaluate(() => {
     const active = document.activeElement;
     if (active instanceof HTMLElement) active.blur();

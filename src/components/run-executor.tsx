@@ -105,9 +105,6 @@ export function RunExecutor({
   const uploadCounts = useRef<Record<string, number>>({});
   const readTimerMs = useRef<() => number>(() => 0);
   const [issueBusy, setIssueBusy] = useState(false);
-  const filterRef = useRef({ statusFilter, mineOnly, query, currentUserId });
-  // Keep the ref synchronous so status auto-advance never reads a stale filter.
-  filterRef.current = { statusFilter, mineOnly, query, currentUserId };
   const completeModal = useOverlayState();
   const abortModal = useOverlayState();
   const reopenModal = useOverlayState();
@@ -140,20 +137,18 @@ export function RunExecutor({
   const advanceAfterStatus = useCallback(
     (results: ResultRow[], fromId: string, nextStatus: string) => {
       if (nextStatus === "untested") return;
-      const { statusFilter: status, mineOnly: mine, query: q, currentUserId: uid } =
-        filterRef.current;
       const nextId = nextUntestedId(
         filterRunResults(results, {
-          status,
-          mine,
-          query: q,
-          currentUserId: uid,
+          status: statusFilter,
+          mine: mineOnly,
+          query,
+          currentUserId,
         }),
         fromId,
       );
       if (nextId) setFocusedId(nextId);
     },
-    [],
+    [statusFilter, mineOnly, query, currentUserId],
   );
 
   const onLive = useCallback(
@@ -294,19 +289,18 @@ export function RunExecutor({
       action: Extract<RunAction, { type: "result" }>,
       body: Record<string, unknown>,
     ) => {
-      let previewResults: ResultRow[] | null = null;
-      setRunState((current) => {
-        const next = applyRunAction(current, action);
-        previewResults = next.results;
-        return next;
-      });
-      if (previewResults) {
-        advanceAfterStatus(
-          previewResults,
-          result.id,
-          action.status ?? result.status,
-        );
-      }
+      // Apply against the latest known results, then advance using that snapshot.
+      // Do not rely on setState updater side effects for the preview list.
+      const previewResults = applyRunAction(
+        { ...runState, results: optimisticRun.results },
+        action,
+      ).results;
+      setRunState((current) => applyRunAction(current, action));
+      advanceAfterStatus(
+        previewResults,
+        result.id,
+        action.status ?? result.status,
+      );
       setStatusRetry(null);
       const saved = await patch(body, undefined, true, {
         trackNotesFailure: false,
@@ -324,7 +318,7 @@ export function RunExecutor({
         message: "Could not save result status. Retry without leaving the run.",
       });
     },
-    [advanceAfterStatus],
+    [advanceAfterStatus, optimisticRun.results, runState],
   );
 
   const recordStatus = useCallback(
