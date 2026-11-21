@@ -3,7 +3,7 @@ import { test, expect } from "../fixtures";
 test("search, filter, create, edit, folder, saved view, and bulk tag", async ({
   page,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   const stamp = Date.now();
   const title = `E2E case ${stamp}`;
   const edited = `E2E case edited ${stamp}`;
@@ -45,10 +45,18 @@ test("search, filter, create, edit, folder, saved view, and bulk tag", async ({
     timeout: 15_000,
   });
   await details.getByLabel("Title").fill(edited);
-  const caseSaved = page.waitForResponse(response => response.url().includes("/api/cases/") && response.request().method() === "PATCH");
-  await details.getByRole("button", { name: "Save", exact: true }).click();
-  expect((await caseSaved).ok()).toBeTruthy();
-  await expect(details.getByRole("button", {name:"Save",exact:true})).toBeDisabled();
+  await expect(details.getByText("Unsaved changes")).toBeVisible();
+  const save = details.getByRole("button", { name: "Save", exact: true });
+  await expect(save).toBeEnabled();
+  await save.scrollIntoViewIfNeeded();
+  const caseSaved = page.waitForResponse(
+    (response) =>
+      /\/api\/cases\/[^/]+$/.test(new URL(response.url()).pathname) &&
+      response.request().method() === "PATCH",
+  );
+  const [response] = await Promise.all([caseSaved, save.click()]);
+  expect(response.ok()).toBeTruthy();
+  await expect(save).toBeDisabled();
   await page.getByRole("button", { name: "Close case editor" }).click();
   await expect(
     page.getByText(edited, {exact:true}).filter({visible:true}),

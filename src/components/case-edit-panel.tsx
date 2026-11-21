@@ -1185,6 +1185,10 @@ export function CaseEditPanel({
                   Boolean(saveDisabledReason)
                 }
                 onPress={() => void save()}
+                // DOM click still fires when React Aria cancels press after a
+                // focus-driven scroll inside the overflow inspector (Playwright
+                // and some pointer paths leave the button focused with no PATCH).
+                onClick={() => void save()}
               >
                 <FloppyDiskIcon size={14} weight="bold" />
                 {saving ? "Saving…" : "Save"}
