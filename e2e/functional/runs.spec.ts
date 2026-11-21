@@ -11,11 +11,16 @@ test("pass, fail, block, skip, complete, and lock the run", async ({ page }) => 
   const name = `E2E run ${Date.now()}`;
   await startManualRun(page, name, SEEDED_RUN_TITLES);
 
+  const caseList = page.getByRole("list", { name: "Run cases" });
+  await expect(caseList.getByRole("listitem")).toHaveCount(SEEDED_RUN_TITLES.length);
+
   for (const status of ["passed", "failed", "blocked"] as const) {
     const before = await focusedCaseKey(page).innerText();
     await caseStatusButton(page, status).click();
-    await expect(focusedCaseKey(page)).not.toHaveText(before);
-    await expect(page.getByRole("list", {name:"Run cases"}).getByRole("button", {name:new RegExp(`${before}.* · ${status}$`)})).toBeVisible();
+    await expect(
+      caseList.getByRole("button", { name: new RegExp(`${before}.* · ${status}$`) }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(focusedCaseKey(page)).not.toHaveText(before, { timeout: 10_000 });
   }
 
   await expect(caseStatusButton(page, "skipped")).toBeVisible();

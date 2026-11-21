@@ -17,6 +17,9 @@ test("failed result can create a mock issue", async ({ page }) => {
     timeout: 15_000,
   });
   await page.getByRole("button", { name: "Create issue" }).click();
+  const preview = page.getByRole("dialog", { name: "Preview defect" });
+  await expect(preview).toBeVisible({ timeout: 10_000 });
+  await preview.getByRole("button", { name: "Create issue" }).click();
   await expect(page.getByText(/MOCK-\d+/).first()).toBeVisible({
     timeout: 20_000,
   });

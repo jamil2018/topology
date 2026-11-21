@@ -106,9 +106,8 @@ export function RunExecutor({
   const readTimerMs = useRef<() => number>(() => 0);
   const [issueBusy, setIssueBusy] = useState(false);
   const filterRef = useRef({ statusFilter, mineOnly, query, currentUserId });
-  useEffect(() => {
-    filterRef.current = { statusFilter, mineOnly, query, currentUserId };
-  }, [statusFilter, mineOnly, query, currentUserId]);
+  // Keep the ref synchronous so status auto-advance never reads a stale filter.
+  filterRef.current = { statusFilter, mineOnly, query, currentUserId };
   const completeModal = useOverlayState();
   const abortModal = useOverlayState();
   const reopenModal = useOverlayState();

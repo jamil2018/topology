@@ -49,6 +49,7 @@ export async function startManualRun(
     await page
       .getByRole("checkbox", { name: `Select ${title}`, exact: true })
       .check();
+    await page.getByLabel("Search", { exact: true }).fill("");
   }
   await expect(
     page.getByText(`${titles.length} selected`, { exact: true }),
