@@ -184,6 +184,8 @@ try {
   const s3 = new S3Client({ endpoint: env.ATTACHMENTS_S3_ENDPOINT, region: "us-east-1", forcePathStyle: true,
     credentials: { accessKeyId: "validation", secretAccessKey: "validation-local-only" } });
   try { await s3.send(new CreateBucketCommand({ Bucket: env.ATTACHMENTS_S3_BUCKET })); } finally { s3.destroy(); }
+  // Hub + seed resolve @topology/domain from package exports → dist/.
+  await run("npm", ["run", "build", "--workspace=@topology/domain"]);
   await run("npx", ["tsx", "src/db/migrate.ts"]);
   const seedSql = postgres(env.DATABASE_URL!, { max: 1 });
   try {

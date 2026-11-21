@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "prepare": "npm run build --workspace=@topology/domain",
     "predev": "npm run build --workspace=@topology/domain && (test ! -f scripts/ensure-postgres.sh || bash scripts/ensure-postgres.sh)",
     "dev": "next dev --port 4317 --hostname 127.0.0.1",
     "prebuild": "npm run build --workspace=@topology/domain",

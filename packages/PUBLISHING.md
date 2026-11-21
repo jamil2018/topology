@@ -4,7 +4,7 @@ The hub app (`topology` at the repo root) stays **private**. Workspace packages 
 
 Published packages ship **compiled JavaScript + `.d.ts`** under `dist/` (no runtime `tsx`). Run `npm run packages:build` before publish so `main` / `types` / `exports` / `bin` resolve to `dist`.
 
-The hub app resolves `@topology/domain` from its built `dist/` via package `exports` (`npm run prebuild` / `predev` / `pretypecheck`). Other workspace packages keep TypeScript source via root `tsconfig` path aliases and `tsx` scripts (`npm run topology`, `npm run mcp` via `dev` / `tsx`). Consumers installing from npm get plain Node ESM. Vitest aliases may still point at domain sources for fast unit tests.
+The hub app resolves `@topology/domain` from its built `dist/` via package `exports`. `prepare` / `prebuild` / `predev` / `pretypecheck` emit that dist (validation also builds it before seed). Other workspace packages keep TypeScript source via root `tsconfig` path aliases and `tsx` scripts (`npm run topology`, `npm run mcp` via `dev` / `tsx`). Consumers installing from npm get plain Node ESM. Vitest aliases may still point at domain sources for fast unit tests.
 
 ## Order
 
