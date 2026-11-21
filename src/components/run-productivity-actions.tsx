@@ -5,6 +5,10 @@ import { Button } from "@heroui/react";
 import { useProjectActions } from "./project-actions";
 import type { RunDetail } from "./run-executor-model";
 
+function isAbortError(error: unknown) {
+  return typeof error === "object" && error !== null && "name" in error && (error as { name: string }).name === "AbortError";
+}
+
 type Lineage = { sourceId: string; sourceRunId: string; sourceName: string; sourceStatus: string; resultId: string; runId: string; name: string; status: string };
 export function RunProductivityActions({ run }: { run: RunDetail }) {
   const saveLock = useRef(false);
@@ -21,24 +25,27 @@ export function RunProductivityActions({ run }: { run: RunDetail }) {
   const [lineage, setLineage] = useState<Lineage[]>([]);
   useEffect(() => {
     const controller = new AbortController();
+    let cancelled = false;
     setLoading(true); setHistoryError(null);
     void (async () => {
       try {
         const response = await fetch(`/api/runs/${run.id}/retests`, { signal: controller.signal });
+        if (cancelled || controller.signal.aborted) return;
         if (!response.ok) throw new Error("Retest history unavailable");
         const data = await response.json();
-        if (controller.signal.aborted) return;
+        if (cancelled || controller.signal.aborted) return;
         setLineage(data.lineage ?? []);
       } catch (error) {
-        // Cleanup abort must not surface in the Next.js runtime overlay.
-        if (controller.signal.aborted) return;
-        if (typeof error === "object" && error !== null && "name" in error && (error as { name: string }).name === "AbortError") return;
+        if (cancelled || controller.signal.aborted || isAbortError(error)) return;
         setHistoryError("Retest history could not be loaded.");
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!cancelled && !controller.signal.aborted) setLoading(false);
       }
-    })();
-    return () => controller.abort("retest-history-cleanup");
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [run.id, retry]);
   async function save() {
     if (saveLock.current || unavailableCases.length || !can("runs.create")) return;

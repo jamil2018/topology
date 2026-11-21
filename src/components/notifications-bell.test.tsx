@@ -1,0 +1,126 @@
+import { StrictMode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { render } from "@/test/render";
+import { NotificationsBell } from "./notifications-bell";
+
+function jsonResponse(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function abortError() {
+  return Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
+}
+
+function abortAwareFetch(payload: unknown = { notifications: [], unreadCount: 0 }) {
+  return vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+    const signal = init?.signal;
+    if (signal?.aborted) return Promise.reject(abortError());
+    return new Promise<Response>((resolve, reject) => {
+      const onAbort = () => {
+        signal?.removeEventListener("abort", onAbort);
+        reject(abortError());
+      };
+      signal?.addEventListener("abort", onAbort);
+      setTimeout(() => {
+        if (signal?.aborted) return;
+        signal?.removeEventListener("abort", onAbort);
+        resolve(jsonResponse(payload));
+      }, 0);
+    });
+  });
+}
+
+function trackUnhandledRejections() {
+  const rejections: unknown[] = [];
+  const onUnhandled = (event: PromiseRejectionEvent) => {
+    rejections.push(event.reason);
+    event.preventDefault();
+  };
+  window.addEventListener("unhandledrejection", onUnhandled);
+  return {
+    rejections,
+    stop() {
+      window.removeEventListener("unhandledrejection", onUnhandled);
+    },
+  };
+}
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("NotificationsBell abort cleanup", () => {
+  it("swallows AbortError on unmount and does not set error state", async () => {
+    const fetchMock = abortAwareFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const tracker = trackUnhandledRejections();
+
+    const { unmount } = render(<NotificationsBell />);
+    expect(screen.getByRole("button", { name: /Notifications/ })).toBeInTheDocument();
+
+    await act(async () => {
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(tracker.rejections).toEqual([]);
+    tracker.stop();
+  });
+
+  it("does not surface AbortError under StrictMode remount", async () => {
+    const fetchMock = abortAwareFetch({
+      notifications: [
+        {
+          id: "n1",
+          title: "Hello",
+          body: "World",
+          readAt: null,
+          href: "/runs/1",
+        },
+      ],
+      unreadCount: 1,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const tracker = trackUnhandledRejections();
+
+    render(
+      <StrictMode>
+        <NotificationsBell />
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /1 unread/ })).toBeInTheDocument();
+    });
+
+    expect(tracker.rejections).toEqual([]);
+    tracker.stop();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("still shows a real load failure after opening the panel", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ error: "nope" }, 500)),
+    );
+
+    render(<NotificationsBell />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Notifications/ })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Notifications/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Could not load notifications. Try again.",
+      );
+    });
+  });
+});

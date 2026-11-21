@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Modal } from "@heroui/react";
 import { BellIcon } from "@phosphor-icons/react";
 import { useProjectActions } from "./project-actions";
+
+function isAbortError(error: unknown) {
+  return typeof error === "object" && error !== null && "name" in error && (error as { name: string }).name === "AbortError";
+}
+
 type Item = { id: string; title: string; body: string; readAt: string | null; href: string | null; openHref?: string | null };
 export function NotificationsBell() {
   const { projectId } = useProjectActions();
@@ -21,20 +26,28 @@ export function NotificationsBell() {
     setLoading(true);
     try {
       const response = await fetch("/api/notifications", { signal, headers: projectId ? { "x-topology-project-id": projectId } : {} });
+      if (signal?.aborted || version !== loadVersion.current) return;
       if (!response.ok) throw new Error("Could not load notifications");
       const data = await response.json();
-      if (!signal?.aborted && version === loadVersion.current) { setItems(data.notifications ?? []); setUnread(data.unreadCount ?? 0); setError(null); }
+      if (signal?.aborted || version !== loadVersion.current) return;
+      setItems(data.notifications ?? []); setUnread(data.unreadCount ?? 0); setError(null);
     } catch (error) {
-      if (signal?.aborted) return;
-      if (typeof error === "object" && error !== null && "name" in error && (error as { name: string }).name === "AbortError") return;
+      if (signal?.aborted || isAbortError(error)) return;
       if (version === loadVersion.current) setError("Could not load notifications. Try again.");
     }
     finally { if (!signal?.aborted && version === loadVersion.current) setLoading(false); }
   }, [projectId]);
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort("notifications-cleanup");
+    let cancelled = false;
+    void load(controller.signal).catch(() => {
+      // Swallow AbortError if it escapes load (race with cleanup).
+      if (cancelled || controller.signal.aborted) return;
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [load]);
   async function markRead(id: string) {
     if (markLock.current) return;
