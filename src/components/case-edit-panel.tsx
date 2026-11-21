@@ -1170,58 +1170,6 @@ export function CaseEditPanel({
                 </p>
               ) : null}
             </div>
-            {saveError ? (
-              <p className="text-sm text-red-600 dark:text-red-300">{saveError}</p>
-            ) : null}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="primary"
-                size="sm"
-                isDisabled={
-                  readOnly ||
-                  saving ||
-                  duplicating ||
-                  reviewBusy ||
-                  Boolean(saveDisabledReason)
-                }
-                onPress={() => void save()}
-                // DOM click still fires when React Aria cancels press after a
-                // focus-driven scroll inside the overflow inspector (Playwright
-                // and some pointer paths leave the button focused with no PATCH).
-                onClick={() => void save()}
-              >
-                <FloppyDiskIcon size={14} weight="bold" />
-                {saving ? "Saving…" : "Save"}
-              </Button>
-              {can("cases.create") ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  isDisabled={saving || duplicating || loading || reviewBusy}
-                  onPress={() => void duplicate()}
-                >
-                  <CopyIcon size={14} weight="bold" />
-                  {duplicating ? "Duplicating…" : "Duplicate"}
-                </Button>
-              ) : null}
-              <Button
-                variant="tertiary"
-                size="sm"
-                isDisabled={saving || duplicating || reviewBusy}
-                onPress={onClose}
-              >
-                Close
-              </Button>
-              {saveDisabledReason && !readOnly ? (
-                <p className="text-xs text-[color:var(--topo-muted)]">
-                  {saveDisabledReason}
-                </p>
-              ) : dirty && !readOnly ? (
-                <p className="text-xs text-[color:var(--topo-muted)]">
-                  Unsaved changes
-                </p>
-              ) : null}
-            </div>
             <CaseTcmPanel
               caseId={caseId}
               parameters={parameters}
@@ -1275,6 +1223,59 @@ export function CaseEditPanel({
           </>
         ) : null}
       </div>
+
+      {form && !loading && !loadError ? (
+        <div className="shrink-0 space-y-2 border-t border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2.5">
+          {saveError ? (
+            <p className="text-sm text-red-600 dark:text-red-300">{saveError}</p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              isDisabled={
+                readOnly ||
+                saving ||
+                duplicating ||
+                reviewBusy ||
+                Boolean(saveDisabledReason)
+              }
+              onPress={() => void save()}
+            >
+              <FloppyDiskIcon size={14} weight="bold" />
+              {saving ? "Saving…" : "Save"}
+            </Button>
+            {can("cases.create") ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                isDisabled={saving || duplicating || loading || reviewBusy}
+                onPress={() => void duplicate()}
+              >
+                <CopyIcon size={14} weight="bold" />
+                {duplicating ? "Duplicating…" : "Duplicate"}
+              </Button>
+            ) : null}
+            <Button
+              variant="tertiary"
+              size="sm"
+              isDisabled={saving || duplicating || reviewBusy}
+              onPress={onClose}
+            >
+              Close
+            </Button>
+            {saveDisabledReason && !readOnly ? (
+              <p className="text-xs text-[color:var(--topo-muted)]">
+                {saveDisabledReason}
+              </p>
+            ) : dirty && !readOnly ? (
+              <p className="text-xs text-[color:var(--topo-muted)]">
+                Unsaved changes
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <Modal.Backdrop
         isOpen={confirmDuplicateOpen}

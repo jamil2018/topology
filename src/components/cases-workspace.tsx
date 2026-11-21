@@ -648,7 +648,9 @@ export function CasesWorkspace({
       unsavedModal.open();
       return;
     }
+    const wasOpen = Boolean(historyCase);
     commitOpen(null);
+    if (wasOpen) startTransition(() => router.refresh());
   }
 
   const mutationLocks = useRef(new Set<string>());
@@ -1828,8 +1830,9 @@ export function CasesWorkspace({
             onCreated={(row) => {
               mergeCase(row);
               setShowCreate(false);
+              // Open the editor without an immediate RSC refresh — refreshing
+              // while the inspector mounts races pointer presses on Save.
               commitOpen(row);
-              startTransition(() => router.refresh());
             }}
           />
         ) : null}

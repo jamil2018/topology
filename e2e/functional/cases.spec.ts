@@ -48,7 +48,6 @@ test("search, filter, create, edit, folder, saved view, and bulk tag", async ({
   await expect(details.getByText("Unsaved changes")).toBeVisible();
   const save = details.getByRole("button", { name: "Save", exact: true });
   await expect(save).toBeEnabled();
-  await save.scrollIntoViewIfNeeded();
   const caseSaved = page.waitForResponse(
     (response) =>
       /\/api\/cases\/[^/]+$/.test(new URL(response.url()).pathname) &&
