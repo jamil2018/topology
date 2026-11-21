@@ -207,7 +207,7 @@ try {
     await run("npm", ["run", "test:ui", "--", "--reporter=default", "--reporter=json", `--outputFile=${path.join(output, "components.json")}`]);
   }
   if (["regression", "release", "integration"].includes(mode)) {
-    await run("npm", ["run", "build", "--", "--webpack"]);
+    await run("npm", ["run", "build"]);
     env.PLAYWRIGHT_BUILD_READY = "1";
     await run("npx", ["vitest", "run", "--config", "vitest.integration.config.ts", "--reporter=default", "--reporter=json", `--outputFile=${path.join(output, "integration.json")}`]);
     await run("python3", ["-m", "pytest", "packages/pytest-topology/tests", "-q", "-p", "no:cacheprovider"]);

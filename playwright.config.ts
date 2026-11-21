@@ -98,10 +98,10 @@ export default defineConfig({
     ? undefined
     : {
         command: process.env.PLAYWRIGHT_DEV_SERVER === "1"
-          ? `npx next dev --webpack --port ${port} --hostname 127.0.0.1`
+          ? `npx next dev --port ${port} --hostname 127.0.0.1`
           : process.env.PLAYWRIGHT_BUILD_READY === "1"
             ? "node scripts/validation/start-production.mjs"
-            : "npm run build -- --webpack && node scripts/validation/start-production.mjs",
+            : "npm run build && node scripts/validation/start-production.mjs",
         url: baseURL,
         reuseExistingServer: process.env.PLAYWRIGHT_DEV_SERVER === "1",
         timeout: 300_000,
