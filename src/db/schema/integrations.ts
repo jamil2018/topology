@@ -1,4 +1,5 @@
 import {
+  index,
   integer,
   pgTable,
   text,
@@ -7,6 +8,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import {
+  notificationChannelKindEnum,
   pullRequestStatusEnum,
   repositoryProviderEnum,
 } from "./enums";
@@ -102,4 +104,64 @@ export const webhookEndpoints = pgTable("webhook_endpoints", {
 });
 
 export type WebhookEndpoint = typeof webhookEndpoints.$inferSelect;
+
+/** Durable outbound webhook delivery log (Phase 3.2 persists rows here). */
+export const webhookDeliveries = pgTable(
+  "webhook_deliveries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    endpointId: uuid("endpoint_id")
+      .notNull()
+      .references(() => webhookEndpoints.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    /** Stable id shared across retries (X-Topology-Delivery). */
+    deliveryId: text("delivery_id").notNull(),
+    requestBody: text("request_body").notNull(),
+    responseStatus: integer("response_status"),
+    responseExcerpt: text("response_excerpt").default("").notNull(),
+    attemptCount: integer("attempt_count").default(1).notNull(),
+    durationMs: integer("duration_ms"),
+    deliveredAt: timestamp("delivered_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("webhook_deliveries_endpoint_id_idx").on(table.endpointId),
+    index("webhook_deliveries_workspace_id_idx").on(table.workspaceId),
+    index("webhook_deliveries_delivery_id_idx").on(table.deliveryId),
+    index("webhook_deliveries_delivered_at_idx").on(table.deliveredAt),
+  ],
+);
+
+export type WebhookDelivery = typeof webhookDeliveries.$inferSelect;
+
+/**
+ * External alert channels (Slack / Teams / SMTP).
+ * `config_json` may hold secrets (webhook URLs, SMTP passwords); treat as write-only
+ * at the API layer the same way `webhook_endpoints.secret` is never returned.
+ */
+export const notificationChannels = pgTable(
+  "notification_channels",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    kind: notificationChannelKindEnum("kind").notNull(),
+    name: text("name").notNull(),
+    configJson: text("config_json").default("{}").notNull(),
+    /** Comma-separated: assignment,mention,run.completed,coverage.dropped */
+    events: text("events")
+      .default("assignment,mention,run.completed,coverage.dropped")
+      .notNull(),
+    enabled: integer("enabled").default(1).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("notification_channels_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+export type NotificationChannel = typeof notificationChannels.$inferSelect;
 

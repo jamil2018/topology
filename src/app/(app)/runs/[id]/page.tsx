@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import { listIssueProviders } from "@topology/issue-providers";
 import { auth } from "@/auth";
 import { pageTitle } from "@/lib/format-labels";
 import { NoProjectEmptyState } from "@/components/no-project-empty-state";
@@ -48,6 +49,9 @@ export default async function RunDetailPage({ params }: Props) {
   const run = await getRunWithResults(workspaceId, id);
   if (!run) notFound();
 
+  const defaultProvider = process.env.TOPOLOGY_ISSUE_PROVIDER ?? "mock";
+  const availableProviders = listIssueProviders();
+
   return (
     <RunExecutor
         currentUserId={session.user.id}
@@ -61,6 +65,8 @@ export default async function RunDetailPage({ params }: Props) {
           name: m.user.name,
           email: m.user.email,
         }))}
+        defaultProvider={defaultProvider}
+        availableProviders={availableProviders}
         run={{
           id: run.id,
           name: run.name,
@@ -73,6 +79,7 @@ export default async function RunDetailPage({ params }: Props) {
             caseId: r.caseId,
             status: r.status,
             notes: r.notes,
+            durationMs: r.durationMs,
             assigneeId: r.assigneeId,
             comments: (r.comments ?? []).map((c) => ({
               id: c.id,

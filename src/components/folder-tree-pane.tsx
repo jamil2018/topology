@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { Button, Modal } from "@heroui/react";
 import { useProjectActions } from "./project-actions";
 import {
@@ -21,6 +21,7 @@ import {
   type FolderNode,
   type FolderTreeNode,
 } from "@/lib/folder-tree";
+import { CASE_DRAG_MIME } from "./cases-model";
 
 export type FolderTreeSelection = "all" | "unfiled" | string;
 
@@ -35,10 +36,35 @@ type Props = {
   onCreateSubfolder: (parentId: string) => void;
   onRename: (folderId: string) => void;
   onDelete: (folderId: string) => void;
+  onDropCases?: (folderId: string | null, caseIds: string[]) => void;
   collapsed: boolean;
   inline?: boolean;
   onToggleCollapsed: () => void;
 };
+
+function parseCaseDragIds(event: DragEvent): string[] {
+  const raw =
+    event.dataTransfer.getData(CASE_DRAG_MIME) ||
+    event.dataTransfer.getData("text/plain");
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((id): id is string => typeof id === "string");
+    }
+  } catch {
+    // fall through to comma-separated ids
+  }
+  return raw
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+function acceptCaseDrag(event: DragEvent) {
+  const types = Array.from(event.dataTransfer.types);
+  return types.includes(CASE_DRAG_MIME) || types.includes("text/plain");
+}
 
 function TreeRows({
   nodes,
@@ -51,6 +77,9 @@ function TreeRows({
   onCreateSubfolder,
   onRename,
   onDelete,
+  onDropCases,
+  dropTarget,
+  setDropTarget,
 }: {
   nodes: FolderTreeNode[];
   depth: number;
@@ -62,6 +91,9 @@ function TreeRows({
   onCreateSubfolder: (parentId: string) => void;
   onRename: (folderId: string) => void;
   onDelete: (folderId: string) => void;
+  onDropCases?: (folderId: string | null, caseIds: string[]) => void;
+  dropTarget: string | null;
+  setDropTarget: (id: string | null) => void;
 }) {
   const { can } = useProjectActions();
   return (
@@ -71,15 +103,36 @@ function TreeRows({
         const isOpen = expanded.has(node.id);
         const isSelected = selected === node.id;
         const count = folderCounts.get(node.id) ?? 0;
+        const isDrop = dropTarget === node.id;
         return (
           <div key={node.id}>
             <div
               className={`group flex items-center gap-0.5 rounded-md pr-1 ${
-                isSelected
-                  ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
-                  : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
+                isDrop
+                  ? "bg-[color:var(--topo-accent-soft)] ring-1 ring-[color:var(--topo-accent)]"
+                  : isSelected
+                    ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                    : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
               }`}
               style={{ paddingLeft: 4 + depth * 12 }}
+              onDragOver={(event) => {
+                if (!onDropCases || !can("cases.edit") || !acceptCaseDrag(event)) {
+                  return;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                if (dropTarget !== node.id) setDropTarget(node.id);
+              }}
+              onDragLeave={() => {
+                if (dropTarget === node.id) setDropTarget(null);
+              }}
+              onDrop={(event) => {
+                if (!onDropCases || !can("cases.edit")) return;
+                event.preventDefault();
+                setDropTarget(null);
+                const ids = parseCaseDragIds(event);
+                if (ids.length > 0) onDropCases(node.id, ids);
+              }}
             >
               {hasChildren ? (
               <button
@@ -176,6 +229,9 @@ function TreeRows({
                 onCreateSubfolder={onCreateSubfolder}
                 onRename={onRename}
                 onDelete={onDelete}
+                onDropCases={onDropCases}
+                dropTarget={dropTarget}
+                setDropTarget={setDropTarget}
               />
             ) : null}
           </div>
@@ -196,12 +252,14 @@ export function FolderTreePane({
   onCreateSubfolder,
   onRename,
   onDelete,
+  onDropCases,
   collapsed,
   inline = false,
   onToggleCollapsed,
 }: Props) {
   const { can } = useProjectActions();
   const [compact, setCompact] = useState(false);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   useEffect(() => {
     const media = window.matchMedia("(max-width: 1023px)");
     const sync = () => setCompact(media.matches);
@@ -286,10 +344,30 @@ export function FolderTreePane({
         type="button"
         onClick={() => onSelect("unfiled")}
         className={`${navClass} ${
-          selected === "unfiled"
-            ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
-            : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
+          dropTarget === "unfiled"
+            ? "bg-[color:var(--topo-accent-soft)] ring-1 ring-[color:var(--topo-accent)]"
+            : selected === "unfiled"
+              ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+              : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
         }`}
+        onDragOver={(event) => {
+          if (!onDropCases || !can("cases.edit") || !acceptCaseDrag(event)) {
+            return;
+          }
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          if (dropTarget !== "unfiled") setDropTarget("unfiled");
+        }}
+        onDragLeave={() => {
+          if (dropTarget === "unfiled") setDropTarget(null);
+        }}
+        onDrop={(event) => {
+          if (!onDropCases || !can("cases.edit")) return;
+          event.preventDefault();
+          setDropTarget(null);
+          const ids = parseCaseDragIds(event);
+          if (ids.length > 0) onDropCases(null, ids);
+        }}
       >
         <FolderIcon
           size={14}
@@ -320,6 +398,9 @@ export function FolderTreePane({
           onCreateSubfolder={onCreateSubfolder}
           onRename={onRename}
           onDelete={onDelete}
+          onDropCases={onDropCases}
+          dropTarget={dropTarget}
+          setDropTarget={setDropTarget}
         />
       )}
     </nav>

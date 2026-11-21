@@ -199,21 +199,29 @@ export async function captureCoverageSnapshot(
     if (deltas) {
       const dropped = droppedDimensionDeltas(deltas);
       if (dropped.length > 0) {
-        void dispatchWebhook(
-          "coverage.dropped",
-          {
-            previousSnapshotId: previous.id,
-            snapshotId: row.id,
-            capturedAt: row.capturedAt.toISOString(),
-            dimensions: dropped.map((d) => ({
-              key: d.key,
-              beforePct: d.beforePct,
-              afterPct: d.afterPct,
-              delta: d.delta,
-            })),
-          },
-          workspaceId,
-        ).catch(() => {});
+        const payload = {
+          previousSnapshotId: previous.id,
+          snapshotId: row.id,
+          capturedAt: row.capturedAt.toISOString(),
+          dimensions: dropped.map((d) => ({
+            key: d.key,
+            beforePct: d.beforePct,
+            afterPct: d.afterPct,
+            delta: d.delta,
+          })),
+        };
+        void dispatchWebhook("coverage.dropped", payload, workspaceId).catch(
+          () => {},
+        );
+        void import("@/lib/notification-channels")
+          .then(({ dispatchNotificationChannels }) =>
+            dispatchNotificationChannels(
+              "coverage.dropped",
+              payload,
+              workspaceId,
+            ),
+          )
+          .catch(() => {});
       }
     }
   }

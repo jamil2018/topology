@@ -79,6 +79,8 @@ describe("buildReportKpis", () => {
     expect(kpis.passRate).toBe(50);
     expect(kpis.flake).toBe(1);
     expect(kpis.durationMs).toBe(5 * 60 * 1000);
+    expect(kpis.averageDurationMs).toBe(460);
+    expect(kpis.timedResultCount).toBe(2);
   });
 });
 

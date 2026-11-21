@@ -45,6 +45,10 @@ describe("settings-sections", () => {
       page: "integrations",
       anchor: "webhooks",
     });
+    expect(resolveSettingsSection("notifications")).toEqual({
+      page: "integrations",
+      anchor: "notifications",
+    });
     expect(resolveSettingsSection("tokens")).toEqual({
       page: "security",
       anchor: "tokens",

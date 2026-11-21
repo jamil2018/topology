@@ -260,7 +260,7 @@ export function createTopologyMcpServer(client: TopologyClient) {
     "Create a tracker issue from a failed/blocked result",
     {
       resultId: z.string(),
-      provider: z.enum(["mock", "jira", "linear", "github"]).optional(),
+      provider: z.enum(["mock", "jira", "linear", "github", "gitlab"]).optional(),
       title: z.string().optional(),
       description: z.string().optional(),
     },
@@ -273,7 +273,7 @@ export function createTopologyMcpServer(client: TopologyClient) {
     {
       resultId: z.string(),
       remoteKey: z.string(),
-      provider: z.enum(["mock", "jira", "linear", "github"]).optional(),
+      provider: z.enum(["mock", "jira", "linear", "github", "gitlab"]).optional(),
     },
     async (args) => jsonText(await client.linkIssue(args)),
   );

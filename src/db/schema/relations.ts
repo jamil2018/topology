@@ -51,8 +51,10 @@ import {
 import {
   apiTokens,
   commits,
+  notificationChannels,
   pullRequests,
   repositories,
+  webhookDeliveries,
   webhookEndpoints,
 } from "./integrations";
 import {
@@ -71,6 +73,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   authoredCases: many(cases, { relationName: "caseAuthor" }),
   assignedCases: many(cases, { relationName: "caseAssignee" }),
+  reviewedCases: many(cases, { relationName: "caseReviewer" }),
   authoredRuns: many(runs, { relationName: "runAuthor" }),
   assignedRuns: many(runs, { relationName: "runAssignee" }),
   executedResults: many(runResults, { relationName: "resultExecutor" }),
@@ -109,6 +112,8 @@ export const workspacesRelations = relations(workspaces, ({ many }) => ({
   triageItems: many(triageItems),
   linkedIssues: many(linkedIssues),
   webhookEndpoints: many(webhookEndpoints),
+  webhookDeliveries: many(webhookDeliveries),
+  notificationChannels: many(notificationChannels),
   apiTokens: many(apiTokens),
   auditEvents: many(auditEvents),
   savedViews: many(savedViews),
@@ -381,6 +386,11 @@ export const casesRelations = relations(cases, ({ one, many }) => ({
     fields: [cases.assigneeId],
     references: [users.id],
     relationName: "caseAssignee",
+  }),
+  reviewer: one(users, {
+    fields: [cases.reviewerId],
+    references: [users.id],
+    relationName: "caseReviewer",
   }),
   results: many(runResults),
   linkedIssues: many(linkedIssues),
@@ -738,6 +748,41 @@ export const apiTokensRelations = relations(apiTokens, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+export const webhookEndpointsRelations = relations(
+  webhookEndpoints,
+  ({ one, many }) => ({
+    workspace: one(workspaces, {
+      fields: [webhookEndpoints.workspaceId],
+      references: [workspaces.id],
+    }),
+    deliveries: many(webhookDeliveries),
+  }),
+);
+
+export const webhookDeliveriesRelations = relations(
+  webhookDeliveries,
+  ({ one }) => ({
+    endpoint: one(webhookEndpoints, {
+      fields: [webhookDeliveries.endpointId],
+      references: [webhookEndpoints.id],
+    }),
+    workspace: one(workspaces, {
+      fields: [webhookDeliveries.workspaceId],
+      references: [workspaces.id],
+    }),
+  }),
+);
+
+export const notificationChannelsRelations = relations(
+  notificationChannels,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [notificationChannels.workspaceId],
+      references: [workspaces.id],
+    }),
+  }),
+);
 
 export const auditEventsRelations = relations(auditEvents, ({ one }) => ({
   workspace: one(workspaces, {

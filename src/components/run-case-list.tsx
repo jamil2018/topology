@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import {
   countResultStatuses,
   memberLabel,
+  RESULT_STATUSES,
   type MemberOption,
   type ResultRow,
   type StatusFilter,
@@ -14,11 +15,14 @@ import {
   scrollIndexIntoView,
   useVirtualWindow,
 } from "./run-virtual-list";
+import { formatStatusLabel } from "@/lib/format-labels";
 
 const STATUS_CHIPS: { id: Exclude<StatusFilter, "all">; label: string }[] = [
   { id: "untested", label: "Untested" },
+  { id: "passed", label: "Passed" },
   { id: "failed", label: "Failed" },
   { id: "blocked", label: "Blocked" },
+  { id: "skipped", label: "Skipped" },
 ];
 
 function chipClass(active: boolean): string {
@@ -38,10 +42,18 @@ export function RunCaseList({
   mineOnly,
   query,
   currentUserId,
+  selectedIds,
+  selectionEnabled = false,
+  bulkPending = false,
   onStatusFilter,
   onMineOnly,
   onQueryChange,
   onSelect,
+  onToggleSelected,
+  onSelectFiltered,
+  onClearSelection,
+  onBulkStatus,
+  onBulkAssignee,
 }: {
   results: ResultRow[];
   filtered: ResultRow[];
@@ -51,10 +63,18 @@ export function RunCaseList({
   mineOnly: boolean;
   query: string;
   currentUserId?: string | null;
+  selectedIds?: Set<string>;
+  selectionEnabled?: boolean;
+  bulkPending?: boolean;
   onStatusFilter: (status: StatusFilter) => void;
   onMineOnly: (mine: boolean) => void;
   onQueryChange: (query: string) => void;
   onSelect: (resultId: string) => void;
+  onToggleSelected?: (resultId: string) => void;
+  onSelectFiltered?: () => void;
+  onClearSelection?: () => void;
+  onBulkStatus?: (status: string) => void;
+  onBulkAssignee?: (assigneeId: string | null) => void;
 }) {
   const counts = countResultStatuses(results);
   const mineCount = currentUserId
@@ -65,6 +85,10 @@ export function RunCaseList({
     rowHeight: RUN_CASE_ROW_HEIGHT,
   });
   const focusedIndex = filtered.findIndex((row) => row.id === focusedId);
+  const selected = selectedIds ?? new Set<string>();
+  const selectedCount = selected.size;
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((row) => selected.has(row.id));
 
   useEffect(() => {
     scrollIndexIntoView(parent, focusedIndex, RUN_CASE_ROW_HEIGHT);
@@ -126,6 +150,83 @@ export function RunCaseList({
             </span>
           </button>
         </div>
+        {selectionEnabled ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 text-xs text-[color:var(--topo-muted)]">
+              <input
+                type="checkbox"
+                checked={allFilteredSelected}
+                disabled={filtered.length === 0 || bulkPending}
+                aria-label="Select all filtered cases"
+                onChange={() => {
+                  if (allFilteredSelected) onClearSelection?.();
+                  else onSelectFiltered?.();
+                }}
+                className="accent-[color:var(--topo-accent)]"
+              />
+              Select filtered
+            </label>
+            {selectedCount > 0 ? (
+              <span className="font-mono text-xs text-[color:var(--topo-muted)]">
+                {selectedCount} selected
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        {selectionEnabled && selectedCount > 0 ? (
+          <div
+            className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-accent-soft)] px-2 py-1.5"
+            role="toolbar"
+            aria-label="Bulk result updates"
+          >
+            <select
+              aria-label="Bulk status"
+              disabled={bulkPending}
+              defaultValue=""
+              className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs text-[color:var(--topo-ink)] accent-[color:var(--topo-accent)]"
+              onChange={(e) => {
+                const value = e.target.value;
+                e.target.value = "";
+                if (value) onBulkStatus?.(value);
+              }}
+            >
+              <option value="">Status…</option>
+              {RESULT_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {formatStatusLabel(status)}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Bulk assignee"
+              disabled={bulkPending}
+              defaultValue=""
+              className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs text-[color:var(--topo-ink)] accent-[color:var(--topo-accent)]"
+              onChange={(e) => {
+                const value = e.target.value;
+                e.target.value = "";
+                if (value === "") return;
+                onBulkAssignee?.(value === "__none__" ? null : value);
+              }}
+            >
+              <option value="">Assignee…</option>
+              <option value="__none__">Unassigned</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name ?? member.email}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={bulkPending}
+              onClick={() => onClearSelection?.()}
+              className="text-xs text-[color:var(--topo-muted)] underline hover:text-[color:var(--topo-ink)]"
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div ref={setParent} className="min-h-0 flex-1 overflow-y-auto">
@@ -142,7 +243,8 @@ export function RunCaseList({
           >
             {visible.map((result, offset) => {
               const index = start + offset;
-              const selected = result.id === focusedId;
+              const focused = result.id === focusedId;
+              const checked = selected.has(result.id);
               const assignee = memberLabel(members, result.assigneeId);
               return (
                 <li
@@ -153,34 +255,49 @@ export function RunCaseList({
                     height: RUN_CASE_ROW_HEIGHT,
                   }}
                 >
-                  <button
-                    type="button"
-                    aria-current={selected ? "true" : undefined}
-                    onClick={() => onSelect(result.id)}
-                    className={`flex h-full w-full items-start gap-2 px-2.5 py-1.5 text-left transition ${
-                      selected
+                  <div
+                    className={`flex h-full w-full items-start gap-1.5 px-2 py-1.5 transition ${
+                      focused
                         ? "bg-[color:var(--topo-accent-soft)]/40"
                         : "hover:bg-[color:var(--topo-chip)]/50"
                     }`}
                   >
-                    <span
-                      aria-hidden
-                      title={statusChipHint(result.status)}
-                      className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${statusDotClass(result.status)}`}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-mono text-xs text-[color:var(--topo-muted)]">
-                        {result.case.key}{" "}
+                    {selectionEnabled ? (
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={bulkPending}
+                        aria-label={`Select ${result.case.key}`}
+                        className="mt-1.5 accent-[color:var(--topo-accent)]"
+                        onChange={() => onToggleSelected?.(result.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : null}
+                    <button
+                      type="button"
+                      aria-current={focused ? "true" : undefined}
+                      onClick={() => onSelect(result.id)}
+                      className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                    >
+                      <span
+                        aria-hidden
+                        title={statusChipHint(result.status)}
+                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${statusDotClass(result.status)}`}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-mono text-xs text-[color:var(--topo-muted)]">
+                          {result.case.key}{" "}
+                        </span>
+                        <span className="block truncate text-sm font-medium text-[color:var(--topo-ink)]">
+                          {result.case.title}{" "}
+                        </span>
+                        <span className="block truncate text-xs text-[color:var(--topo-muted)]">
+                          {assignee ?? "Unassigned"}
+                          <span className="sr-only"> · {statusChipHint(result.status)}</span>
+                        </span>
                       </span>
-                      <span className="block truncate text-sm font-medium text-[color:var(--topo-ink)]">
-                        {result.case.title}{" "}
-                      </span>
-                      <span className="block truncate text-xs text-[color:var(--topo-muted)]">
-                        {assignee ?? "Unassigned"}
-                        <span className="sr-only"> · {statusChipHint(result.status)}</span>
-                      </span>
-                    </span>
-                  </button>
+                    </button>
+                  </div>
                 </li>
               );
             })}

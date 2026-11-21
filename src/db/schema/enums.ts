@@ -12,6 +12,13 @@ export const caseStatusEnum = pgEnum("case_status", [
   "ready",
   "blocked",
   "deprecated",
+  "in_review",
+]);
+
+export const notificationChannelKindEnum = pgEnum("notification_channel_kind", [
+  "slack",
+  "teams",
+  "smtp",
 ]);
 
 export const runStatusEnum = pgEnum("run_status", [

@@ -3,7 +3,13 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { runs, webhookEndpoints } from "@/db/schema";
+import { runs, webhookDeliveries, webhookEndpoints } from "@/db/schema";
+
+const REQUEST_BODY_MAX = 64_000;
+const RESPONSE_EXCERPT_MAX = 2_048;
+
+const SECRET_KEY_RE =
+  /^(?:.*(?:secret|password|passwd|token|api[_-]?key|authorization|credential|private[_-]?key).*)$/i;
 
 export type WebhookEvent =
   | "run.completed"
@@ -180,15 +186,73 @@ export async function assertSafeWebhookDestination(
   }
 }
 
+/** Recursively redact secret-looking keys before durable storage. */
+export function scrubSecretsForStorage(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => scrubSecretsForStorage(item));
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      out[key] = SECRET_KEY_RE.test(key)
+        ? "[redacted]"
+        : scrubSecretsForStorage(nested);
+    }
+    return out;
+  }
+  return value;
+}
+
+export function scrubWebhookRequestBody(body: string): string {
+  try {
+    const scrubbed = scrubSecretsForStorage(JSON.parse(body));
+    return JSON.stringify(scrubbed).slice(0, REQUEST_BODY_MAX);
+  } catch {
+    return body.slice(0, REQUEST_BODY_MAX);
+  }
+}
+
+export function truncateWebhookResponseExcerpt(text: string): string {
+  if (text.length <= RESPONSE_EXCERPT_MAX) return text;
+  return `${text.slice(0, RESPONSE_EXCERPT_MAX)}…`;
+}
+
+async function readResponseExcerpt(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    return truncateWebhookResponseExcerpt(text);
+  } catch {
+    try {
+      await response.body?.cancel();
+    } catch {
+      /* ignore */
+    }
+    return "";
+  }
+}
+
+type DeliverEndpoint = {
+  id: string;
+  url: string;
+  secret: string;
+  workspaceId?: string;
+};
+
+export type DeliverResult = {
+  ok: boolean;
+  status: number | null;
+  attemptCount: number;
+  durationMs: number;
+  responseExcerpt: string;
+};
+
 async function deliverToEndpoint(
-  endpoint: {
-    id: string;
-    url: string;
-    secret: string;
-  },
+  endpoint: DeliverEndpoint,
   payload: WebhookPayload,
   persist = true,
-): Promise<{ ok: boolean; status: number | null }> {
+): Promise<DeliverResult> {
   const body = JSON.stringify(payload);
   const signature = signBody(endpoint.secret, body);
   const headers: Record<string, string> = {
@@ -201,33 +265,120 @@ async function deliverToEndpoint(
     headers["X-Topology-Signature"] = `sha256=${signature}`;
   }
 
+  const startedAt = Date.now();
   let status: number | null = null;
   let ok = false;
+  let attemptCount = 0;
+  let responseExcerpt = "";
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    attemptCount = attempt + 1;
     // Validate again before every attempt; redirects are never followed.
     const destination = await assertSafeWebhookDestination(endpoint.url);
-    if (!destination.ok) break;
+    if (!destination.ok) {
+      responseExcerpt = destination.error;
+      break;
+    }
     try {
       const response = await fetch(endpoint.url, {
-        method: "POST", headers, body, redirect: "manual",
+        method: "POST",
+        headers,
+        body,
+        redirect: "manual",
         signal: AbortSignal.timeout(8_000),
       });
       status = response.status;
       ok = response.ok;
-      await response.body?.cancel();
+      responseExcerpt = await readResponseExcerpt(response);
       if (ok || !(status === 408 || status === 429 || status >= 500)) break;
-    } catch {
+    } catch (err) {
       status = null;
+      responseExcerpt = truncateWebhookResponseExcerpt(
+        err instanceof Error ? err.message : "Delivery failed",
+      );
     }
-    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 100 * 3 ** attempt));
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 100 * 3 ** attempt));
+    }
   }
-  if (persist && endpoint.id !== "env") {
-    await db.update(webhookEndpoints).set({
-      lastDeliveredAt: new Date(), lastStatus: status ?? 0, updatedAt: new Date(),
-    }).where(eq(webhookEndpoints.id, endpoint.id));
-  }
-  return { ok, status };
 
+  const durationMs = Date.now() - startedAt;
+  const deliveredAt = new Date();
+
+  if (persist && endpoint.id !== "env") {
+    await db
+      .update(webhookEndpoints)
+      .set({
+        lastDeliveredAt: deliveredAt,
+        lastStatus: status ?? 0,
+        updatedAt: deliveredAt,
+      })
+      .where(eq(webhookEndpoints.id, endpoint.id));
+
+    if (endpoint.workspaceId) {
+      try {
+        await db.insert(webhookDeliveries).values({
+          endpointId: endpoint.id,
+          workspaceId: endpoint.workspaceId,
+          event: payload.event,
+          deliveryId: payload.id,
+          requestBody: scrubWebhookRequestBody(body),
+          responseStatus: status,
+          responseExcerpt,
+          attemptCount,
+          durationMs,
+          deliveredAt,
+        });
+      } catch (err) {
+        console.error("Failed to persist webhook delivery", err);
+      }
+    }
+  }
+
+  return { ok, status, attemptCount, durationMs, responseExcerpt };
+}
+
+/**
+ * Re-send a stored delivery payload to an endpoint (new delivery id).
+ * Persists a fresh `webhook_deliveries` row.
+ */
+export async function replayWebhookDelivery(
+  endpoint: {
+    id: string;
+    url: string;
+    secret: string;
+    workspaceId: string;
+  },
+  stored: { requestBody: string; event: string },
+): Promise<DeliverResult & { deliveryId: string }> {
+  let data: Record<string, unknown> = {};
+  let event = stored.event as WebhookEvent;
+  try {
+    const parsed = JSON.parse(stored.requestBody) as {
+      event?: string;
+      data?: Record<string, unknown>;
+    };
+    if (parsed && typeof parsed === "object") {
+      if (typeof parsed.event === "string" && parsed.event) {
+        event = parsed.event as WebhookEvent;
+      }
+      if (parsed.data && typeof parsed.data === "object") {
+        data = parsed.data;
+      }
+    }
+  } catch {
+    data = { replay: true, raw: stored.requestBody.slice(0, 1_000) };
+  }
+
+  const payload: WebhookPayload = {
+    id: randomUUID(),
+    event,
+    createdAt: new Date().toISOString(),
+    data: { ...data, replayed: true },
+  };
+
+  const result = await deliverToEndpoint(endpoint, payload, true);
+  return { ...result, deliveryId: payload.id };
 }
 
 /**
@@ -259,7 +410,17 @@ export async function dispatchWebhook(
 
   for (const endpoint of endpoints) {
     if (!parseEvents(endpoint.events).has(event)) continue;
-    deliveries.push(deliverToEndpoint(endpoint, payload));
+    deliveries.push(
+      deliverToEndpoint(
+        {
+          id: endpoint.id,
+          url: endpoint.url,
+          secret: endpoint.secret,
+          workspaceId: endpoint.workspaceId,
+        },
+        payload,
+      ),
+    );
   }
 
   const envUrl = process.env.TOPOLOGY_WEBHOOK_URL?.trim();

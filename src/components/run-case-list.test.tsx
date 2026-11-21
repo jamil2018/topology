@@ -58,8 +58,10 @@ describe("RunCaseList", () => {
     );
     expect(screen.getByText("Ada")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Untested \d+$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Passed \d+$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Failed \d+$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Blocked \d+$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Skipped \d+$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Mine \d+$/ })).toBeInTheDocument();
   });
 

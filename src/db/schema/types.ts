@@ -17,6 +17,7 @@ import {
   attachmentKindEnum,
   coverageSnapshotSourceEnum,
   environmentKindEnum,
+  notificationChannelKindEnum,
   proposalActorTypeEnum,
   proposalStatusEnum,
   workspaceRoleEnum,
@@ -128,5 +129,7 @@ export type Proposal = typeof proposals.$inferSelect;
 export type ProposalStatus = (typeof proposalStatusEnum.enumValues)[number];
 export type ProposalActorType =
   (typeof proposalActorTypeEnum.enumValues)[number];
+export type NotificationChannelKind =
+  (typeof notificationChannelKindEnum.enumValues)[number];
 
 

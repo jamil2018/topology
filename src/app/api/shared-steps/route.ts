@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { sharedStepItems, sharedSteps } from "@/db/schema";
+import { caseSteps, sharedStepItems, sharedSteps } from "@/db/schema";
 import { requireProjectAccess } from "@/lib/project";
 import { orderSteps } from "@/lib/tcm/steps";
 
@@ -31,15 +31,37 @@ export async function GET(request: Request) {
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
-  const rows = await db.query.sharedSteps.findMany({
-    where: eq(sharedSteps.workspaceId, access.ctx.project.id),
-    with: { items: true },
-    orderBy: [asc(sharedSteps.name)],
-  });
+  const workspaceId = access.ctx.project.id;
+  const [rows, usageRows] = await Promise.all([
+    db.query.sharedSteps.findMany({
+      where: eq(sharedSteps.workspaceId, workspaceId),
+      with: { items: true },
+      orderBy: [asc(sharedSteps.name)],
+    }),
+    db
+      .select({
+        sharedStepId: caseSteps.sharedStepId,
+        usageCount: count(),
+      })
+      .from(caseSteps)
+      .where(
+        and(
+          eq(caseSteps.workspaceId, workspaceId),
+          isNotNull(caseSteps.sharedStepId),
+        ),
+      )
+      .groupBy(caseSteps.sharedStepId),
+  ]);
+  const usageById = new Map(
+    usageRows
+      .filter((row) => row.sharedStepId)
+      .map((row) => [row.sharedStepId!, Number(row.usageCount)]),
+  );
   return NextResponse.json({
     sharedSteps: rows.map((row) => ({
       ...row,
       items: [...row.items].sort((a, b) => a.position - b.position),
+      usageCount: usageById.get(row.id) ?? 0,
     })),
   });
 }

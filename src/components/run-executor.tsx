@@ -6,11 +6,11 @@ import { useProjectActions } from "./project-actions";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { Button, Modal, useOverlayState } from "@heroui/react";
-import { CheckIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
+import { ArrowCounterClockwiseIcon, CheckIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
 import { formatStatusLabel } from "@/lib/format-labels";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
-import { isRunFrozen } from "@/lib/run-immutability";
+import { isReopenableRunStatus, isRunFrozen, RUN_REOPEN_MESSAGE } from "@/lib/run-immutability";
 import type { LiveEvent } from "@/lib/live-event";
 import { useShortcut } from "./shortcut-layer";
 import { useLiveUpdates } from "./use-live-updates";
@@ -40,12 +40,19 @@ export function RunExecutor({
   members = [],
   currentUserId = null,
   currentUser = null,
+  defaultProvider = "mock",
+  availableProviders,
 }: {
   run: RunDetail;
   members?: MemberOption[];
   currentUserId?: string | null;
   currentUser?: { id: string; name: string | null; email: string } | null;
+  defaultProvider?: string;
+  availableProviders?: string[];
 }) {
+  const issueProviders = availableProviders?.length
+    ? availableProviders
+    : [defaultProvider];
   const { can, projectId, userId } = useProjectActions();
   const mutationQueue = useRef<Promise<boolean>>(Promise.resolve(true));
   const mutationVersion = useRef(0);
@@ -58,17 +65,19 @@ export function RunExecutor({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [mineOnly, setMineOnly] = useState(false);
   const [query, setQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   useRunResume(`topology:run:${userId}:${projectId}:${run.id}`, run.results.map((result) => result.id), { focusedId, statusFilter, mineOnly, query }, (saved) => {
     if (saved.focusedId !== undefined) setFocusedId(saved.focusedId);
     if (saved.statusFilter !== undefined) setStatusFilter(saved.statusFilter);
     if (saved.mineOnly !== undefined) setMineOnly(saved.mineOnly);
     if (saved.query !== undefined) setQuery(saved.query);
   });
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(true);
   if (runState.id !== run.id) {
     setRunState(run);
     setFocusedId(initialFocusId(run.results));
-    setDetailOpen(false);
+    setDetailOpen(true);
+    setSelectedIds(new Set());
   }
   const [optimisticRun, addOptimisticRun] = useOptimistic(
     runState,
@@ -81,11 +90,15 @@ export function RunExecutor({
   );
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const uploadCounts = useRef<Record<string, number>>({});
+  const readTimerMs = useRef<() => number>(() => 0);
   const [issueBusy, setIssueBusy] = useState(false);
   const completeModal = useOverlayState();
   const abortModal = useOverlayState();
+  const reopenModal = useOverlayState();
   const frozen = isRunFrozen(optimisticRun.status);
   const aborted = optimisticRun.status === "aborted";
+  const canReopen = isReopenableRunStatus(optimisticRun.status) && can("runs.complete");
   const done = optimisticRun.results.filter((row) => row.status !== "untested").length;
 
   const filtered = useMemo(
@@ -156,8 +169,8 @@ export function RunExecutor({
           return [id, previous && fresh && notes === previous.notes ? fresh.notes : notes];
         })));
         setRunState((current) => current.id !== runId ? current : ({ ...current, status: data.run.status, assigneeId: data.run.assigneeId, results: current.results.map((result) => {
-          const fresh = data.run.results.find((item: { id: string }) => item.id === result.id);
-          return fresh ? { ...result, status: fresh.status, assigneeId: fresh.assigneeId, notes: fresh.notes, stepResults: fresh.stepResults ?? result.stepResults } : result;
+          const fresh = data.run.results.find((item: { id: string; durationMs?: number | null }) => item.id === result.id);
+          return fresh ? { ...result, status: fresh.status, assigneeId: fresh.assigneeId, notes: fresh.notes, durationMs: fresh.durationMs ?? result.durationMs, stepResults: fresh.stepResults ?? result.stepResults } : result;
         }) }));
         return;
       }
@@ -165,7 +178,12 @@ export function RunExecutor({
   } });
 
   async function patch(body: Record<string, unknown>, action?: RunAction, background = false): Promise<boolean> {
-    const permission = body.action === "complete" ? "runs.complete" : body.action === "abort" ? "runs.delete" : "runs.edit";
+    const permission =
+      body.action === "complete" || body.action === "reopen"
+        ? "runs.complete"
+        : body.action === "abort"
+          ? "runs.delete"
+          : "runs.edit";
     if (!can(permission)) return false;
     const runId = runState.id;
     const previous = mutationQueue.current;
@@ -173,8 +191,8 @@ export function RunExecutor({
     const write = async () => {
       await previous;
       if (activeRunId.current !== runId) return false;
-      if ((body.action === "complete" || body.action === "abort") && [...failedNoteSaves.current].some(key => key.startsWith(`${runId}:`))) {
-        setError("Save your unsaved notes before completing or aborting this run.");
+      if ((body.action === "complete" || body.action === "abort" || body.action === "reopen") && [...failedNoteSaves.current].some(key => key.startsWith(`${runId}:`))) {
+        setError("Save your unsaved notes before completing, aborting, or reopening this run.");
         return false;
       }
       setError(null);
@@ -205,15 +223,22 @@ export function RunExecutor({
   }
 
   const recordStatus = useCallback(
-    async (result: ResultRow, status: string) => {
+    async (result: ResultRow, status: string, durationMs?: number) => {
+      const body: Record<string, unknown> = {
+        caseId: result.case.id,
+        resultId: result.id,
+        status,
+        notes: notesDraft[result.id] ?? result.notes,
+      };
+      if (durationMs != null && durationMs > 0) body.durationMs = durationMs;
       const saved = await patch(
+        body,
         {
-          caseId: result.case.id,
+          type: "result",
           resultId: result.id,
           status,
-          notes: notesDraft[result.id] ?? result.notes,
+          durationMs: durationMs != null && durationMs > 0 ? durationMs : undefined,
         },
-        { type: "result", resultId: result.id, status },
       );
       if (!saved || status === "untested") return;
       const preview = optimisticRun.results.map((row) =>
@@ -240,41 +265,75 @@ export function RunExecutor({
     ],
   );
 
+  async function bulkUpdateResults(patchBody: {
+    status?: string;
+    assigneeId?: string | null;
+  }) {
+    if (frozen || !can("runs.edit") || selectedIds.size === 0) return;
+    const resultIds = Array.from(selectedIds);
+    const ok = await patch(
+      { action: "bulk_results", resultIds, ...patchBody },
+      { type: "bulk_results", resultIds, ...patchBody },
+    );
+    if (ok) setSelectedIds(new Set());
+  }
+
   useShortcut(
     "nav-next",
     useCallback(() => {
       setFocusedId((current) => neighborId(filtered, current, 1));
+      setDetailOpen(true);
     }, [filtered]),
   );
   useShortcut(
     "nav-prev",
     useCallback(() => {
       setFocusedId((current) => neighborId(filtered, current, -1));
+      setDetailOpen(true);
     }, [filtered]),
   );
   useShortcut(
+    "open",
+    useCallback(() => {
+      if (focusedId) setDetailOpen(true);
+    }, [focusedId]),
+  );
+  const timerMsOrUndefined = useCallback(() => {
+    const ms = readTimerMs.current();
+    return ms > 0 ? ms : undefined;
+  }, []);
+
+  useShortcut(
     "pass",
     useCallback(() => {
-      if (focusedResult && !frozen) recordStatus(focusedResult, "passed");
-    }, [focusedResult, frozen, recordStatus]),
+      if (focusedResult && !frozen) {
+        void recordStatus(focusedResult, "passed", timerMsOrUndefined());
+      }
+    }, [focusedResult, frozen, recordStatus, timerMsOrUndefined]),
   );
   useShortcut(
     "fail",
     useCallback(() => {
-      if (focusedResult && !frozen) recordStatus(focusedResult, "failed");
-    }, [focusedResult, frozen, recordStatus]),
+      if (focusedResult && !frozen) {
+        void recordStatus(focusedResult, "failed", timerMsOrUndefined());
+      }
+    }, [focusedResult, frozen, recordStatus, timerMsOrUndefined]),
   );
   useShortcut(
     "blocked",
     useCallback(() => {
-      if (focusedResult && !frozen) recordStatus(focusedResult, "blocked");
-    }, [focusedResult, frozen, recordStatus]),
+      if (focusedResult && !frozen) {
+        void recordStatus(focusedResult, "blocked", timerMsOrUndefined());
+      }
+    }, [focusedResult, frozen, recordStatus, timerMsOrUndefined]),
   );
   useShortcut(
     "skipped",
     useCallback(() => {
-      if (focusedResult && !frozen) recordStatus(focusedResult, "skipped");
-    }, [focusedResult, frozen, recordStatus]),
+      if (focusedResult && !frozen) {
+        void recordStatus(focusedResult, "skipped", timerMsOrUndefined());
+      }
+    }, [focusedResult, frozen, recordStatus, timerMsOrUndefined]),
   );
   useShortcut(
     "assign",
@@ -300,6 +359,14 @@ export function RunExecutor({
       { type: "run", status: "aborted" },
     );
     if (ok) abortModal.close();
+  }
+
+  async function confirmReopen() {
+    const ok = await patch(
+      { action: "reopen" },
+      { type: "run", status: "in_progress" },
+    );
+    if (ok) reopenModal.close();
   }
 
   async function issueAction(body: Record<string, unknown>) {
@@ -381,6 +448,7 @@ export function RunExecutor({
 
   async function uploadFile(resultId: string, file: File | null) {
     if (!file) return;
+    uploadCounts.current[resultId] = (uploadCounts.current[resultId] ?? 0) + 1;
     setUploadingId(resultId);
     setError(null);
     const form = new FormData();
@@ -401,7 +469,13 @@ export function RunExecutor({
           };
         }
       | null;
-    setUploadingId(null);
+    uploadCounts.current[resultId] = Math.max(
+      0,
+      (uploadCounts.current[resultId] ?? 1) - 1,
+    );
+    if ((uploadCounts.current[resultId] ?? 0) === 0) {
+      setUploadingId((current) => (current === resultId ? null : current));
+    }
     if (!res.ok) {
       setError(typeof data?.error === "string" ? data.error : "Upload failed");
       return;
@@ -477,18 +551,37 @@ export function RunExecutor({
                 Complete
               </Button>
             ) : null}
-            {!frozen ? (
-              <details className="relative self-center text-sm"><summary className="cursor-pointer rounded-md border border-[color:var(--topo-line)] px-3 py-2">More actions</summary>
-              <Button
-                size="sm"
-                variant="danger"
-                className="gap-1.5"
-                isDisabled={pending || !can("runs.delete")}
-                onPress={() => abortModal.open()}
-              >
-                <StopIcon size={14} weight="bold" aria-hidden />
-                Abort run
-              </Button>
+            {!frozen || canReopen ? (
+              <details className="relative self-center text-sm">
+                <summary className="cursor-pointer rounded-md border border-[color:var(--topo-line)] px-3 py-2">
+                  More actions
+                </summary>
+                <div className="absolute right-0 z-10 mt-1 flex min-w-[10rem] flex-col gap-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-1 shadow-md">
+                  {!frozen ? (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      className="gap-1.5 justify-start"
+                      isDisabled={pending || !can("runs.delete")}
+                      onPress={() => abortModal.open()}
+                    >
+                      <StopIcon size={14} weight="bold" aria-hidden />
+                      Abort run
+                    </Button>
+                  ) : null}
+                  {canReopen ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="gap-1.5 justify-start"
+                      isDisabled={pending || !can("runs.complete")}
+                      onPress={() => reopenModal.open()}
+                    >
+                      <ArrowCounterClockwiseIcon size={14} weight="bold" aria-hidden />
+                      Reopen run
+                    </Button>
+                  ) : null}
+                </div>
               </details>
             ) : null}
             {optimisticRun.status === "completed" ? (
@@ -569,10 +662,31 @@ export function RunExecutor({
             mineOnly={mineOnly}
             query={query}
             currentUserId={currentUserId}
+            selectedIds={selectedIds}
+            selectionEnabled={!frozen && can("runs.edit")}
+            bulkPending={pending}
             onStatusFilter={setStatusFilter}
             onMineOnly={setMineOnly}
             onQueryChange={setQuery}
             onSelect={selectCase}
+            onToggleSelected={(resultId) => {
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(resultId)) next.delete(resultId);
+                else next.add(resultId);
+                return next;
+              });
+            }}
+            onSelectFiltered={() => {
+              setSelectedIds(new Set(filtered.map((row) => row.id)));
+            }}
+            onClearSelection={() => setSelectedIds(new Set())}
+            onBulkStatus={(status) => {
+              void bulkUpdateResults({ status });
+            }}
+            onBulkAssignee={(assigneeId) => {
+              void bulkUpdateResults({ assigneeId });
+            }}
           />
         </aside>
         <section
@@ -594,9 +708,11 @@ export function RunExecutor({
               focusedResult ? (commentDraft[focusedResult.id] ?? "") : ""
             }
             linkKey={focusedResult ? (linkKey[focusedResult.id] ?? "") : ""}
+            defaultProvider={defaultProvider}
+            availableProviders={issueProviders}
             onBack={() => setDetailOpen(false)}
-            onRecordStatus={(status) => {
-              if (focusedResult) recordStatus(focusedResult, status);
+            onRecordStatus={(status, durationMs) => {
+              if (focusedResult) recordStatus(focusedResult, status, durationMs);
             }}
             onStepStatus={(position, status) => {
               if (!focusedResult) return;
@@ -668,6 +784,9 @@ export function RunExecutor({
               setLinkKey((prev) => ({ ...prev, [focusedResult.id]: value }));
             }}
             onIssueAction={(body) => void issueAction(body)}
+            onTimerReader={(readMs) => {
+              readTimerMs.current = readMs;
+            }}
           />
         </section>
       </div>
@@ -714,9 +833,9 @@ export function RunExecutor({
                   Complete this run?
                 </Modal.Heading>
                 <p className="text-sm text-[color:var(--topo-muted)]">
-                  Completing is permanent. Results and case structure will be
-                  locked and can no longer be edited. You can still add comments
-                  and attachments afterward.
+                  Completing locks results and case structure. You can still add
+                  comments and attachments afterward, and admins can reopen the
+                  run if needed.
                 </p>
               </Modal.Header>
               <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
@@ -733,6 +852,37 @@ export function RunExecutor({
                   onPress={() => void confirmComplete()}
                 >
                   {pending ? "Completing…" : "Complete run"}
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+
+      <Modal.Backdrop isOpen={reopenModal.isOpen} onOpenChange={reopenModal.setOpen} isDismissable={!pending}>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog className="outline-none">
+              <Modal.Header className="flex flex-col gap-1 border-b border-[color:var(--topo-line)] px-4 py-3">
+                <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
+                  Reopen this run?
+                </Modal.Heading>
+                <p className="text-sm text-[color:var(--topo-muted)]">
+                  {RUN_REOPEN_MESSAGE}
+                </p>
+              </Modal.Header>
+              <Modal.Footer className="flex justify-end gap-2 px-4 py-3">
+                <Button
+                  variant="tertiary"
+                  isDisabled={pending}
+                  onPress={() => reopenModal.close()}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  isDisabled={pending || !can("runs.complete")}
+                  onPress={() => void confirmReopen()}
+                >
+                  {pending ? "Reopening…" : "Reopen run"}
                 </Button>
               </Modal.Footer>
             </Modal.Dialog>

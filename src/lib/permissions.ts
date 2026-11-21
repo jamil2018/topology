@@ -8,6 +8,7 @@ export const ACTION_CATALOG = [
   "cases.view",
   "cases.create",
   "cases.edit",
+  "cases.approve",
   "cases.delete",
   "intents.view",
   "intents.create",
@@ -60,7 +61,13 @@ export const ACTION_GROUPS: ActionGroup[] = [
   {
     id: "cases",
     label: "Cases",
-    actions: ["cases.view", "cases.create", "cases.edit", "cases.delete"],
+    actions: [
+      "cases.view",
+      "cases.create",
+      "cases.edit",
+      "cases.approve",
+      "cases.delete",
+    ],
   },
   {
     id: "intents",
@@ -155,6 +162,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   "cases.view": "View cases",
   "cases.create": "Create cases",
   "cases.edit": "Edit cases",
+  "cases.approve": "Approve case reviews",
   "cases.delete": "Delete cases",
   "intents.view": "View intents",
   "intents.create": "Create intents",
@@ -202,6 +210,7 @@ export const SYSTEM_ROLE_ACTIONS: Record<WorkspaceRole, readonly Action[]> = {
     "cases.view",
     "cases.create",
     "cases.edit",
+    "cases.approve",
     "cases.delete",
     "intents.view",
     "intents.create",

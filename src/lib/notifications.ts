@@ -33,6 +33,25 @@ export async function createNotification(
       entityId: input.entityId ?? null,
     })
     .returning();
+
+  if (input.type === "assignment" || input.type === "mention") {
+    void import("@/lib/notification-channels")
+      .then(({ dispatchNotificationChannels }) =>
+        dispatchNotificationChannels(
+          input.type as "assignment" | "mention",
+          {
+            userId: input.userId,
+            title: input.title,
+            body: input.body ?? "",
+            entityType: input.entityType ?? null,
+            entityId: input.entityId ?? null,
+          },
+          input.workspaceId,
+        ),
+      )
+      .catch(() => {});
+  }
+
   return row;
 }
 
@@ -75,8 +94,18 @@ export async function notificationDestinations(rows: Notification[], workspaceId
     let href: string | null = null;
     if (row.entityType === "run" && runTargets.some((run) => run.id === row.entityId)) href = `/runs/${row.entityId}`;
     if (row.entityType === "result") { const target = resultTargets.find((result) => result.id === row.entityId); if (target) href = `/runs/${target.runId}?result=${target.id}`; }
-    const routes: Record<string, string> = { intent: "/intents", requirement: "/requirements", component: "/components", release: "/releases" };
-    if (row.entityType && routes[row.entityType] && row.entityId) href = `${routes[row.entityType]}?${row.entityType}=${row.entityId}`;
+    const routes: Record<string, string> = {
+      intent: "/intents",
+      requirement: "/requirements",
+      component: "/components",
+      release: "/releases",
+      case: "/cases",
+    };
+    if (row.entityType === "case" && row.entityId) {
+      href = `/cases?case=${row.entityId}`;
+    } else if (row.entityType && routes[row.entityType] && row.entityId) {
+      href = `${routes[row.entityType]}?${row.entityType}=${row.entityId}`;
+    }
     return { ...serializeNotification(row), href, openHref: href ? `/api/notifications/${row.id}/open` : null };
   });
 }

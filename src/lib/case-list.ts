@@ -39,6 +39,8 @@ export type CaseListFilters = {
   search?: string;
   statusFilter?: string;
   priorityFilter?: string;
+  /** Custom field key → exact value filter (select/boolean/text). */
+  customFieldFilters?: Record<string, string>;
 };
 
 export type CaseListQuery = CaseListFilters & {
@@ -78,11 +80,26 @@ export function caseListQueryFromSearchParams(
 ): CaseListQuery {
   const folder =
     params.get("folder") ?? params.get("folderId") ?? "all";
+  const customFieldFilters: Record<string, string> = {};
+  for (const [key, value] of params.entries()) {
+    if (!value || value === "all") continue;
+    if (key.startsWith("cf.")) {
+      customFieldFilters[key.slice(3)] = value;
+      continue;
+    }
+    if (key.startsWith("cf_")) {
+      customFieldFilters[key.slice(3)] = value;
+    }
+  }
   return {
     folderFilter: folder || "all",
     search: params.get("q") ?? params.get("search") ?? "",
     statusFilter: params.get("status") ?? "all",
     priorityFilter: params.get("priority") ?? "all",
+    customFieldFilters:
+      Object.keys(customFieldFilters).length > 0
+        ? customFieldFilters
+        : undefined,
     sort: parseCaseListSort(params.get("sort")),
     dir: parseCaseListSortDir(params.get("dir")),
     page: parsePageParam(params.get("page")),

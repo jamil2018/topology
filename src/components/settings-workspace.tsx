@@ -9,6 +9,7 @@ import { ConnectAgentPanel } from "./connect-agent-panel";
 import { CiSetupPanel } from "./ci-setup-panel";
 import { RepositoriesPanel } from "./repositories-panel";
 import { WebhooksPanel } from "./webhooks-panel";
+import { NotificationChannelsPanel } from "./notification-channels-panel";
 import { useTheme, type ThemePreference } from "./theme-provider";
 import { useQualityGraph } from "./quality-graph-provider";
 import { WorkspaceMembersPanel } from "./workspace-members-panel";
@@ -522,6 +523,12 @@ export function SettingsWorkspace({
                 <summary className="cursor-pointer text-sm font-semibold">Webhooks<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Notify other tools when testing activity changes.</span></summary>
                 <div className="mt-4">
                 <WebhooksPanel />
+              </div></details>
+
+              <details id="notifications" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+                <summary className="cursor-pointer text-sm font-semibold">Notification channels<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Slack, Teams, or email alerts for assignments and run events.</span></summary>
+                <div className="mt-4">
+                <NotificationChannelsPanel />
               </div></details>
             </>
           ) : null}

@@ -17,6 +17,7 @@ function titleCaseWords(value: string): string {
 const STATUS_LABELS: Record<string, string> = {
   planned: "Planned",
   draft: "Draft",
+  in_review: "In review",
   untested: "Untested",
   in_progress: "In progress",
   running: "Running",

@@ -50,6 +50,10 @@ function classify(method: string, urlPath: string): Kind {
   if (urlPath === "/api/webhooks/github" || urlPath.startsWith("/api/webhooks/github/")) {
     return "gated";
   }
+  // Inbound issue-tracker webhooks are signature-gated (not session auth), same as GitHub.
+  if (urlPath === "/api/webhooks/issues" || urlPath.startsWith("/api/webhooks/issues/")) {
+    return "gated";
+  }
   return "protected";
 }
 

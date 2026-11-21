@@ -46,6 +46,7 @@ export async function getHubPulse(
       ready: sql<number>`count(*) filter (where ${cases.status} = 'ready')`,
       blocked: sql<number>`count(*) filter (where ${cases.status} = 'blocked')`,
       draft: sql<number>`count(*) filter (where ${cases.status} = 'draft')`,
+      inReview: sql<number>`count(*) filter (where ${cases.status} = 'in_review')`,
     })
     .from(cases)
     .where(eq(cases.workspaceId, workspaceId));
@@ -221,6 +222,7 @@ export async function getHubPulse(
       ready: Number(caseStats?.ready ?? 0),
       blocked: Number(caseStats?.blocked ?? 0),
       draft: Number(caseStats?.draft ?? 0),
+      inReview: Number(caseStats?.inReview ?? 0),
     },
     runs: {
       total: Number(runStats?.total ?? 0),
@@ -264,6 +266,7 @@ export async function getHubPulse(
       runId: item.runId,
       caseKey: item.caseKey,
     })),
+    inReviewCount: Number(caseStats?.inReview ?? 0),
   };
 }
 
@@ -442,16 +445,25 @@ export async function getTriageQueue(workspaceId: string) {
   const linked = await db.query.linkedIssues.findMany({
     where: eq(linkedIssues.workspaceId, workspaceId),
   });
-  const linkedResultIds = new Set(
-    linked.map((i) => i.resultId).filter(Boolean) as string[],
+  const linkedByResult = new Map(
+    linked
+      .filter((issue) => issue.resultId)
+      .map((issue) => [issue.resultId as string, issue]),
+  );
+  const linkedByCase = new Map<string, (typeof linked)[number]>();
+  for (const issue of linked) {
+    if (issue.caseId && !linkedByCase.has(issue.caseId)) {
+      linkedByCase.set(issue.caseId, issue);
+    }
+  }
+
+  // Prefer open failures that still lack a result-linked issue; keep items that
+  // only have a case-level link so the UI can show that issue key.
+  const withoutResultIssue = open.filter(
+    (item) => !item.resultId || !linkedByResult.has(item.resultId),
   );
 
-  // Failure triage = open items whose result still lacks a linked issue
-  const withoutIssue = open.filter(
-    (item) => !item.resultId || !linkedResultIds.has(item.resultId),
-  );
-
-  const failures: TriageFailure[] = withoutIssue.map((item) => ({
+  const failures: TriageFailure[] = withoutResultIssue.map((item) => ({
     id: item.id,
     caseKey: item.case?.key ?? "unknown",
     caseTitle: item.title,
@@ -467,11 +479,11 @@ export async function getTriageQueue(workspaceId: string) {
   }));
 
   const flakeHints = await getFlakeHintsForCaseIds(
-    withoutIssue.map((o) => o.caseId).filter(Boolean) as string[],
+    withoutResultIssue.map((o) => o.caseId).filter(Boolean) as string[],
   );
 
   const withFlake = failures.map((f) => {
-    const item = withoutIssue.find((o) => o.id === f.id);
+    const item = withoutResultIssue.find((o) => o.id === f.id);
     const hint = item?.caseId ? flakeHints.get(item.caseId) : undefined;
     return {
       ...f,
@@ -480,7 +492,11 @@ export async function getTriageQueue(workspaceId: string) {
   });
 
   return buildTriageQueue(withFlake).map((item) => {
-    const source = withoutIssue.find((o) => o.id === item.id);
+    const source = withoutResultIssue.find((o) => o.id === item.id);
+    const issue =
+      (source?.resultId ? linkedByResult.get(source.resultId) : undefined) ??
+      (source?.caseId ? linkedByCase.get(source.caseId) : undefined) ??
+      null;
     return {
       ...item,
       resultId: source?.resultId ?? null,
@@ -489,6 +505,8 @@ export async function getTriageQueue(workspaceId: string) {
       flakeHint: source?.caseId
         ? (flakeHints.get(source.caseId)?.hint ?? null)
         : null,
+      issueKey: issue?.remoteKey ?? null,
+      issueUrl: issue?.url ?? null,
     };
   });
 }

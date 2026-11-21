@@ -14,6 +14,7 @@ import {
 describe("permissions catalog", () => {
   it("exposes a stable allow-list of action keys", () => {
     expect(ACTION_CATALOG).toContain("cases.view");
+    expect(ACTION_CATALOG).toContain("cases.approve");
     expect(ACTION_CATALOG).toContain("intents.view");
     expect(ACTION_CATALOG).toContain("requirements.create");
     expect(ACTION_CATALOG).toContain("proposals.view");

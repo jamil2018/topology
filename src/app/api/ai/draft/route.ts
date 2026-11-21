@@ -2,14 +2,17 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
 import {
+  draftCaseSteps,
   draftIntentsFromRequirement,
+  draftTriageSummary,
   explainChangeImpact,
   suggestDuplicateIntents,
   suggestNegativePaths,
   suggestRequirementIntentLinks,
 } from "@/lib/ai-draft";
 import { getWorkspaceAiProviderConfig, isAiProviderEnabled } from "@/lib/ai-provider";
-import { requireProjectAccess } from "@/lib/project";
+import { ctxHasAction, requireProjectAccess } from "@/lib/project";
+import type { Action } from "@/lib/permissions";
 
 const bodySchema = z.discriminatedUnion("job", [
   z.object({
@@ -38,20 +41,41 @@ const bodySchema = z.discriminatedUnion("job", [
     pr: z.number().int().positive().optional(),
     allowHeuristic: z.boolean().optional(),
   }),
+  z.object({
+    job: z.literal("case_steps"),
+    title: z.string().trim().min(1).max(240),
+    description: z.string().optional(),
+    requirementId: z.string().uuid().optional(),
+    allowHeuristic: z.boolean().optional(),
+  }),
+  z.object({
+    job: z.literal("triage_summary"),
+    items: z
+      .array(
+        z.object({
+          caseKey: z.string().optional().nullable(),
+          caseTitle: z.string().optional().nullable(),
+          notes: z.string().optional().nullable(),
+          priority: z.string().optional().nullable(),
+          reason: z.string().optional().nullable(),
+        }),
+      )
+      .min(1)
+      .max(40),
+    allowHeuristic: z.boolean().optional(),
+  }),
 ]);
+
+function requiredActionForJob(job: z.infer<typeof bodySchema>["job"]): Action {
+  if (job === "case_steps") return "cases.edit";
+  if (job === "triage_summary") return "triage.manage";
+  return "intents.edit";
+}
 
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const access = await requireProjectAccess(session.user.id, {
-    request,
-    action: "intents.edit",
-  });
-  if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   const { searchParams } = new URL(request.url);
@@ -69,6 +93,22 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: parsed.error.flatten() },
       { status: 400 },
+    );
+  }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    action: "cases.view",
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
+  const required = requiredActionForJob(parsed.data.job);
+  if (!ctxHasAction(access.ctx, required)) {
+    return NextResponse.json(
+      { error: `Missing permission: ${required}` },
+      { status: 403 },
     );
   }
 
@@ -90,6 +130,34 @@ export async function POST(request: Request) {
   const createdById = session.user.id;
 
   try {
+    if (parsed.data.job === "case_steps") {
+      const result = await draftCaseSteps({
+        workspaceId,
+        title: parsed.data.title,
+        description: parsed.data.description,
+        requirementId: parsed.data.requirementId,
+        config,
+        allowHeuristic,
+      });
+      if ("disabled" in result && result.disabled) {
+        return NextResponse.json({ code: "ai_disabled" }, { status: 503 });
+      }
+      return NextResponse.json(result, { status: 201 });
+    }
+
+    if (parsed.data.job === "triage_summary") {
+      const result = await draftTriageSummary({
+        workspaceId,
+        items: parsed.data.items,
+        config,
+        allowHeuristic,
+      });
+      if ("disabled" in result && result.disabled) {
+        return NextResponse.json({ code: "ai_disabled" }, { status: 503 });
+      }
+      return NextResponse.json(result, { status: 201 });
+    }
+
     if (parsed.data.job === "intents_from_requirement") {
       const result = await draftIntentsFromRequirement({
         workspaceId,

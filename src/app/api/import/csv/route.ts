@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { cases, folders } from "@/db/schema";
+import {
+  cases,
+  customFieldDefs,
+  customFieldValues,
+  folders,
+} from "@/db/schema";
 import { parseCasesCsv, serializeCasesCsv } from "@/lib/csv";
 import {
   getMembershipForProject,
@@ -12,6 +17,7 @@ import {
 } from "@/lib/project";
 import { recordAuditEvent } from "@/lib/audit";
 import { listCases } from "@/lib/queries";
+import { upsertCustomFieldValues } from "@/lib/tcm/case-tcm";
 
 /**
  * `requireProjectAccess` uses `pickAccessibleProject` in `src/lib/project.ts`,
@@ -46,7 +52,53 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const data = await listCases(access.ctx.project.id);
+  const workspaceId = access.ctx.project.id;
+  const [data, fieldDefs] = await Promise.all([
+    listCases(workspaceId),
+    db.query.customFieldDefs.findMany({
+      where: and(
+        eq(customFieldDefs.workspaceId, workspaceId),
+        eq(customFieldDefs.entity, "case"),
+      ),
+      orderBy: [asc(customFieldDefs.position), asc(customFieldDefs.key)],
+    }),
+  ]);
+  const customFieldKeys = fieldDefs.map((d) => d.key);
+  const valuesByCase = new Map<string, Record<string, string>>();
+  if (fieldDefs.length > 0 && data.length > 0) {
+    const valueRows = await db.query.customFieldValues.findMany({
+      where: and(
+        eq(customFieldValues.entityType, "case"),
+        inArray(
+          customFieldValues.entityId,
+          data.map((c) => c.id),
+        ),
+        inArray(
+          customFieldValues.fieldId,
+          fieldDefs.map((d) => d.id),
+        ),
+      ),
+    });
+    const defById = new Map(fieldDefs.map((d) => [d.id, d]));
+    for (const row of valueRows) {
+      const def = defById.get(row.fieldId);
+      if (!def) continue;
+      let parsed: unknown = row.valueJson;
+      try {
+        parsed = JSON.parse(row.valueJson);
+      } catch {
+        /* keep raw */
+      }
+      const bucket = valuesByCase.get(row.entityId) ?? {};
+      bucket[def.key] =
+        typeof parsed === "string" ||
+        typeof parsed === "number" ||
+        typeof parsed === "boolean"
+          ? String(parsed)
+          : row.valueJson;
+      valuesByCase.set(row.entityId, bucket);
+    }
+  }
   const csv = serializeCasesCsv(
     data.map((c) => ({
       key: c.key,
@@ -58,8 +110,10 @@ export async function GET(request: Request) {
       priority: c.priority,
       status: c.status,
       folderName: c.folder?.name,
-      tags: c.tags,
+      tags: c.tags ?? [],
+      customFields: valuesByCase.get(c.id),
     })),
+    { customFieldKeys },
   );
 
   await recordAuditEvent({
@@ -126,7 +180,14 @@ export async function POST(request: Request) {
     raw = typeof body?.csv === "string" ? body.csv : "";
   }
 
-  const { rows, errors } = parseCasesCsv(raw);
+  const fieldDefs = await db.query.customFieldDefs.findMany({
+    where: and(
+      eq(customFieldDefs.workspaceId, workspaceId),
+      eq(customFieldDefs.entity, "case"),
+    ),
+  });
+  const customFieldKeys = fieldDefs.map((d) => d.key);
+  const { rows, errors } = parseCasesCsv(raw, { customFieldKeys });
   if (rows.length === 0) {
     return NextResponse.json(
       { error: "No valid rows", details: errors },
@@ -192,6 +253,14 @@ export async function POST(request: Request) {
           createdById: session.user.id,
         })
         .returning();
+      if (row.customFields && Object.keys(row.customFields).length > 0) {
+        await upsertCustomFieldValues({
+          workspaceId,
+          entityType: "case",
+          entityId: c.id,
+          values: row.customFields,
+        });
+      }
       created.push(c);
     } catch {
       skipped.push(row.key);

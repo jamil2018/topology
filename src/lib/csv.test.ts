@@ -79,6 +79,39 @@ PHANTOM,created,from-newline,P0,ready
   });
 });
 
+describe("custom field CSV columns", () => {
+  it("round-trips cf: columns", () => {
+    const csv = serializeCasesCsv(
+      [
+        {
+          key: "TOP-30",
+          title: "Custom field case",
+          description: "",
+          preconditions: "",
+          steps: "",
+          expectedResult: "",
+          priority: "P2",
+          status: "draft",
+          folderName: "",
+          tags: [],
+          customFields: { owner: "qa", severity: "high" },
+        },
+      ],
+      { customFieldKeys: ["owner", "severity"] },
+    );
+    expect(csv.split("\n")[0]).toContain("cf:owner");
+    expect(csv.split("\n")[0]).toContain("cf:severity");
+    const { rows, errors } = parseCasesCsv(csv, {
+      customFieldKeys: ["owner", "severity"],
+    });
+    expect(errors).toEqual([]);
+    expect(rows[0]?.customFields).toEqual({
+      owner: "qa",
+      severity: "high",
+    });
+  });
+});
+
 describe("serializeCasesCsv", () => {
   it("round-trips essential fields", () => {
     const csv = serializeCasesCsv([

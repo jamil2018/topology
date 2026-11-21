@@ -16,7 +16,7 @@ import { listIssueProviders } from "@topology/issue-providers";
 const createSchema = z.object({
   action: z.literal("create"),
   resultId: z.string().uuid(),
-  provider: z.enum(["mock", "jira", "linear", "github"]).optional(),
+  provider: z.enum(["mock", "jira", "linear", "github", "gitlab"]).optional(),
   title: z.string().optional(),
   description: z.string().optional(),
   projectKey: z.string().optional(),
@@ -28,7 +28,7 @@ const linkSchema = z.object({
   action: z.literal("link"),
   resultId: z.string().uuid(),
   remoteKey: z.string().min(1),
-  provider: z.enum(["mock", "jira", "linear", "github"]).optional(),
+  provider: z.enum(["mock", "jira", "linear", "github", "gitlab"]).optional(),
 });
 
 const refreshSchema = z.object({

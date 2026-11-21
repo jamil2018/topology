@@ -63,11 +63,32 @@ export function QaHome({ pulse }: { pulse: HubPulseData }) {
   const inProgress = pulse.inProgressRuns ?? [];
   const failing = pulse.failingNow ?? [];
   const retest = pulse.retestQueue ?? [];
+  const inReviewCount =
+    pulse.inReviewCount ?? pulse.cases.inReview ?? 0;
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       {pulse.cases.total === 0 || pulse.runs.total === 0 ? <div className="col-span-full"><GuidedFirstRun completed={[...(pulse.cases.total ? ["1"] : []), ...(pulse.runs.total ? ["2"] : []), ...((pulse.runs.automation ?? 0) > 0 ? ["3"] : [])]} /></div> : null}
       {(assigned[0] ?? inProgress[0]) ? <section className="col-span-full flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-accent-soft)] p-4"><div><p className="text-xs text-[color:var(--topo-muted)]">Pick up where you left off</p><h2 className="mt-1 text-base font-semibold">{(assigned[0] ?? inProgress[0]).name}</h2></div><Link className="rounded-md bg-[color:var(--topo-accent)] px-4 py-2 text-sm font-medium text-[color:var(--accent-foreground)]" href={`/runs/${(assigned[0] ?? inProgress[0]).id}`}>Continue testing</Link></section> : null}
+      {inReviewCount > 0 ? (
+        <section className="col-span-full flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-4 py-3">
+          <div>
+            <p className="text-xs text-[color:var(--topo-muted)]">
+              Case review queue
+            </p>
+            <p className="mt-0.5 text-sm text-[color:var(--topo-ink)]">
+              {inReviewCount} case{inReviewCount === 1 ? "" : "s"} waiting for
+              review
+            </p>
+          </div>
+          <Link
+            href="/cases?status=in_review"
+            className="rounded-md border border-[color:var(--topo-line)] px-3 py-1.5 text-sm font-medium text-[color:var(--topo-accent)] hover:bg-[color:var(--topo-chip)]/60"
+          >
+            Open review queue
+          </Link>
+        </section>
+      ) : null}
 
       <WidgetCard reduceMotion={reduceMotion} delay={0.02} className="overflow-hidden">
         <div className="flex items-baseline justify-between gap-2 border-b border-[color:var(--topo-line)] px-4 py-3">

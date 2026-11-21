@@ -8,7 +8,10 @@ import {
   WEBHOOK_EVENTS,
   assertSafeWebhookDestination,
   isBlockedIpAddress,
+  scrubSecretsForStorage,
+  scrubWebhookRequestBody,
   signBody,
+  truncateWebhookResponseExcerpt,
   webhookUrlError,
 } from "./webhooks";
 
@@ -78,6 +81,38 @@ describe("WEBHOOK_EVENTS", () => {
         "proposal.created",
       ]),
     );
+  });
+});
+
+describe("webhook delivery scrubbing", () => {
+  it("redacts secret-looking keys and truncates excerpts", () => {
+    expect(
+      scrubSecretsForStorage({
+        event: "run.completed",
+        data: { run: { id: "r1" }, apiToken: "tok_live", nested: { password: "x" } },
+        secret: "whsec",
+      }),
+    ).toEqual({
+      event: "run.completed",
+      data: {
+        run: { id: "r1" },
+        apiToken: "[redacted]",
+        nested: { password: "[redacted]" },
+      },
+      secret: "[redacted]",
+    });
+
+    const scrubbed = scrubWebhookRequestBody(
+      JSON.stringify({ id: "d1", data: { authorization: "Bearer x" } }),
+    );
+    expect(scrubbed).toContain("[redacted]");
+    expect(scrubbed).not.toContain("Bearer x");
+
+    const long = "a".repeat(3_000);
+    expect(truncateWebhookResponseExcerpt(long).length).toBeLessThanOrEqual(
+      2_049,
+    );
+    expect(truncateWebhookResponseExcerpt(long).endsWith("…")).toBe(true);
   });
 });
 

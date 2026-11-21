@@ -40,6 +40,9 @@ export type ReportKpis = StatusCounts & {
   flake: number;
   passRate: number | null;
   durationMs: number | null;
+  /** Mean of result `durationMs` values that were recorded. */
+  averageDurationMs: number | null;
+  timedResultCount: number;
   executed: number;
 };
 
@@ -133,6 +136,23 @@ export function sumDurations(
     }
   }
   return any ? sum : null;
+}
+
+export function averageDuration(
+  results: Array<{ durationMs?: number | null }>,
+): { averageMs: number | null; count: number } {
+  let sum = 0;
+  let count = 0;
+  for (const r of results) {
+    if (typeof r.durationMs === "number" && Number.isFinite(r.durationMs) && r.durationMs >= 0) {
+      sum += r.durationMs;
+      count += 1;
+    }
+  }
+  return {
+    averageMs: count > 0 ? Math.round(sum / count) : null,
+    count,
+  };
 }
 
 export function runWallDurationMs(
@@ -259,12 +279,15 @@ export function buildReportKpis(
   const executed = counts.passed + counts.failed;
   const resultDuration = sumDurations(results);
   const wall = runWallDurationMs(options.startedAt, options.completedAt);
+  const timed = averageDuration(results);
   return {
     ...counts,
     flake: options.flake ?? 0,
     executed,
     passRate: computePassRate(counts.passed, counts.failed),
     durationMs: wall ?? resultDuration,
+    averageDurationMs: timed.averageMs,
+    timedResultCount: timed.count,
   };
 }
 

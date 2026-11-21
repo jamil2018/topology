@@ -76,6 +76,15 @@ export async function POST(request: Request, { params }: Params) {
         data,
         authResult.workspaceId,
       ).catch(() => {});
+      void import("@/lib/notification-channels")
+        .then(({ dispatchNotificationChannels }) =>
+          dispatchNotificationChannels(
+            "run.completed",
+            data,
+            authResult.workspaceId,
+          ),
+        )
+        .catch(() => {});
     }
 
     const { syncIntentStaleWebhooks } = await import(

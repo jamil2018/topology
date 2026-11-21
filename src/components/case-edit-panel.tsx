@@ -12,7 +12,7 @@ import {
   ListBox,
   Select,
 } from "@heroui/react";
-import { FloppyDiskIcon, XIcon } from "@phosphor-icons/react";
+import { CopyIcon, FloppyDiskIcon, SparkleIcon, XIcon } from "@phosphor-icons/react";
 import { folderPathLabel } from "@/lib/folder-tree";
 import type { OrderedStep } from "@/lib/tcm/steps";
 import { CaseHistoryPanel } from "./case-history-panel";
@@ -26,12 +26,13 @@ import {
   type DatasetDraft,
   type ParameterDraft,
 } from "./case-tcm-panel";
+import { CASE_STATUSES, emptyStructuredStep } from "./cases-model";
 import { formatStatusLabel } from "@/lib/format-labels";
 import { useQualityGraph } from "./quality-graph-provider";
 import { Bone } from "./skeletons";
 
 const priorities = ["P0", "P1", "P2", "P3"] as const;
-const statuses = ["draft", "ready", "blocked", "deprecated"] as const;
+const statuses = CASE_STATUSES;
 
 type Folder = { id: string; name: string; parentId: string | null };
 type FlatFolder = Folder & { depth: number };
@@ -49,6 +50,8 @@ type CaseDetail = {
   tags: string[];
   folderId: string | null;
   intentId?: string | null;
+  reviewerId?: string | null;
+  reviewedAt?: string | Date | null;
   intent?: {
     id: string;
     key: string;
@@ -61,6 +64,10 @@ type CaseDetail = {
   datasets?: DatasetDraft[];
   customFields?: Record<string, unknown>;
   customFieldDefs?: CustomFieldDefView[];
+};
+
+type WorkspaceMember = {
+  user: { id: string; name: string | null; email: string };
 };
 
 type EditForm = {
@@ -104,6 +111,7 @@ export function CaseEditPanel({
   flatFolders,
   onClose,
   onSaved,
+  onDuplicated,
   onDirtyChange,
 }: {
   caseId: string;
@@ -121,12 +129,25 @@ export function CaseEditPanel({
     tags: string[];
     folder: { id: string; name: string } | null;
   }) => void;
+  onDuplicated?: (next: {
+    id: string;
+    key: string;
+    title: string;
+    priority: string;
+    status: string;
+    tags: string[];
+    folder: { id: string; name: string } | null;
+    intentId?: string | null;
+    intent?: { id: string; key: string; title: string } | null;
+  }) => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { enabled: qualityGraphEnabled } = useQualityGraph();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const saveLock = useRef(false);
+  const duplicateLock = useRef(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const { can } = useProjectActions();
@@ -143,6 +164,11 @@ export function CaseEditPanel({
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
   const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDefView[]>([]);
   const [sharedSteps, setSharedSteps] = useState<Array<{ id: string; name: string }>>([]);
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [reviewerId, setReviewerId] = useState("");
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [draftingSteps, setDraftingSteps] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +177,7 @@ export function CaseEditPanel({
     setSaveError(null);
     setReadOnly(false);
     setShowHistory(false);
+    setReviewComment("");
     void fetch(`/api/cases/${caseId}`)
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
@@ -163,6 +190,7 @@ export function CaseEditPanel({
         const next = data.case as CaseDetail;
         setDetail(next);
         setForm(toForm(next));
+        setReviewerId(next.reviewerId ?? "");
         const stored = next.structuredSteps ?? [];
         setUseStructured(stored.length > 0);
         setStructuredSteps(stored);
@@ -193,6 +221,13 @@ export function CaseEditPanel({
         setLoadError(err instanceof Error ? err.message : "Failed to load case");
         setLoading(false);
       });
+    void fetch("/api/workspace")
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setMembers((data.members ?? []) as WorkspaceMember[]);
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -239,6 +274,54 @@ export function CaseEditPanel({
     : !dirty
       ? "No changes"
       : null;
+
+  async function duplicate() {
+    if (!can("cases.create") || duplicateLock.current || duplicating) return;
+    if (dirty) {
+      const proceed = window.confirm(
+        "This case has unsaved changes. Duplicate the saved version anyway?",
+      );
+      if (!proceed) return;
+    }
+    duplicateLock.current = true;
+    setDuplicating(true);
+    setSaveError(null);
+    try {
+      const res = await fetch(`/api/cases/${caseId}/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSaveError(
+          typeof data.error === "string"
+            ? data.error
+            : "Failed to duplicate case",
+        );
+        return;
+      }
+      const cloned = data.case as {
+        id: string;
+        key: string;
+        title: string;
+        priority: string;
+        status: string;
+        tags: string[];
+        folder: { id: string; name: string } | null;
+        intentId?: string | null;
+        intent?: { id: string; key: string; title: string } | null;
+      };
+      onDuplicated?.(cloned);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to duplicate case",
+      );
+    } finally {
+      duplicateLock.current = false;
+      setDuplicating(false);
+    }
+  }
 
   async function save() {
     if (!form || !detail || readOnly || saveLock.current) return;
@@ -343,8 +426,155 @@ export function CaseEditPanel({
     }
   }
 
+  async function applyReview(action: "submit" | "approve" | "request_changes") {
+    if (!detail || reviewBusy) return;
+    if (action === "submit" && !can("cases.edit")) return;
+    if (
+      (action === "approve" || action === "request_changes") &&
+      !can("cases.approve")
+    ) {
+      return;
+    }
+    if (action === "submit" && !reviewerId) {
+      setSaveError("Choose a reviewer before submitting");
+      return;
+    }
+    if (action === "request_changes" && !reviewComment.trim()) {
+      setSaveError("Add a review comment when requesting changes");
+      return;
+    }
+    setReviewBusy(true);
+    setSaveError(null);
+    try {
+      const body =
+        action === "submit"
+          ? { status: "in_review", reviewerId }
+          : action === "approve"
+            ? { status: "ready" }
+            : { status: "draft", reviewComment: reviewComment.trim() };
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSaveError(
+          typeof data.error === "string" ? data.error : "Review action failed",
+        );
+        return;
+      }
+      const saved = data.case as CaseDetail & {
+        folder?: { id: string; name: string } | null;
+      };
+      const nextDetail: CaseDetail = {
+        ...detail,
+        status: saved.status,
+        reviewerId: saved.reviewerId ?? detail.reviewerId,
+        reviewedAt: saved.reviewedAt ?? detail.reviewedAt,
+      };
+      setDetail(nextDetail);
+      setForm((f) => (f ? { ...f, status: saved.status } : f));
+      setReviewComment("");
+      setHistoryKey((k) => k + 1);
+      const folder =
+        nextDetail.folderId != null
+          ? (() => {
+              const match = folders.find((f) => f.id === nextDetail.folderId);
+              return match
+                ? { id: match.id, name: match.name }
+                : saved.folder
+                  ? { id: saved.folder.id, name: saved.folder.name }
+                  : null;
+            })()
+          : null;
+      onSaved({
+        id: nextDetail.id,
+        key: nextDetail.key,
+        title: nextDetail.title,
+        priority: nextDetail.priority,
+        status: nextDetail.status,
+        tags: nextDetail.tags,
+        folder,
+      });
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Review action failed",
+      );
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+
+  async function draftStepsWithAi() {
+    if (!form || readOnly || draftingSteps) return;
+    setDraftingSteps(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/ai/draft?heuristic=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job: "case_steps",
+          title: form.title.trim() || detail?.title || caseTitle,
+          description: form.description,
+          allowHeuristic: true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSaveError(
+          typeof data.error === "string"
+            ? data.error
+            : "Could not draft steps",
+        );
+        return;
+      }
+      const drafted = Array.isArray(data.steps)
+        ? (data.steps as Array<{
+            action?: string;
+            expected?: string;
+            data?: string;
+          }>)
+        : [];
+      if (drafted.length === 0) {
+        setSaveError("AI returned no steps to insert");
+        return;
+      }
+      const nextSteps: OrderedStep[] = drafted.map((step, index) => ({
+        ...emptyStructuredStep(),
+        position: index,
+        action: step.action ?? "",
+        expected: step.expected ?? "",
+        data: step.data ?? "",
+      }));
+      setStructuredSteps(nextSteps);
+      setUseStructured(true);
+      void fetch("/api/shared-steps")
+        .then((sharedRes) => sharedRes.json())
+        .then((shared) => {
+          setSharedSteps(
+            (shared.sharedSteps ?? []).map(
+              (s: { id: string; name: string }) => ({
+                id: s.id,
+                name: s.name,
+              }),
+            ),
+          );
+        })
+        .catch(() => undefined);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Could not draft steps",
+      );
+    } finally {
+      setDraftingSteps(false);
+    }
+  }
+
   const headerKey = detail?.key ?? caseKey;
   const headerTitle = form?.title || detail?.title || caseTitle;
+  const statusValue = form?.status ?? detail?.status ?? "draft";
 
   return (
     <aside className="flex h-full max-h-[calc(100vh-6rem)] flex-col overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
@@ -442,16 +672,27 @@ export function CaseEditPanel({
             </TextField>
             {useStructured ? (
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <Label>Structured steps</Label>
-                  <Button
-                    size="sm"
-                    variant="tertiary"
-                    isDisabled={readOnly || saving}
-                    onPress={() => setUseStructured(false)}
-                  >
-                    Use text steps
-                  </Button>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      isDisabled={readOnly || saving || draftingSteps}
+                      onPress={() => void draftStepsWithAi()}
+                    >
+                      <SparkleIcon size={14} weight="bold" />
+                      {draftingSteps ? "Drafting…" : "Draft steps with AI"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="tertiary"
+                      isDisabled={readOnly || saving}
+                      onPress={() => setUseStructured(false)}
+                    >
+                      Use text steps
+                    </Button>
+                  </div>
                 </div>
                 <CaseStepsEditor
                   steps={structuredSteps}
@@ -486,32 +727,43 @@ export function CaseEditPanel({
                     className="w-full min-h-14"
                   />
                 </TextField>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  isDisabled={readOnly || saving}
-                  onPress={() => {
-                    setStructuredSteps(
-                      stepsFromFallback(form.steps, form.expectedResult),
-                    );
-                    setUseStructured(true);
-                    void fetch("/api/shared-steps")
-                      .then((res) => res.json())
-                      .then((data) => {
-                        setSharedSteps(
-                          (data.sharedSteps ?? []).map(
-                            (s: { id: string; name: string }) => ({
-                              id: s.id,
-                              name: s.name,
-                            }),
-                          ),
-                        );
-                      })
-                      .catch(() => undefined);
-                  }}
-                >
-                  Use structured steps
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    isDisabled={readOnly || saving || draftingSteps}
+                    onPress={() => void draftStepsWithAi()}
+                  >
+                    <SparkleIcon size={14} weight="bold" />
+                    {draftingSteps ? "Drafting…" : "Draft steps with AI"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    isDisabled={readOnly || saving}
+                    onPress={() => {
+                      setStructuredSteps(
+                        stepsFromFallback(form.steps, form.expectedResult),
+                      );
+                      setUseStructured(true);
+                      void fetch("/api/shared-steps")
+                        .then((res) => res.json())
+                        .then((data) => {
+                          setSharedSteps(
+                            (data.sharedSteps ?? []).map(
+                              (s: { id: string; name: string }) => ({
+                                id: s.id,
+                                name: s.name,
+                              }),
+                            ),
+                          );
+                        })
+                        .catch(() => undefined);
+                    }}
+                  >
+                    Use structured steps
+                  </Button>
+                </div>
               </>
             )}
             <div className="grid gap-3">
@@ -629,6 +881,118 @@ export function CaseEditPanel({
                 className="w-full"
               />
             </TextField>
+            <div className="space-y-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-canvas)] px-2.5 py-2.5">
+              <p className="text-xs font-medium text-[color:var(--topo-muted)]">
+                Review workflow
+              </p>
+              {statusValue === "draft" && can("cases.edit") ? (
+                <div className="space-y-2">
+                  <Select
+                    className="w-full"
+                    variant="secondary"
+                    placeholder="Reviewer"
+                    value={reviewerId || "none"}
+                    isDisabled={reviewBusy || saving}
+                    onChange={(value) => {
+                      if (value == null) return;
+                      const next = String(value);
+                      setReviewerId(next === "none" ? "" : next);
+                    }}
+                  >
+                    <Label>Reviewer</Label>
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id="none" textValue="Select reviewer">
+                          Select reviewer
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                        {members.map((member) => {
+                          const label =
+                            member.user.name?.trim() || member.user.email;
+                          return (
+                            <ListBox.Item
+                              key={member.user.id}
+                              id={member.user.id}
+                              textValue={label}
+                            >
+                              {label}
+                              <ListBox.ItemIndicator />
+                            </ListBox.Item>
+                          );
+                        })}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    isDisabled={reviewBusy || saving || !reviewerId}
+                    onPress={() => void applyReview("submit")}
+                  >
+                    {reviewBusy ? "Submitting…" : "Submit for review"}
+                  </Button>
+                </div>
+              ) : null}
+              {statusValue === "in_review" ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-[color:var(--topo-ink)]">
+                    This case is in review
+                    {detail?.reviewerId
+                      ? ` · reviewer assigned`
+                      : ""}
+                    .
+                  </p>
+                  {can("cases.approve") ? (
+                    <>
+                      <TextField name="review-comment" className="w-full">
+                        <Label>Review comment</Label>
+                        <TextArea
+                          value={reviewComment}
+                          disabled={reviewBusy || saving}
+                          onChange={(e) => setReviewComment(e.target.value)}
+                          className="w-full min-h-14"
+                          placeholder="Required when requesting changes"
+                        />
+                      </TextField>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          isDisabled={reviewBusy || saving}
+                          onPress={() => void applyReview("approve")}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          isDisabled={
+                            reviewBusy || saving || !reviewComment.trim()
+                          }
+                          onPress={() => void applyReview("request_changes")}
+                        >
+                          Request changes
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-[color:var(--topo-muted)]">
+                      Waiting for a reviewer with approve permission.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+              {statusValue !== "draft" && statusValue !== "in_review" ? (
+                <p className="text-xs text-[color:var(--topo-muted)]">
+                  Status is {formatStatusLabel(statusValue)}. Move back to Draft
+                  to submit for review again.
+                </p>
+              ) : null}
+            </div>
             {saveError ? (
               <p className="text-sm text-red-600 dark:text-red-300">{saveError}</p>
             ) : null}
@@ -636,16 +1000,33 @@ export function CaseEditPanel({
               <Button
                 variant="primary"
                 size="sm"
-                isDisabled={readOnly || saving || Boolean(saveDisabledReason)}
+                isDisabled={
+                  readOnly ||
+                  saving ||
+                  duplicating ||
+                  reviewBusy ||
+                  Boolean(saveDisabledReason)
+                }
                 onPress={() => void save()}
               >
                 <FloppyDiskIcon size={14} weight="bold" />
                 {saving ? "Saving…" : "Save"}
               </Button>
+              {can("cases.create") ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  isDisabled={saving || duplicating || loading || reviewBusy}
+                  onPress={() => void duplicate()}
+                >
+                  <CopyIcon size={14} weight="bold" />
+                  {duplicating ? "Duplicating…" : "Duplicate"}
+                </Button>
+              ) : null}
               <Button
                 variant="tertiary"
                 size="sm"
-                isDisabled={saving}
+                isDisabled={saving || duplicating || reviewBusy}
                 onPress={onClose}
               >
                 Close

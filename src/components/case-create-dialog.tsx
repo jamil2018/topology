@@ -10,6 +10,7 @@ import {
   TextArea,
   TextField,
 } from "@heroui/react";
+import { SparkleIcon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { folderPathLabel } from "@/lib/folder-tree";
 import type { OrderedStep } from "@/lib/tcm/steps";
@@ -71,12 +72,75 @@ export function CaseCreateDialog({
   );
   const [steps, setSteps] = useState<OrderedStep[]>([emptyStructuredStep()]);
   const [saving, setSaving] = useState(false);
+  const [draftingSteps, setDraftingSteps] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const lock = useRef(false);
 
   useEffect(() => {
     setForm(blankForm(initialKey, initialFolderId));
     setSteps([emptyStructuredStep()]);
+    setDraftError(null);
   }, [initialKey, initialFolderId]);
+
+  const busy = pending || saving || draftingSteps;
+
+  async function draftStepsWithAi() {
+    if (draftingSteps || pending || saving) return;
+    if (!form.title.trim()) {
+      setDraftError("Enter a title before drafting steps");
+      return;
+    }
+    setDraftingSteps(true);
+    setDraftError(null);
+    onError("");
+    try {
+      const res = await fetch("/api/ai/draft?heuristic=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job: "case_steps",
+          title: form.title.trim(),
+          description: form.description,
+          allowHeuristic: true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDraftError(
+          typeof data.error === "string"
+            ? data.error
+            : "Could not draft steps",
+        );
+        return;
+      }
+      const drafted = Array.isArray(data.steps)
+        ? (data.steps as Array<{
+            action?: string;
+            expected?: string;
+            data?: string;
+          }>)
+        : [];
+      if (drafted.length === 0) {
+        setDraftError("AI returned no steps to insert");
+        return;
+      }
+      setSteps(
+        drafted.map((step, index) => ({
+          ...emptyStructuredStep(),
+          position: index,
+          action: step.action ?? "",
+          expected: step.expected ?? "",
+          data: step.data ?? "",
+        })),
+      );
+    } catch (error) {
+      setDraftError(
+        error instanceof Error ? error.message : "Could not draft steps",
+      );
+    } finally {
+      setDraftingSteps(false);
+    }
+  }
 
   async function createCase() {
     if (lock.current) return;
@@ -140,8 +204,6 @@ export function CaseCreateDialog({
     }
   }
 
-  const busy = pending || saving;
-
   return (
     <motion.div
       initial={{ opacity: 0, y: -8 }}
@@ -165,8 +227,26 @@ export function CaseCreateDialog({
         </TextField>
       </div>
       <div className="space-y-1.5">
-        <Label>Steps</Label>
-        <CaseStepsEditor steps={steps} onChange={setSteps} disabled={busy} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label>Steps</Label>
+          <Button
+            size="sm"
+            variant="secondary"
+            isDisabled={busy || draftingSteps || !form.title.trim()}
+            onPress={() => void draftStepsWithAi()}
+          >
+            <SparkleIcon size={14} weight="bold" />
+            {draftingSteps ? "Drafting…" : "Draft steps with AI"}
+          </Button>
+        </div>
+        <CaseStepsEditor
+          steps={steps}
+          onChange={setSteps}
+          disabled={busy || draftingSteps}
+        />
+        {draftError ? (
+          <p className="text-sm text-red-600 dark:text-red-300">{draftError}</p>
+        ) : null}
       </div>
       <details className="rounded-md border border-[color:var(--topo-line)] p-3">
         <summary className="cursor-pointer text-sm font-medium text-[color:var(--topo-ink)]">Case details <span className="text-[color:var(--topo-muted)]">· {form.key || "Key required"} · {formatStatusLabel(form.status)} · {form.priority}</span></summary>

@@ -35,7 +35,7 @@ describe("journaled migrator", () => {
       readFileSync(path.join(folder, "meta/_journal.json"), "utf8"),
     ) as { entries: { tag: string; idx: number }[] };
 
-    expect(journal.entries).toHaveLength(7);
+    expect(journal.entries).toHaveLength(8);
     expect(journal.entries[0]?.idx).toBe(0);
     expect(journal.entries[0]?.tag).toBe("0000_baseline");
     expect(journal.entries[1]?.idx).toBe(1);
@@ -44,9 +44,11 @@ describe("journaled migrator", () => {
     expect(journal.entries[2]?.tag).toBe("0002_scale");
     expect(journal.entries[3]?.idx).toBe(3);
     expect(journal.entries[3]?.tag).toBe("0003_quality_graph_pref");
+    expect(journal.entries[7]?.idx).toBe(7);
+    expect(journal.entries[7]?.tag).toBe("0007_collab_and_integrations");
 
     const files = readMigrationFiles({ migrationsFolder: folder });
-    expect(files).toHaveLength(7);
+    expect(files).toHaveLength(8);
     const baseline = files[0]!.sql.join("\n");
     expect(baseline).toContain('CREATE TABLE "users"');
     expect(baseline).toContain('CREATE TABLE "attachments"');
@@ -68,6 +70,12 @@ describe("journaled migrator", () => {
     expect(scale).toContain("case_steps_case_id_idx");
     const pref = files[3]!.sql.join("\n");
     expect(pref).toContain("quality_graph_enabled");
+    const collab = files[7]!.sql.join("\n");
+    expect(collab).toContain("ADD VALUE IF NOT EXISTS 'in_review'");
+    expect(collab).toContain('CREATE TABLE "webhook_deliveries"');
+    expect(collab).toContain('CREATE TABLE "notification_channels"');
+    expect(collab).toContain("cases_search_vector_idx");
+    expect(collab).toContain("case_steps_search_vector_idx");
   });
 
   it("reconciles only when tables exist and the journal is empty", () => {
@@ -106,6 +114,11 @@ describe("journaled migrator", () => {
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS "webhook_secret"');
     expect(sql).toContain("ADD VALUE IF NOT EXISTS 'gitlab'");
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS "quality_graph_enabled"');
+    expect(sql).toContain("ADD VALUE IF NOT EXISTS 'in_review'");
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "webhook_deliveries"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "notification_channels"');
+    expect(sql).toContain("cases_search_vector_idx");
+    expect(sql).toContain("case_steps_search_vector_idx");
   });
 
   it("refuses to run without DATABASE_URL", async () => {

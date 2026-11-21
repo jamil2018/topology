@@ -4,6 +4,7 @@ import {
   FROZEN_RUN_STATUSES,
   RUN_IMMUTABLE_MESSAGE,
   immutableMessageFor,
+  isReopenableRunStatus,
   isRunFrozen,
   pendingResultCount,
 } from "./run-immutability";
@@ -21,6 +22,12 @@ describe("isRunFrozen", () => {
 
   it("lists completed and aborted as frozen statuses", () => {
     expect([...FROZEN_RUN_STATUSES]).toEqual(["completed", "aborted"]);
+  });
+
+  it("marks frozen runs as reopenable", () => {
+    expect(isReopenableRunStatus("completed")).toBe(true);
+    expect(isReopenableRunStatus("aborted")).toBe(true);
+    expect(isReopenableRunStatus("in_progress")).toBe(false);
   });
 });
 

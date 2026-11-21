@@ -49,7 +49,10 @@ test("release gate: login → hub → case → run → fail → mock issue → t
   });
 
   const runName = `Release gate ${Date.now()}`;
-  await page.getByRole("link", { name: /Start a run/i }).first().click();
+  await Promise.all([
+    page.waitForURL(/\/runs\/new/, { timeout: 20_000 }),
+    page.getByRole("link", { name: /Start a run/i }).first().click(),
+  ]);
   await expect(page.getByRole("heading", { name: "Start a run" })).toBeVisible({
     timeout: 15_000,
   });
@@ -60,7 +63,7 @@ test("release gate: login → hub → case → run → fail → mock issue → t
   });
 
   // Execute: start → fail first case → create mock issue
-  const startBtn = page.getByRole("button", { name: "Start" });
+  const startBtn = page.getByRole("button", { name: "Start", exact: true });
   await expect(startBtn).toBeVisible();
   await startBtn.click();
   await expect(startBtn).toBeHidden({ timeout: 15_000 });

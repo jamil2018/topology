@@ -13,7 +13,13 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { db } from "@/db";
-import { cases, folders, testIntents } from "@/db/schema";
+import {
+  cases,
+  customFieldDefs,
+  customFieldValues,
+  folders,
+  testIntents,
+} from "@/db/schema";
 import {
   CASE_LIST_PAGE_SIZE,
   parseCaseListSort,
@@ -65,6 +71,43 @@ function caseSearchSql(search: string | undefined): SQL | undefined {
   );
 }
 
+function customFieldFilterSql(
+  workspaceId: string,
+  filters: Record<string, string> | undefined,
+): SQL | undefined {
+  if (!filters) return undefined;
+  const clauses: SQL[] = [];
+  for (const [key, raw] of Object.entries(filters)) {
+    const value = raw.trim();
+    if (!key || !value || value === "all") continue;
+    const json = JSON.stringify(value);
+    const boolLiteral =
+      value.toLowerCase() === "true"
+        ? "true"
+        : value.toLowerCase() === "false"
+          ? "false"
+          : null;
+    const valueMatch = boolLiteral
+      ? sql`(${customFieldValues.valueJson} = ${json} or ${customFieldValues.valueJson} = ${boolLiteral})`
+      : sql`${customFieldValues.valueJson} = ${json}`;
+    clauses.push(
+      sql`exists (
+        select 1
+        from ${customFieldValues}
+        inner join ${customFieldDefs}
+          on ${customFieldDefs.id} = ${customFieldValues.fieldId}
+        where ${customFieldValues.entityType} = 'case'
+          and ${customFieldValues.entityId} = ${cases.id}
+          and ${customFieldDefs.workspaceId} = ${workspaceId}
+          and ${customFieldDefs.entity} = 'case'
+          and ${customFieldDefs.key} = ${key}
+          and ${valueMatch}
+      )`,
+    );
+  }
+  return clauses.length > 0 ? and(...clauses) : undefined;
+}
+
 function caseWhere(
   workspaceId: string,
   query: CaseListQuery,
@@ -82,6 +125,7 @@ function caseWhere(
         )
       : undefined,
     caseSearchSql(query.search),
+    customFieldFilterSql(workspaceId, query.customFieldFilters),
   );
 }
 

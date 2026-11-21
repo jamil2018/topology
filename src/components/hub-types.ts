@@ -18,7 +18,14 @@ export type RunPulse = {
 };
 
 export type HubPulseData = {
-  cases: { total: number; ready: number; blocked: number; draft: number };
+  cases: {
+    total: number;
+    ready: number;
+    blocked: number;
+    draft: number;
+    inReview?: number;
+  };
+  inReviewCount?: number;
   runs: {
     total: number;
     inProgress: number;

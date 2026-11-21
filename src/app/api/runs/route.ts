@@ -130,9 +130,35 @@ export async function POST(request: Request) {
       runId: run.id,
       caseIds,
     }, tx);
-    if (run.assigneeId && run.assigneeId !== session.user.id) await tx.insert(notifications).values({ workspaceId, userId: run.assigneeId, type: "assignment", title: `Run assigned: ${run.name}`, entityType: "run", entityId: run.id });
+    if (run.assigneeId && run.assigneeId !== session.user.id) {
+      await tx.insert(notifications).values({
+        workspaceId,
+        userId: run.assigneeId,
+        type: "assignment",
+        title: `Run assigned: ${run.name}`,
+        entityType: "run",
+        entityId: run.id,
+      });
+    }
     return run;
     });
+
+    if (run.assigneeId && run.assigneeId !== session.user.id) {
+      void import("@/lib/notification-channels")
+        .then(({ dispatchNotificationChannels }) =>
+          dispatchNotificationChannels(
+            "assignment",
+            {
+              userId: run.assigneeId!,
+              title: `Run assigned: ${run.name}`,
+              entityType: "run",
+              entityId: run.id,
+            },
+            workspaceId,
+          ),
+        )
+        .catch(() => {});
+    }
 
     return NextResponse.json({ run }, { status: 201 });
   } catch (err) {

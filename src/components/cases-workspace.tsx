@@ -115,6 +115,25 @@ export function CasesWorkspace({
   const [sort, setSort] = useQueryState<CaseListSort>("sort", "key", (value) => ["key", "title", "folder", "priority", "status"].includes(value) ? value as CaseListSort : "key");
   const [sortDir, setSortDir] = useQueryState<CaseListSortDir>("dir", "asc", (value) => value === "desc" ? "desc" : "asc");
   const [page, setPage] = useQueryState("page", 1, (value) => Math.max(1, Number(value) || 1), false);
+  const [caseFieldDefs, setCaseFieldDefs] = useState<
+    Array<{
+      key: string;
+      label: string;
+      type: string;
+      options?: string[];
+    }>
+  >([]);
+  const [customFieldFilters, setCustomFieldFilters] = useState<
+    Record<string, string>
+  >(() => {
+    const next: Record<string, string> = {};
+    for (const [key, value] of searchParams.entries()) {
+      if (!value || value === "all") continue;
+      if (key.startsWith("cf.")) next[key.slice(3)] = value;
+      else if (key.startsWith("cf_")) next[key.slice(3)] = value;
+    }
+    return next;
+  });
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(
     () => searchParams.get("new") === "1",
@@ -152,7 +171,73 @@ export function CasesWorkspace({
   const [inspectorContainer, setInspectorContainer] = useState<HTMLDialogElement | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
   const [pendingCase, setPendingCase] = useState<CaseRow | null>(null);
-  const query = new URLSearchParams({ folder: folderFilter, q: search, status: statusFilter, priority: priorityFilter, sort, dir: sortDir, page: String(page), limit: "50" }).toString();
+  useEffect(() => {
+    const controller = new AbortController();
+    void Promise.resolve(
+      fetch("/api/custom-fields?entity=case", { signal: controller.signal }),
+    )
+      .then(async (res) => {
+        if (!res || !res.ok) return;
+        const data = await res.json().catch(() => ({}));
+        const fields = (data.fields ?? []) as Array<{
+          key: string;
+          label: string;
+          type: string;
+          options?: string[];
+        }>;
+        setCaseFieldDefs(
+          fields.filter(
+            (f) => f.type === "select" || f.type === "boolean" || f.type === "text",
+          ),
+        );
+      })
+      .catch(() => {
+        /* ignore abort / load errors */
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    const params = new URLSearchParams(paramsKey);
+    for (const [key, value] of params.entries()) {
+      if (!value || value === "all") continue;
+      if (key.startsWith("cf.")) next[key.slice(3)] = value;
+      else if (key.startsWith("cf_")) next[key.slice(3)] = value;
+    }
+    setCustomFieldFilters(next);
+  }, [paramsKey]);
+
+  function setCustomFieldFilter(key: string, value: string) {
+    setActiveViewId(null);
+    setCustomFieldFilters((prev) => {
+      const next = { ...prev };
+      if (!value || value === "all") delete next[key];
+      else next[key] = value;
+      return next;
+    });
+    const url = new URL(window.location.href);
+    const param = `cf.${key}`;
+    if (!value || value === "all") url.searchParams.delete(param);
+    else url.searchParams.set(param, value);
+    url.searchParams.delete("page");
+    window.history.pushState(null, "", url.pathname + url.search + url.hash);
+  }
+
+  const queryParams = new URLSearchParams({
+    folder: folderFilter,
+    q: search,
+    status: statusFilter,
+    priority: priorityFilter,
+    sort,
+    dir: sortDir,
+    page: String(page),
+    limit: "50",
+  });
+  for (const [key, value] of Object.entries(customFieldFilters)) {
+    if (value && value !== "all") queryParams.set(`cf.${key}`, value);
+  }
+  const query = queryParams.toString();
   const remote = useListPage<CaseRow>("/api/cases", query, initialPage, "cases");
   const listedCases = remote.data?.items ?? initialCases;
   const [caseOverrides, setCaseOverrides] = useState<Record<string, CaseRow>>(
@@ -599,6 +684,11 @@ export function CasesWorkspace({
         void inlinePatch(detail.id, { status: detail.value });
       } else if (detail.type === "priority") {
         void inlinePatch(detail.id, { priority: detail.value });
+      } else if (detail.type === "duplicate") {
+        const row =
+          displayCases.find((item) => item.id === detail.id) ??
+          (historyCase?.id === detail.id ? historyCase : null);
+        if (row) void duplicateCase(row);
       }
     }
     window.addEventListener(TOPOLOGY_CASE_COMMAND, onCommand);
@@ -747,6 +837,95 @@ export function CasesWorkspace({
     setError(null);
     setCaseToDelete(row);
     caseDeleteModal.open();
+  }
+
+  async function duplicateCase(row: CaseRow) {
+    if (!can("cases.create") || mutationLocks.current.has(`clone:${row.id}`)) {
+      return;
+    }
+    if (historyCase?.id === row.id && editorDirty) {
+      const proceed = window.confirm(
+        "This case has unsaved changes. Duplicate the saved version anyway?",
+      );
+      if (!proceed) return;
+    }
+    mutationLocks.current.add(`clone:${row.id}`);
+    setError(null);
+    try {
+      const res = await fetch(`/api/cases/${row.id}/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "Failed to duplicate case",
+        );
+        return;
+      }
+      const cloned = data.case as CaseRow;
+      mergeCase(cloned);
+      commitOpen(cloned);
+      startTransition(() => router.refresh());
+    } catch {
+      setError("Failed to duplicate case");
+    } finally {
+      mutationLocks.current.delete(`clone:${row.id}`);
+    }
+  }
+
+  async function dropCasesOnFolder(folderId: string | null, caseIds: string[]) {
+    if (!can("cases.edit") || caseIds.length === 0) return;
+    if (caseIds.length === 1) {
+      await inlinePatch(caseIds[0]!, { folderId });
+      return;
+    }
+    const ids = caseIds;
+    if (mutationLocks.current.size) return;
+    mutationLocks.current.add("bulk");
+    setBulkPending(true);
+    setError(null);
+    startTransition(async () => {
+      addOptimisticCases({ folderId, ids });
+      try {
+        const response = await fetch("/api/cases", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ caseIds: ids, folderId }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            typeof data.error === "string" ? data.error : "Bulk update failed",
+          );
+        }
+        setCaseOverrides((previous) => {
+          const next = { ...previous };
+          for (const row of applyBulkPatch(
+            displayCases,
+            ids,
+            { folderId },
+            folders,
+          )) {
+            if (ids.includes(row.id)) next[row.id] = row;
+          }
+          return next;
+        });
+        setSelectedIds(new Set());
+      } catch (error) {
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Could not move cases. Try again.",
+        );
+      } finally {
+        mutationLocks.current.delete("bulk");
+        setBulkPending(false);
+      }
+    });
   }
 
   async function deleteCase() {
@@ -1159,6 +1338,71 @@ export function CasesWorkspace({
               </ListBox>
             </Select.Popover>
           </Select>
+
+          {caseFieldDefs.map((field) => {
+            const options =
+              field.type === "boolean"
+                ? ["true", "false"]
+                : field.type === "select"
+                  ? (field.options ?? [])
+                  : [];
+            if (field.type === "text") {
+              return (
+                <label
+                  key={field.key}
+                  className="flex w-[9rem] flex-col gap-1 text-xs text-[color:var(--topo-muted)]"
+                >
+                  {field.label}
+                  <Input
+                    aria-label={field.label}
+                    value={customFieldFilters[field.key] ?? ""}
+                    placeholder="Any"
+                    onChange={(e) =>
+                      setCustomFieldFilter(field.key, e.target.value)
+                    }
+                  />
+                </label>
+              );
+            }
+            return (
+              <Select
+                key={field.key}
+                className="w-[9rem]"
+                variant="secondary"
+                value={customFieldFilters[field.key] ?? "all"}
+                onChange={(value) => {
+                  if (value == null) return;
+                  setCustomFieldFilter(field.key, String(value));
+                }}
+              >
+                <Label className="text-xs text-[color:var(--topo-muted)]">
+                  {field.label}
+                </Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    <ListBox.Item id="all" textValue="All">
+                      All
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                    {options.map((option) => (
+                      <ListBox.Item
+                        key={option}
+                        id={option}
+                        textValue={option}
+                      >
+                        {option}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            );
+          })}
         </div>
 
         <SavedViewsBar
@@ -1243,6 +1487,9 @@ export function CasesWorkspace({
             onCreateSubfolder={(parentId) => openCreateFolder(parentId)}
             onRename={(folderId) => openRenameFolder(folderId)}
             onDelete={(folderId) => openDeleteFolder(folderId)}
+            onDropCases={(folderId, caseIds) => {
+              void dropCasesOnFolder(folderId, caseIds);
+            }}
           />
         </CaseBrowserPanel>
         <CaseBrowserPanel kind="cases" collapsed={Boolean(historyCase)} open={browserPanel === "cases"} onOpenChange={(open) => setBrowserPanel(current => open ? "cases" : current === "cases" ? null : current)}>
@@ -1275,6 +1522,7 @@ export function CasesWorkspace({
           onToggleSelectPage={toggleSelectPage}
           onOpen={requestOpen}
           onDelete={openDeleteCase}
+          onDuplicate={(row) => void duplicateCase(row)}
           onInlinePatch={(id, patch) => void inlinePatch(id, patch)}
           onPageChange={setPage}
         />
@@ -1291,6 +1539,11 @@ export function CasesWorkspace({
             flatFolders={flatFolders}
             onClose={requestClosePeek}
             onDirtyChange={setEditorDirty}
+            onDuplicated={(next) => {
+              mergeCase(next);
+              commitOpen(next);
+              startTransition(() => router.refresh());
+            }}
             onSaved={(next) => {
               mergeCase({
                 id: next.id,
