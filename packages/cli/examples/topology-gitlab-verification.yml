@@ -1,0 +1,77 @@
+# Use as .gitlab-ci.yml on the protected ref selected for Topology requests.
+spec:
+  inputs:
+    topology_request_id:
+      default: ""
+      regex: '^$|^[a-f0-9-]{36}$'
+    topology_commit_sha:
+      default: ""
+      regex: '^$|^[a-f0-9]{40}$'
+    topology_environment:
+      default: smoke
+      regex: '^[a-zA-Z0-9_.-]+$'
+    topology_workflow:
+      options: [playwright]
+      default: playwright
+---
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "api" && $CI_COMMIT_REF_PROTECTED == "true"'
+    - when: never
+
+stages: [test, report]
+
+variables:
+  TOPOLOGY_REQUEST_ID: "$[[ inputs.topology_request_id ]]"
+  TOPOLOGY_COMMIT_SHA: "$[[ inputs.topology_commit_sha ]]"
+  TOPOLOGY_ENVIRONMENT: "$[[ inputs.topology_environment ]]"
+
+playwright:
+  stage: test
+  image: mcr.microsoft.com/playwright:v1.63.0-noble
+  script:
+    - |
+      test -n "$TOPOLOGY_REQUEST_ID"
+      test -n "$TOPOLOGY_COMMIT_SHA"
+      git fetch --no-tags --depth=1 origin "$TOPOLOGY_COMMIT_SHA"
+      git checkout --detach "$TOPOLOGY_COMMIT_SHA"
+      test "$(git rev-parse HEAD)" = "$TOPOLOGY_COMMIT_SHA"
+      git remote set-url origin "${CI_PROJECT_URL}.git"
+      unset CI_JOB_TOKEN CI_REPOSITORY_URL CI_REGISTRY_PASSWORD
+      npm ci
+      TOPOLOGY_DRY_RUN=1 TOPOLOGY_REPORT_FILE=topology-execution.json \
+        npx playwright test --project="$TOPOLOGY_ENVIRONMENT"
+  artifacts:
+    when: always
+    paths: [topology-execution.json]
+
+topology-report:
+  stage: report
+  image: alpine:3.22
+  when: always
+  needs:
+    - job: playwright
+      artifacts: true
+  environment:
+    # Scope TOPOLOGY_REPORT_TOKEN to this environment in GitLab.
+    name: topology-evidence
+    action: prepare
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - apk add --no-cache jq curl
+    - |
+      jq --arg request "$TOPOLOGY_REQUEST_ID" --arg sha "$TOPOLOGY_COMMIT_SHA" \
+        --arg configuration "$TOPOLOGY_ENVIRONMENT" --arg runId "$CI_PIPELINE_ID" \
+        '.run = ((.run // {}) + {runnerRequestId: $request, commitSha: $sha,
+          configuration: $configuration, externalId: $runId, runnerAttempt: 1})' \
+        topology-execution.json > topology-evidence.json
+      if [ -n "${TOPOLOGY_URL:-}" ]; then
+        curl --fail-with-body --silent --show-error --retry 2 --retry-all-errors \
+          --max-time 30 -H "Authorization: Bearer $TOPOLOGY_REPORT_TOKEN" \
+          -H "Content-Type: application/json" --data-binary @topology-evidence.json \
+          "${TOPOLOGY_URL%/}/api/executions"
+      fi
+  artifacts:
+    when: always
+    paths: [topology-evidence.json]

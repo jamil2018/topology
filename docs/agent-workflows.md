@@ -8,7 +8,7 @@ Settings → Integrations creates a project token with read and proposal capabil
 | --- | --- |
 | `agent-read` | List cases, runs, and results, read graph context and evidence, inspect workflow requests and release reports |
 | `agent-propose` | Submit catalog and coverage changes for human review |
-| `agent-run` | Create an assigned manual run or retest, or request an approved GitHub Actions workflow |
+| `agent-run` | Create an assigned manual run or retest, or request an approved GitHub Actions workflow or GitLab pipeline |
 | `agent-observe` | Record one result or step with optional evidence, or hand off a manual run assigned to the credential owner |
 
 Each credential is bound to one project and its owner. Expiring or revoking the credential, removing its owner from the project, or archiving the project closes scoped access. A project header, when supplied, must match the credential. Agent writes to the new API use an `Idempotency-Key`. Reuse the same key for a retry and a new key for a new operation. Successful effects, their attribution, and retry receipts are committed together.
@@ -61,4 +61,17 @@ Set `TOPOLOGY_GITHUB_RUNNER_TOKEN` to a repository-scoped credential with Action
 4. The trusted report job publishes a `topology-evidence` artifact. Set the repository variable `TOPOLOGY_URL` and the secret `TOPOLOGY_REPORT_TOKEN` for automatic HTTPS delivery. For a private Topology instance, leave the variable unset, download `topology-evidence.json` from the confirmed provider run, and upload it with `topology run upload topology-evidence.json` using the dedicated credential. The first workflow attempt is supported. Topology binds the report to the confirmed provider run, commit, configuration, request, and selected revisions. A matching replay returns the original run. Ambiguous or unmapped results stay visible without satisfying the release matrix.
 5. In Impact, select the PR and open **View release evidence**. A human with release edit permission can sign off after every required cell passes. The sign-off binds the exact matrix, policy, and commit. A new head or changed case revision needs fresh evidence. Keep repository branch protection and deployment approval configured separately.
 
-Runner requests and release evidence are available by API and MCP. Production qualification requires a configured sandbox repository and a live run with the actual reporting token and workflow.
+Runner requests and release evidence are available by API and MCP.
+
+## GitLab CI
+
+Configure a GitLab.com repository, an approved pipeline ref, and a dedicated project `ci-write` reporter credential. Use a project access token with API scope for dispatch and merge-request reads.
+
+```dotenv
+TOPOLOGY_GITLAB_RUNNER_TARGETS='[{"repositoryId":"REPOSITORY_UUID","workflow":"playwright","ref":"main","environments":["smoke"],"reporterTokenId":"CI_TOKEN_UUID"}]'
+TOPOLOGY_GITLAB_RELEASE_POLICIES='[{"repositoryId":"REPOSITORY_UUID","version":"1","workflow":"playwright","environments":["smoke"],"caseKeys":["AUTH-001"]}]'
+```
+
+Set `TOPOLOGY_GITLAB_RUNNER_TOKEN` in the Topology process. Ingest the merge request and its exact head through the GitLab webhook or Git ingest. Submit `request_workflow` with the same fields as GitHub. Topology checks the open, non-draft, same-project merge request against GitLab and creates the pipeline on the approved ref. The test job checks out the separately supplied head SHA. Use GitLab 18.1 or newer for pipeline inputs. [Pipeline API](https://docs.gitlab.com/api/pipelines/#create-a-new-pipeline)
+
+The [GitLab example pipeline](../packages/cli/examples/topology-gitlab-verification.yml) runs Playwright and publishes `topology-evidence.json` from a separate report job. For automatic delivery, scope the protected `TOPOLOGY_REPORT_TOKEN` CI variable to the `topology-evidence` environment and set `TOPOLOGY_URL` there. For pull delivery, download the evidence from the confirmed pipeline and use `topology run upload` with the reporter credential. Submit evidence from the original pipeline job. A different report for that request requires a new, explicitly approved request. [GitLab CI variable scopes](https://docs.gitlab.com/ci/variables/#limit-the-environment-scope-of-a-cicd-variable)

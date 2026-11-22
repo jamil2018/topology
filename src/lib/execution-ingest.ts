@@ -10,7 +10,8 @@ import { db } from "@/db";
 import {
   auditEvents,
   environments,
-  githubRunnerRequests,
+  ciRunnerRequests,
+  repositories,
   runs,
   runResults,
   testImplementations,
@@ -410,10 +411,12 @@ export async function submitExecutionReport(input: {
   const envMetadata = serializeEnvironmentJson(runEnv);
 
   const outcome = await db.transaction(async (tx) => {
-    const [request] = requestId ? await tx.select().from(githubRunnerRequests).where(and(
-      eq(githubRunnerRequests.id, requestId),
-      eq(githubRunnerRequests.workspaceId, input.workspaceId),
-    )).for("update") : [];
+    const [dispatch] = requestId ? await tx.select({ request: ciRunnerRequests, provider: repositories.provider })
+      .from(ciRunnerRequests).innerJoin(repositories, eq(repositories.id, ciRunnerRequests.repositoryId)).where(and(
+      eq(ciRunnerRequests.id, requestId),
+      eq(ciRunnerRequests.workspaceId, input.workspaceId),
+    )).for("update", { of: ciRunnerRequests }) : [];
+    const request = dispatch?.request;
     if (requestId) {
       if (!request || !input.tokenId || request.reporterTokenId !== input.tokenId) {
         throw new CiIngestError(403, { error: "Runner evidence credential does not match the request" });
@@ -517,7 +520,7 @@ export async function submitExecutionReport(input: {
         commitSha: runMeta?.commitSha ?? run.commitSha,
         ...(request ? {
           pullRequestId: request.pullRequestId,
-          source: "github-workflow",
+          source: dispatch.provider === "gitlab" ? "gitlab-pipeline" : "github-workflow",
         } : {}),
         ...(input.report.run?.externalId
           ? { externalId: input.report.run.externalId }
@@ -526,14 +529,14 @@ export async function submitExecutionReport(input: {
       .where(eq(runs.id, run.id));
 
     if (request) {
-      await tx.update(githubRunnerRequests).set({
+      await tx.update(ciRunnerRequests).set({
         status: "ingested",
         topologyRunId: run.id,
         reportHash,
         updatedAt: new Date(),
-      }).where(eq(githubRunnerRequests.id, request.id));
+      }).where(eq(ciRunnerRequests.id, request.id));
       await tx.insert(auditEvents).values({
-        action: "runner.github.ingest",
+        action: `runner.${dispatch.provider}.ingest`,
         actorId: input.userId,
         workspaceId: input.workspaceId,
         targetType: "run",

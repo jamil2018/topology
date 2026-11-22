@@ -16,12 +16,12 @@ The current cycle adds capability-aware controls, mutation recovery, accessible 
 
 ## Agent workflow increment
 
-Project-scoped agent credentials, transactional proposal review, assigned manual observations with attachments, explained PR impact, approved GitHub Actions dispatch, and current-commit release evidence are implemented. Vendor imports preserve supported structured steps, hierarchy, and source IDs. See [agent workflows](docs/agent-workflows.md) for configuration and project cutover.
+Project-scoped agent credentials, transactional proposal review, assigned manual observations with attachments, explained PR impact, approved GitHub Actions and GitLab CI dispatch, and current-commit release evidence are implemented. Vendor imports preserve supported structured steps, hierarchy, and source IDs. See [agent workflows](docs/agent-workflows.md) for configuration and project cutover.
 
 ## Remaining adoption and workflow work
 
 - Extend agent authoring and execution to reusable baselines, plans, and exploratory sessions.
-- Qualify the approved GitHub Actions path on a live sandbox, then add GitLab CI. Run the reference journeys in connected Codex and Claude Code sessions and measure the pilot.
+- Qualify hosted GitHub callbacks and run a live GitLab CI sandbox. GitHub artifact pull delivery has passed a live sandbox. Run the reference journeys in connected Codex and Claude Code sessions and measure the pilot.
 - Migrate historical runs and attachments, sync Jira requirement revisions, add first-class Gherkin and Cucumber mapping, and reconcile Playwright source discovery.
 - Add cross-project dashboards and sharing, scheduled reports, integration administration, and remotely hosted OAuth-backed MCP.
 - Qualify self-hosted deployments, vendor and issue providers, and CLI/MCP/reporter installs in clean consumer projects.

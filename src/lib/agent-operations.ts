@@ -9,7 +9,7 @@ import {
   attachments,
   auditEvents,
   cases,
-  githubRunnerRequests,
+  ciRunnerRequests,
   notifications,
   pullRequests,
   repositories,
@@ -26,7 +26,7 @@ import { requireWorkspaceAssignee } from "@/lib/assignee";
 import { inferAttachmentKind, storeAttachmentFile } from "@/lib/attachments";
 import { createRetestRun } from "@/lib/retest";
 import { currentCaseRevisions } from "@/lib/case-revision";
-import { dispatchQueuedGithubRun, githubCloudRepository, runnerTargets } from "@/lib/github-runner";
+import { cloudRepository, dispatchQueuedRun, findRunnerTarget, isRunnerProvider, runnerToken } from "@/lib/ci-runner";
 import { openTriageForResult } from "@/lib/ci-ingest";
 import { emitLive, type LiveEvent } from "@/lib/live";
 import { createProposal, notifyProposalCreated, toProposalListItem } from "@/lib/proposals";
@@ -193,21 +193,20 @@ async function applyOperation(
       headSha: pullRequests.headSha,
       status: pullRequests.status,
       remoteUrl: repositories.remoteUrl,
+      provider: repositories.provider,
     }).from(pullRequests).innerJoin(repositories, eq(repositories.id, pullRequests.repositoryId))
       .where(and(
         eq(pullRequests.id, operation.pullRequestId),
         eq(repositories.workspaceId, workspaceId),
-        eq(repositories.provider, "github"),
       )).for("share");
-    if (!pr) throw new AgentOperationError(404, "PULL_REQUEST_NOT_FOUND", "GitHub pull request not found");
+    if (!pr || !isRunnerProvider(pr.provider)) {
+      throw new AgentOperationError(404, "PULL_REQUEST_NOT_FOUND", "Pull or merge request not found");
+    }
     if (pr.status !== "open" || pr.headSha !== operation.commitSha) {
       throw new AgentOperationError(409, "STALE_HEAD", "Refresh the open pull request and use its current head commit");
     }
-    const target = runnerTargets().find((policy) =>
-      policy.repositoryId === pr.repositoryId && policy.workflow === operation.workflow &&
-      policy.environments.includes(operation.environment),
-    );
-    if (!target || !githubCloudRepository(pr.remoteUrl) || !process.env.TOPOLOGY_GITHUB_RUNNER_TOKEN?.trim()) {
+    const target = findRunnerTarget(pr.provider, pr.repositoryId, operation.workflow, operation.environment);
+    if (!target || !cloudRepository(pr.provider, pr.remoteUrl) || !runnerToken(pr.provider)) {
       throw new AgentOperationError(403, "WORKFLOW_NOT_APPROVED", "This workflow or environment is unavailable to agents");
     }
     const reporter = await tx.query.apiTokens.findFirst({ where: and(
@@ -223,7 +222,7 @@ async function applyOperation(
     if (caseRevisions.length !== selected.length) {
       throw new AgentOperationError(409, "CASES_UNAVAILABLE", "Select ready cases from the current project");
     }
-    const [request] = await tx.insert(githubRunnerRequests).values({
+    const [request] = await tx.insert(ciRunnerRequests).values({
       workspaceId,
       repositoryId: pr.repositoryId,
       pullRequestId: pr.id,
@@ -240,7 +239,7 @@ async function applyOperation(
         requestId: request.id,
         href: `/api/v1/agent?resource=workflow_request&id=${request.id}`,
       },
-      targetType: "github_runner_request",
+      targetType: `${pr.provider}_runner_request`,
       targetId: request.id,
       sourceRefs: [pr.id, request.commitSha],
     };
@@ -425,7 +424,7 @@ export async function runAgentOperation(actor: AgentActor, key: string | null, i
   }
   if ("event" in outcome && outcome.event) emitLive(outcome.event);
   if (operation.action === "request_workflow" && typeof outcome.body.requestId === "string") {
-    await dispatchQueuedGithubRun(outcome.body.requestId, workspaceId);
+    await dispatchQueuedRun(outcome.body.requestId, workspaceId);
   }
   return { status: outcome.status, body: outcome.body };
 }

@@ -341,6 +341,107 @@ describe("Scoped agent operations", () => {
     }
   });
 
+  it("dispatches an approved GitLab pipeline and uses its exact evidence for sign-off", async () => {
+    const reporter = await mint("ci-write");
+    const reporterRow = await db.query.apiTokens.findFirst({ where: and(
+      eq(apiTokens.workspaceId, projectId), eq(apiTokens.tokenPrefix, reporter.slice(0, 12)),
+    ) });
+    const repo = await ensureRepository(projectId, {
+      remoteUrl: "https://gitlab.com/acme/nightly/app.git", provider: "gitlab",
+    });
+    const commitSha = "c".repeat(40);
+    const pr = await ensurePullRequest(repo.id, { number: 17, headSha: commitSha });
+    const ready = await db.query.cases.findFirst({ where: eq(cases.id, readyCaseId) });
+    const { intentId } = await ensureIntentForCase(ready!);
+    const [implementation] = await db.insert(testImplementations).values({
+      workspaceId: projectId, intentId, type: "playwright", externalKey: "gitlab-pinned-evidence",
+    }).returning();
+    vi.stubEnv("TOPOLOGY_GITLAB_RUNNER_TOKEN", "sandbox-gitlab-fixture-token");
+    vi.stubEnv("TOPOLOGY_GITLAB_RUNNER_TARGETS", JSON.stringify([{
+      repositoryId: repo.id, workflow: "playwright", ref: "qa/verification",
+      environments: ["smoke"], reporterTokenId: reporterRow!.id,
+    }]));
+    vi.stubEnv("TOPOLOGY_GITLAB_RELEASE_POLICIES", JSON.stringify([{
+      repositoryId: repo.id, version: "pilot-1", workflow: "playwright",
+      environments: ["smoke"], caseKeys: [ready!.key],
+    }]));
+    const providerApi = "https://gitlab.com/api/v4/projects/acme%2Fnightly%2Fapp";
+    let sourceProject = 101;
+    let liveSha = commitSha;
+    const dispatches: Record<string, string>[] = [];
+    const originalFetch = globalThis.fetch;
+    const fake = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (!url.startsWith(providerApi)) return originalFetch(input, init);
+      expect(new Headers(init?.headers).get("PRIVATE-TOKEN")).toBe("sandbox-gitlab-fixture-token");
+      if (url === `${providerApi}/merge_requests/17`) {
+        return Promise.resolve(Response.json({
+          state: "opened", draft: false, sha: liveSha,
+          source_project_id: sourceProject, target_project_id: 100,
+        }));
+      }
+      expect(url).toBe(`${providerApi}/pipeline?ref=qa%2Fverification`);
+      expect(init?.method).toBe("POST");
+      const { inputs } = JSON.parse(String(init?.body));
+      dispatches.push(inputs);
+      return Promise.resolve(Response.json({ id: 7654321 }, { status: 201 }));
+    });
+    const readRequest = async (id: string) => {
+      const response = await GET(request(readToken, new URLSearchParams({ resource: "workflow_request", id })));
+      expect(response.status).toBe(200);
+      return (await response.json()).request;
+    };
+    try {
+      const operation = { action: "request_workflow", pullRequestId: pr.id, commitSha,
+        environment: "smoke", workflow: "playwright", caseIds: [readyCaseId] };
+      expect((await post(workToken, "gitlab-disallowed", { ...operation, environment: "other" })).status).toBe(403);
+      const forbidden = await post(workToken, "gitlab-fork", operation);
+      expect(forbidden.status).toBe(202);
+      expect((await readRequest((await forbidden.json()).requestId)).status).toBe("rejected");
+      expect(dispatches).toHaveLength(0);
+
+      sourceProject = 100;
+      const accepted = await post(workToken, "gitlab-smoke", operation);
+      expect(accepted.status).toBe(202);
+      const receipt = await accepted.json();
+      expect(await (await post(workToken, "gitlab-smoke", operation)).json()).toEqual(receipt);
+      expect(dispatches).toEqual([{
+        topology_request_id: receipt.requestId, topology_commit_sha: commitSha,
+        topology_environment: "smoke", topology_workflow: "playwright",
+      }]);
+      expect(await readRequest(receipt.requestId)).toMatchObject({
+        provider: "gitlab", status: "dispatched", providerRunId: "7654321",
+        providerHref: "https://gitlab.com/acme/nightly/app/-/pipelines/7654321",
+      });
+      const run = { externalId: "7654321", runnerRequestId: receipt.requestId, commitSha, configuration: "smoke", runnerAttempt: 1 };
+      const payload = { version: 1, run, results: [{ implementationId: implementation.id, status: "passed" }] };
+      const upload = (body: typeof payload) => uploadExecution(new Request("http://topology.test/api/executions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${reporter}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }));
+      expect((await upload({ ...payload, run: { ...run, externalId: "7654322" } })).status).toBe(409);
+      const reported = await upload(payload);
+      expect(reported.status).toBe(200);
+      const persisted = await reported.json();
+      expect(await (await upload(payload)).json()).toMatchObject({ ...persisted, replayed: true });
+      expect(await db.query.runs.findFirst({ where: (table, { eq }) => eq(table.id, persisted.runId) }))
+        .toMatchObject({ source: "gitlab-pipeline", commitSha });
+      const evidence = await readPrReleaseEvidence(projectId, pr.id);
+      expect(evidence).toMatchObject({
+        state: "awaiting_signoff", matrix: [{ status: "passed", runId: persisted.runId, providerRunId: "7654321" }],
+      });
+      const decision = { workspaceId: projectId, actorId: ownerId, pullRequestId: pr.id, digest: evidence!.digest! };
+      liveSha = "d".repeat(40);
+      await expect(signPrReleaseEvidence(decision)).rejects.toThrow("current provider head");
+      liveSha = commitSha;
+      expect(await signPrReleaseEvidence(decision)).toMatchObject({ actorId: ownerId });
+    } finally {
+      fake.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("permits legacy reads after cutting over the project", async () => {
     const legacy = await mint("agent");
     await db.update(workspaces).set({ legacyAgentWrites: false }).where(eq(workspaces.id, projectId));

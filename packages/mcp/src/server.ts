@@ -124,7 +124,7 @@ export function createTopologyMcpServer(client: TopologyClient) {
   );
   server.tool(
     "request_pr_workflow",
-    "Ask an approved GitHub Actions workflow to test the current head of a pull request",
+    "Request an approved GitHub Actions workflow or GitLab pipeline for the current pull or merge request head",
     {
       idempotencyKey: operationKey,
       pullRequestId: z.uuid(),

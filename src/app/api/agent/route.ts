@@ -22,7 +22,7 @@ import {
   whatsPending,
 } from "@/lib/issues";
 import { AgentOperationError, runAgentOperation } from "@/lib/agent-operations";
-import { readGithubRunnerRequest } from "@/lib/github-runner";
+import { readRunnerRequest } from "@/lib/ci-runner";
 import { openTriageForResult } from "@/lib/ci-ingest";
 import {
   immutableMessageFor,
@@ -157,7 +157,7 @@ export async function GET(request: Request) {
   if (resource === "workflow_request") {
     const id = searchParams.get("id") ?? "";
     if (!isUuid(id)) return NextResponse.json({ error: "Invalid request id", code: "INVALID_ID" }, { status: 400 });
-    const result = await readGithubRunnerRequest(workspaceId, id);
+    const result = await readRunnerRequest(workspaceId, id);
     if (!result) return NextResponse.json({ error: "Workflow request not found", code: "WORKFLOW_REQUEST_NOT_FOUND" }, { status: 404 });
     return NextResponse.json({ request: result });
   }

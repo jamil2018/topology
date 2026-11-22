@@ -95,7 +95,8 @@ export const runs = pgTable("runs", {
 export type RunnerCaseRevision = { id: string; key: string; intentId: string | null; revision: string };
 export type RunnerEvidenceMatch = "matched" | "unmapped" | "ambiguous" | "unselected" | "stale_revision";
 
-export const githubRunnerRequests = pgTable("github_runner_requests", {
+// Keep the original SQL table name. The associated repository identifies the provider.
+export const ciRunnerRequests = pgTable("github_runner_requests", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   repositoryId: uuid("repository_id").notNull().references(() => repositories.id, { onDelete: "cascade" }),

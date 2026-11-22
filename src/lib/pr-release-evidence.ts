@@ -3,10 +3,10 @@ import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
-  auditEvents, cases, githubRunnerRequests, prReleaseSignoffs, pullRequests,
+  auditEvents, cases, ciRunnerRequests, prReleaseSignoffs, pullRequests,
   repositories, runResults,
 } from "@/db/schema";
-import { githubCloudRepository, verifyGithubPullRequest } from "@/lib/github-runner";
+import { cloudRepository, isRunnerProvider, runnerToken, verifyWorkflowHead } from "@/lib/ci-runner";
 import { currentCaseRevisions } from "@/lib/case-revision";
 
 const policySchema = z.object({
@@ -18,8 +18,10 @@ const policySchema = z.object({
 });
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-function releasePolicy(repositoryId: string) {
-  const raw = process.env.TOPOLOGY_GITHUB_RELEASE_POLICIES;
+function releasePolicy(repositoryId: string, provider: string) {
+  if (!isRunnerProvider(provider)) return null;
+  const variable = provider === "github" ? "TOPOLOGY_GITHUB_RELEASE_POLICIES" : "TOPOLOGY_GITLAB_RELEASE_POLICIES";
+  const raw = process.env[variable];
   if (!raw) return null;
   const matches = z.array(policySchema).max(100).parse(JSON.parse(raw))
     .filter((policy) => policy.repositoryId === repositoryId);
@@ -33,45 +35,47 @@ function releasePolicy(repositoryId: string) {
 }
 
 export async function readPrReleaseEvidence(workspaceId: string, prId: string, executor: Executor = db) {
-  const [pr] = await executor.select({
+  const [stored] = await executor.select({
     id: pullRequests.id,
     number: pullRequests.number,
     commitSha: pullRequests.headSha,
     repositoryId: repositories.id,
+    provider: repositories.provider,
   }).from(pullRequests).innerJoin(repositories, eq(repositories.id, pullRequests.repositoryId))
     .where(and(eq(pullRequests.id, prId), eq(repositories.workspaceId, workspaceId)));
-  if (!pr) return null;
+  if (!stored) return null;
+  const { provider, ...pr } = stored;
 
-  const policy = releasePolicy(pr.repositoryId);
+  const policy = releasePolicy(pr.repositoryId, provider);
   if (!policy || !pr.commitSha) {
     return { ...pr, state: !policy ? "policy_missing" as const : "head_unknown" as const };
   }
 
   const scope = and(
-    eq(githubRunnerRequests.workspaceId, workspaceId),
-    eq(githubRunnerRequests.pullRequestId, pr.id),
-    eq(githubRunnerRequests.workflow, policy.workflow),
-    inArray(githubRunnerRequests.environment, policy.environments),
+    eq(ciRunnerRequests.workspaceId, workspaceId),
+    eq(ciRunnerRequests.pullRequestId, pr.id),
+    eq(ciRunnerRequests.workflow, policy.workflow),
+    inArray(ciRunnerRequests.environment, policy.environments),
   );
   const [catalog, current, older] = await Promise.all([
     executor.select({ id: cases.id, key: cases.key }).from(cases).where(and(
       eq(cases.workspaceId, workspaceId), inArray(cases.key, policy.caseKeys),
     )),
-    executor.selectDistinctOn([githubRunnerRequests.environment], {
-      id: githubRunnerRequests.id,
-      environment: githubRunnerRequests.environment,
-      status: githubRunnerRequests.status,
-      topologyRunId: githubRunnerRequests.topologyRunId,
-      providerRunId: githubRunnerRequests.providerRunId,
-      caseRevisions: githubRunnerRequests.caseRevisions,
-    }).from(githubRunnerRequests).where(and(scope, eq(githubRunnerRequests.commitSha, pr.commitSha)))
-      .orderBy(asc(githubRunnerRequests.environment), desc(githubRunnerRequests.createdAt), desc(githubRunnerRequests.id)),
-    executor.selectDistinctOn([githubRunnerRequests.environment], {
-      environment: githubRunnerRequests.environment,
-      id: githubRunnerRequests.id,
-      commitSha: githubRunnerRequests.commitSha,
-    }).from(githubRunnerRequests).where(and(scope, ne(githubRunnerRequests.commitSha, pr.commitSha)))
-      .orderBy(asc(githubRunnerRequests.environment), desc(githubRunnerRequests.createdAt), desc(githubRunnerRequests.id)),
+    executor.selectDistinctOn([ciRunnerRequests.environment], {
+      id: ciRunnerRequests.id,
+      environment: ciRunnerRequests.environment,
+      status: ciRunnerRequests.status,
+      topologyRunId: ciRunnerRequests.topologyRunId,
+      providerRunId: ciRunnerRequests.providerRunId,
+      caseRevisions: ciRunnerRequests.caseRevisions,
+    }).from(ciRunnerRequests).where(and(scope, eq(ciRunnerRequests.commitSha, pr.commitSha)))
+      .orderBy(asc(ciRunnerRequests.environment), desc(ciRunnerRequests.createdAt), desc(ciRunnerRequests.id)),
+    executor.selectDistinctOn([ciRunnerRequests.environment], {
+      environment: ciRunnerRequests.environment,
+      id: ciRunnerRequests.id,
+      commitSha: ciRunnerRequests.commitSha,
+    }).from(ciRunnerRequests).where(and(scope, ne(ciRunnerRequests.commitSha, pr.commitSha)))
+      .orderBy(asc(ciRunnerRequests.environment), desc(ciRunnerRequests.createdAt), desc(ciRunnerRequests.id)),
   ]);
   const revisions = new Map((await currentCaseRevisions(workspaceId, catalog.map(({ id }) => id), executor))
     .map(({ key, id, revision }) => [key, { id, revision }]));
@@ -125,7 +129,7 @@ export class EvidenceChangedError extends Error {}
 
 export async function signPrReleaseEvidence(input: { workspaceId: string; pullRequestId: string; digest: string; actorId: string }) {
   return db.transaction(async (tx) => {
-    const [pr] = await tx.select({ id: pullRequests.id, remoteUrl: repositories.remoteUrl }).from(pullRequests)
+    const [pr] = await tx.select({ id: pullRequests.id, remoteUrl: repositories.remoteUrl, provider: repositories.provider }).from(pullRequests)
       .innerJoin(repositories, eq(repositories.id, pullRequests.repositoryId))
       .where(and(eq(pullRequests.id, input.pullRequestId), eq(repositories.workspaceId, input.workspaceId)))
       .for("update", { of: pullRequests });
@@ -135,13 +139,14 @@ export async function signPrReleaseEvidence(input: { workspaceId: string; pullRe
     if (!report || !("digest" in report) || !report.eligible || report.digest !== input.digest || !report.commitSha) {
       throw new EvidenceChangedError("Evidence must pass the current policy and match the reviewed report");
     }
-    const repository = githubCloudRepository(pr.remoteUrl);
-    const token = process.env.TOPOLOGY_GITHUB_RUNNER_TOKEN?.trim();
-    if (!repository || !token) throw new EvidenceChangedError("GitHub access is required to confirm the release commit");
+    if (!isRunnerProvider(pr.provider)) throw new EvidenceChangedError("A supported provider is required to confirm the release commit");
+    const repository = cloudRepository(pr.provider, pr.remoteUrl);
+    const token = runnerToken(pr.provider);
+    if (!repository || !token) throw new EvidenceChangedError("Provider access is required to confirm the release commit");
     try {
-      await verifyGithubPullRequest(repository, report.number, report.commitSha, token);
+      await verifyWorkflowHead(pr.provider, repository, report.number, report.commitSha, token);
     } catch {
-      throw new EvidenceChangedError("Could not confirm that the reviewed commit is the current GitHub PR head");
+      throw new EvidenceChangedError("Could not confirm that the reviewed commit is the current provider head");
     }
     if (report.signoff) return report.signoff;
 
