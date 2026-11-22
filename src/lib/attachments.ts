@@ -212,12 +212,11 @@ export function getAttachmentStorage(
   return storage;
 }
 
-export async function storeAttachmentFile(file: File) {
+export async function storeAttachmentFile(file: File, id: string = randomUUID()) {
   if (file.size > MAX_BYTES) {
     throw new Error(`File exceeds ${MAX_BYTES / (1024 * 1024)} MB limit`);
   }
 
-  const id = randomUUID();
   const safeName = sanitizeFilename(file.name);
   const storageKey = `${id}-${safeName}`;
   const buffer = Buffer.from(await file.arrayBuffer());

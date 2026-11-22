@@ -204,3 +204,4 @@ export {
   type ProposalValidationIssue,
   type ProposalValidationResult,
 } from "./proposal.js";
+export { agentEvidenceMaxBytes, agentEvidenceSchema } from "./agent-evidence.js";

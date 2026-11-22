@@ -168,10 +168,20 @@ export async function GET(request: Request) {
     const projectRunIds = db.select({ id: runs.id }).from(runs).where(eq(runs.workspaceId, workspaceId));
     const row = await db.query.runResults.findFirst({
       where: and(eq(runResults.id, id), inArray(runResults.runId, projectRunIds)),
-      with: { case: true, run: true, stepResults: true },
+      with: {
+        case: true, run: true, stepResults: true,
+        attachments: {
+          columns: { id: true, filename: true, contentType: true, sizeBytes: true, kind: true, createdAt: true },
+          orderBy: (table, { desc }) => [desc(table.createdAt), desc(table.id)],
+        },
+      },
     });
     if (!row) return NextResponse.json({ error: "Result not found", code: "RESULT_NOT_FOUND" }, { status: 404 });
-    return NextResponse.json({ result: row, href: `/runs/${row.runId}` });
+    const result = {
+      ...row,
+      attachments: row.attachments.map((item) => ({ ...item, url: `/api/attachments/${item.id}` })),
+    };
+    return NextResponse.json({ result, href: `/runs/${row.runId}` });
   }
 
   if (resource === "results") {

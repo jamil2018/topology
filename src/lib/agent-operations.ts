@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { validateProposalPayload } from "@topology/domain";
+import { agentEvidenceMaxBytes, agentEvidenceSchema, validateProposalPayload } from "@topology/domain";
 import { db } from "@/db";
 import {
   agentOperations,
   apiTokens,
+  attachments,
   auditEvents,
   cases,
   githubRunnerRequests,
@@ -22,10 +23,12 @@ import {
 } from "@/db/schema";
 import type { ApiTokenScope } from "@/lib/api-token-scopes";
 import { requireWorkspaceAssignee } from "@/lib/assignee";
+import { inferAttachmentKind, storeAttachmentFile } from "@/lib/attachments";
 import { createRetestRun } from "@/lib/retest";
 import { currentCaseRevisions } from "@/lib/case-revision";
 import { dispatchQueuedGithubRun, githubCloudRepository, runnerTargets } from "@/lib/github-runner";
 import { openTriageForResult } from "@/lib/ci-ingest";
+import { emitLive, type LiveEvent } from "@/lib/live";
 import { createProposal, notifyProposalCreated, toProposalListItem } from "@/lib/proposals";
 import { isRunFrozen } from "@/lib/run-immutability";
 import { seedManualRunResults } from "@/lib/tcm/seed-run";
@@ -82,6 +85,7 @@ const operationSchema = z.discriminatedUnion("action", [
     status: z.enum(resultStatusEnum.enumValues),
     notes: z.string().max(20_000).optional(),
     sourceRefs: z.array(z.string().max(1000)).max(50).optional(),
+    evidence: agentEvidenceSchema.optional(),
   }),
 ]);
 
@@ -108,6 +112,7 @@ type Effect = {
   targetId: string;
   sourceRefs?: string[];
   proposal?: Proposal;
+  event?: Omit<LiveEvent, "at">;
 };
 
 async function applyOperation(
@@ -115,6 +120,7 @@ async function applyOperation(
   workspaceId: string,
   userId: string,
   operation: Operation,
+  operationIdentity: string,
 ): Promise<Effect> {
   if (operation.action === "propose_coverage") {
     const validated = validateProposalPayload(operation.payload);
@@ -302,12 +308,47 @@ async function applyOperation(
     await openTriageForResult(result.id, tx);
     body = { result: updated };
   }
+  const sourceRefs = [...(operation.sourceRefs ?? [])];
+  let event: Effect["event"];
+  if (operation.evidence) {
+    const { filename, dataBase64, contentType } = operation.evidence;
+    const bytes = Buffer.from(dataBase64, "base64");
+    if (bytes.length === 0 || bytes.length > agentEvidenceMaxBytes) {
+      throw new AgentOperationError(400, "INVALID_EVIDENCE", "Evidence must contain between 1 byte and 1 MiB");
+    }
+    const file = new File([new Uint8Array(bytes)], filename, { type: contentType });
+    // Retrying a rolled-back operation writes identical bytes at the same key.
+    const storageId = createHash("sha256").update(operationIdentity).digest("hex");
+    const stored = await storeAttachmentFile(file, storageId).catch(() => {
+      throw new AgentOperationError(503, "EVIDENCE_STORAGE_FAILED", "Evidence storage is unavailable. Retry with the same key.");
+    });
+    const [attachment] = await tx.insert(attachments).values({
+      ...stored,
+      resultId: result.id,
+      kind: inferAttachmentKind(stored.filename, stored.contentType),
+      uploadedById: userId,
+    }).returning({
+      id: attachments.id,
+      filename: attachments.filename,
+      kind: attachments.kind,
+      sizeBytes: attachments.sizeBytes,
+      contentType: attachments.contentType,
+    });
+    const url = `/api/attachments/${attachment.id}`;
+    body.attachment = { ...attachment, url };
+    sourceRefs.push(url);
+    event = {
+      workspaceId, topic: "run", entityId: run.id, resultId: result.id,
+      kind: "attachment", attachment: { ...attachment, url },
+    };
+  }
   return {
     status: 200,
     body: { ...body, href: `/runs/${run.id}` },
     targetType: operation.stepResultId ? "run_step_result" : "run_result",
     targetId: operation.stepResultId ?? result.id,
-    sourceRefs: operation.sourceRefs,
+    sourceRefs,
+    event,
   };
 }
 
@@ -363,7 +404,7 @@ export async function runAgentOperation(actor: AgentActor, key: string | null, i
       }
       return { status: prior.status, body: prior.response };
     }
-    const result = await applyOperation(tx, workspaceId, userId, operation);
+    const result = await applyOperation(tx, workspaceId, userId, operation, `${tokenId}:${key}:${requestHash}`);
     await tx.insert(agentOperations).values({
       tokenId, key, requestHash, status: result.status, response: result.body,
     });
@@ -382,6 +423,7 @@ export async function runAgentOperation(actor: AgentActor, key: string | null, i
     const proposal = toProposalListItem(outcome.proposal);
     notifyProposalCreated(outcome.proposal, proposal.diffs.length);
   }
+  if ("event" in outcome && outcome.event) emitLive(outcome.event);
   if (operation.action === "request_workflow" && typeof outcome.body.requestId === "string") {
     await dispatchQueuedGithubRun(outcome.body.requestId, workspaceId);
   }

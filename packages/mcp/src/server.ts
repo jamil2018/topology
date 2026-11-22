@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { agentEvidenceSchema } from "@topology/domain";
 import { z } from "zod";
 import { TopologyClient, requireEnv } from "./client.js";
 
@@ -152,7 +153,7 @@ export function createTopologyMcpServer(client: TopologyClient) {
 
   server.tool(
     "record_observation",
-    "Record an observation on one assigned result or step using its exact ID",
+    "Record an observation on one assigned result or step, with optional evidence up to 1 MiB",
     {
       idempotencyKey: operationKey,
       runId: z.uuid(),
@@ -161,6 +162,7 @@ export function createTopologyMcpServer(client: TopologyClient) {
       status: z.enum(["untested", "passed", "failed", "blocked", "skipped"]),
       notes: z.string().optional(),
       sourceRefs: z.array(z.string()).optional(),
+      evidence: agentEvidenceSchema.optional(),
     },
     async ({ idempotencyKey, ...args }) => jsonText(await client.runOperation(idempotencyKey, {
       action: "record_result",

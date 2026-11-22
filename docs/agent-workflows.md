@@ -9,7 +9,7 @@ Settings → Integrations creates a project token with read and proposal capabil
 | `agent-read` | List cases, runs, and results, read graph context and evidence, inspect workflow requests and release reports |
 | `agent-propose` | Submit catalog and coverage changes for human review |
 | `agent-run` | Create an assigned manual run or retest, or request an approved GitHub Actions workflow |
-| `agent-observe` | Record one result or step, or hand off a manual run assigned to the credential owner |
+| `agent-observe` | Record one result or step with optional evidence, or hand off a manual run assigned to the credential owner |
 
 Each credential is bound to one project and its owner. Expiring or revoking the credential, removing its owner from the project, or archiving the project closes scoped access. A project header, when supplied, must match the credential. Agent writes to the new API use an `Idempotency-Key`. Reuse the same key for a retry and a new key for a new operation. Successful effects, their attribution, and retry receipts are committed together.
 
@@ -35,11 +35,14 @@ Submit scoped mutations with `POST /api/v1/agent`. Supported actions are `propos
 ```sh
 topology agent list cases --q "Sign in" --status ready
 topology agent apply operation.json --idempotency-key qa-session-42-run-1
+topology agent apply observation.json --idempotency-key qa-session-42-observation-1 --evidence checks.log
 topology affected --pr 42 --repository-id REPOSITORY_UUID
 topology release evidence --pull-request-id PULL_REQUEST_UUID
 ```
 
 MCP exposes `list_cases`, `propose_coverage`, `create_assigned_run`, `get_result`, `record_observation`, `create_retest`, `handoff_run`, `get_affected_tests`, `request_pr_workflow`, `get_workflow_request`, and `get_pr_release_evidence`. For scoped proposals, always pass `idempotencyKey`.
+
+REST `record_result` and MCP `record_observation` accept one optional `evidence` object with `filename`, `dataBase64`, and optional `contentType`. The file must contain 1 byte to 1 MiB. The result stores the attachment and the audit entry links it to the exact result or step observation. The executor shows it with other result attachments. A project-bound `agent-read` token can download it at the returned URL. Retry a storage failure with the same key and evidence.
 
 ## GitHub Actions
 

@@ -70,6 +70,49 @@ test("real HTTP revocation invalidates a newly issued token immediately", async 
   }
 });
 
+test("scoped agents attach and read evidence on an assigned result through real HTTP", async ({ page, api }) => {
+  const generated = await page.request.post("/api/tokens", {
+    data: { name: "Scoped evidence HTTP", scope: ["agent-read", "agent-run", "agent-observe"] },
+  });
+  expect(generated.status()).toBe(200);
+  const { plaintext } = await generated.json();
+  const client = await api(plaintext);
+  const { cases } = await (await client.get("/api/v1/agent?resource=cases&status=ready&limit=1")).json();
+  expect(cases).toHaveLength(1);
+  const created = await client.post("/api/v1/agent", {
+    headers: { "Idempotency-Key": "evidence-run" },
+    data: { action: "create_run", name: "Evidence check", caseIds: [cases[0].id] },
+  });
+  expect(created.status()).toBe(201);
+  const { run } = await created.json();
+  const { results } = await (await client.get(`/api/v1/agent?resource=results&runId=${run.id}`)).json();
+  expect(results.length).toBeGreaterThan(0);
+  const resultId = results[0].id;
+  const evidence = "Observed expected behavior independently";
+  const observation = {
+    headers: { "Idempotency-Key": "evidence-observation" },
+    data: {
+      action: "record_result", runId: run.id, resultId, status: "passed",
+      evidence: { filename: "observation.txt", contentType: "text/plain", dataBase64: Buffer.from(evidence).toString("base64") },
+    },
+  };
+  const [recorded, replay] = await Promise.all([
+    client.post("/api/v1/agent", observation),
+    client.post("/api/v1/agent", observation),
+  ]);
+  expect(recorded.status()).toBe(200);
+  expect(replay.status()).toBe(200);
+  const body = await recorded.json();
+  expect(await replay.json()).toEqual(body);
+  expect(body.attachment).toMatchObject({ filename: "observation.txt", kind: "log" });
+  const { result } = await (await client.get(`/api/v1/agent?resource=result&id=${resultId}`)).json();
+  expect(result.attachments).toMatchObject([body.attachment]);
+  const download = await client.get(body.attachment.url, { maxRedirects: 0 });
+  expect(download.status()).toBe(200);
+  expect(await download.text()).toBe(evidence);
+  expect((await (await api(TOKENS.ciWrite)).get(body.attachment.url, { maxRedirects: 0 })).status()).toBe(403);
+});
+
 
 test("SEC-SECRET-002: webhook secrets are write-only even for an admin", async ({ page }) => {
   const secret = "validation-webhook-regression-secret";

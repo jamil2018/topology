@@ -74,6 +74,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@topology/domain": "0.1.0",
     "zod": "^4.6.2"
   }
 }

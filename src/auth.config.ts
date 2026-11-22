@@ -22,6 +22,8 @@ export const authConfig = {
       const isBearerApi = ["/api/affected", "/api/coverage", "/api/query", "/api/git/ingest"].includes(pathname);
       const isCiApi = pathname.startsWith("/api/ci");
       const isAgentApi = pathname.startsWith("/api/agent") || pathname === "/api/v1/agent";
+      const isBearerAttachment =
+        /^\/api\/attachments\/[^/]+$/.test(pathname) && request.headers.has("authorization");
       const isExecutionsApi = pathname.startsWith("/api/executions");
       const isReleasesApi = pathname.startsWith("/api/releases");
       const isHealth = pathname === "/api/health" || pathname === "/health";
@@ -35,6 +37,7 @@ export const authConfig = {
         isCiApi ||
         isBearerApi ||
         isAgentApi ||
+        isBearerAttachment ||
         isExecutionsApi ||
         isReleasesApi ||
         isHealth ||

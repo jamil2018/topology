@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
@@ -13,6 +16,7 @@ import { persistImportedCases } from "@/lib/import/persist";
 import { readCaseRevision } from "@/lib/case-revision";
 import { createProposal, reviewProposal } from "@/lib/proposals";
 import { ensureMembership } from "@/lib/workspace";
+import { resetAttachmentStorageCache } from "@/lib/attachments";
 
 const endpoint = "http://topology.test/api/v1/agent";
 
@@ -147,6 +151,50 @@ describe("Scoped agent operations", () => {
       .rejects.toThrow("link requires");
     expect(await db.query.cases.findFirst({ where: and(eq(cases.workspaceId, projectId), eq(cases.key, key)) })).toBeUndefined();
     expect((await db.query.proposals.findFirst({ where: eq(proposals.id, id) }))?.status).toBe("pending");
+  });
+
+  it("rolls back the observation when evidence storage fails and allows the same key to retry", async () => {
+    const created = await post(workToken, "artifact-run", {
+      action: "create_run", name: "Evidence storage retry", caseIds: [readyCaseId],
+    });
+    expect(created.status).toBe(201);
+    const { run } = await created.json();
+    const result = await db.query.runResults.findFirst({ where: eq(runResults.runId, run.id) });
+    const input = {
+      action: "record_result", runId: run.id, resultId: result!.id, status: "passed",
+      evidence: { filename: "check.log", dataBase64: Buffer.from("Observed behavior").toString("base64") },
+    };
+    const root = await mkdtemp(join(tmpdir(), "topology-agent-evidence-"));
+    try {
+      const blocked = join(root, "not-a-directory");
+      await writeFile(blocked, "");
+      vi.stubEnv("ATTACHMENTS_DRIVER", "local");
+      vi.stubEnv("ATTACHMENTS_DIR", blocked);
+      resetAttachmentStorageCache();
+
+      const failure = await post(workToken, "artifact-retry", input);
+      expect(failure.status).toBe(503);
+      expect(await failure.json()).toMatchObject({ code: "EVIDENCE_STORAGE_FAILED" });
+      const unchanged = await db.query.runResults.findFirst({
+        where: eq(runResults.id, result!.id), with: { attachments: true },
+      });
+      expect(unchanged).toMatchObject({ status: "untested", attachments: [] });
+
+      vi.stubEnv("ATTACHMENTS_DIR", root);
+      resetAttachmentStorageCache();
+      const retry = await post(workToken, "artifact-retry", input);
+      expect(retry.status).toBe(200);
+      const applied = await db.query.runResults.findFirst({
+        where: eq(runResults.id, result!.id), with: { attachments: true },
+      });
+      expect(applied).toMatchObject({
+        status: "passed", attachments: [{ filename: "check.log", uploadedById: ownerId }],
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      resetAttachmentStorageCache();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("keeps the approved case executable until an exact-revision proposal is accepted", async () => {

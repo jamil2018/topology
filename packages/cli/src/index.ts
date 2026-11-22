@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  agentEvidenceMaxBytes,
   dedupeNormalizedResults,
   mergeShardResults,
   normalizeJUnitCases,
@@ -28,7 +29,7 @@ Usage:
   topology coverage [filter]
   topology test get <keyOrId>
   topology agent list cases|runs|results [--q <text>] [--status <status>] [--cursor <cursor>]
-  topology agent apply <operation.json> --idempotency-key <key>
+  topology agent apply <operation.json> --idempotency-key <key> [--evidence <file>]
   topology query '<dsl>'
 
 Examples:
@@ -387,6 +388,15 @@ async function cmdAgent(sub: string | undefined, args: string[]) {
     const key = getFlag(args, "--idempotency-key");
     if (!resource || resource.startsWith("-") || !key) usage();
     const input = JSON.parse(await readFile(path.resolve(resource), "utf8"));
+    const evidencePath = getFlag(args, "--evidence");
+    if (args.includes("--evidence")) {
+      if (!evidencePath || input?.action !== "record_result" || input.evidence) usage();
+      const evidence = await readFile(path.resolve(evidencePath));
+      if (evidence.length === 0 || evidence.length > agentEvidenceMaxBytes) {
+        throw new Error("Evidence must contain between 1 byte and 1 MiB");
+      }
+      input.evidence = { filename: path.basename(evidencePath), dataBase64: evidence.toString("base64") };
+    }
     const data = await api("POST", "/api/v1/agent", input, { "Idempotency-Key": key });
     console.log(JSON.stringify(data, null, 2));
     return;
