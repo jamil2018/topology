@@ -44,6 +44,12 @@ MCP exposes `list_cases`, `propose_coverage`, `create_assigned_run`, `get_result
 
 Use `assignee=me` when listing runs or results to find assigned work. A result assignee takes precedence over the run assignee. The plans catalog and `GET /api/v1/agent?resource=plan&id=PLAN_UUID` expose the planned cases and matrix. Pass `{"action":"launch_plan","planId":"PLAN_UUID"}` with an idempotency key, or use MCP `get_plan` and `launch_assigned_plan`. A project member must activate the plan first. Every selected case must be ready and all matrix environments must still be available. Topology assigns the resulting manual runs to the credential owner and commits the entire matrix together.
 
+### Regression baselines
+
+A project member with run creation permission can save a baseline from a plan's saved matrix and ready cases. Capture stores each case revision, expanded shared steps, resolved dataset iterations, and configuration. Launching the baseline always uses that copy, including after a case is edited, archived, or removed. Results retain their pinned case title and revision.
+
+Agents can browse `resource=baselines`, inspect `resource=baseline&id=BASELINE_UUID`, and launch with `{"action":"launch_baseline","baselineId":"BASELINE_UUID"}` and an idempotency key. The corresponding MCP tools are `get_baseline` and `launch_assigned_baseline`. Apply migration `0013_regression_baselines` during an upgrade.
+
 REST `record_result` and MCP `record_observation` accept one optional `evidence` object with `filename`, `dataBase64`, and optional `contentType`. The file must contain 1 byte to 1 MiB. The result stores the attachment and the audit entry links it to the exact result or step observation. The executor shows it with other result attachments. A project-bound `agent-read` token can download it at the returned URL. Retry a storage failure with the same key and evidence.
 
 ## GitHub Actions

@@ -69,6 +69,11 @@ export class TopologyClient {
     return this.request(`/api/v1/agent?${qs}`);
   }
 
+  getBaseline(id: string) {
+    const qs = new URLSearchParams({ resource: "baseline", id });
+    return this.request(`/api/v1/agent?${qs}`);
+  }
+
   listCatalog(args: { resource: string; cursor?: string; limit?: number }) {
     const qs = new URLSearchParams({ resource: args.resource });
     if (args.cursor) qs.set("cursor", args.cursor);

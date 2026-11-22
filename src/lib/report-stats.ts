@@ -18,6 +18,7 @@ export type ReportResultInput = {
   title?: string | null;
   externalKey?: string | null;
   caseId?: string | null;
+  caseSnapshot?: { key: string; title: string } | null;
   case?: {
     id: string;
     key: string;
@@ -370,8 +371,8 @@ export function failureRowsFromResults(
       return {
         resultId: r.id,
         caseId,
-        caseKey: r.case?.key ?? r.externalKey ?? "—",
-        title: r.case?.title ?? r.title ?? "Untitled",
+        caseKey: r.caseSnapshot?.key ?? r.case?.key ?? r.externalKey ?? "—",
+        title: r.caseSnapshot?.title ?? r.case?.title ?? r.title ?? "Untitled",
         priority: r.case?.priority ?? null,
         suite,
         notes: r.notes ?? "",

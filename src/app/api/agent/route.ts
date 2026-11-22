@@ -11,6 +11,7 @@ import { readCaseRevision } from "@/lib/case-revision";
 import { loadCaseTcm } from "@/lib/tcm/case-tcm";
 import { seedManualRunResults } from "@/lib/tcm/seed-run";
 import { parseMatrixJson } from "@/lib/tcm/matrix";
+import { listRegressionBaselines, readRegressionBaseline } from "@/lib/tcm/baselines";
 import {
   caseStatusEnum, caseVersions, cases, customFieldDefs, folders, resultStatusEnum, runResults,
   runs, runStatusEnum, runTemplates, sharedSteps, testImplementations, testIntents, testPlanCases, testPlans, workspaces,
@@ -118,6 +119,25 @@ export async function GET(request: Request) {
       readCaseRevision(workspaceId, row.id),
     ]);
     return NextResponse.json({ case: { ...row, ...tcm }, versions, revision: revision?.revision ?? null, href: `/cases/${encodeURIComponent(row.key)}` });
+  }
+
+  if (resource === "baselines") {
+    const cursor = cursorId(searchParams);
+    if (cursor === null) return NextResponse.json({ error: "Invalid cursor", code: "INVALID_CURSOR" }, { status: 400 });
+    const limit = parseLimitParam(searchParams.get("limit"), 50);
+    const rows = await listRegressionBaselines({ workspaceId, before: cursor, limit: limit + 1 });
+    const { selected, nextCursor } = pageById(rows, limit);
+    return NextResponse.json({ items: selected, nextCursor });
+  }
+
+  if (resource === "baseline") {
+    const id = searchParams.get("id") ?? "";
+    if (!isUuid(id)) return NextResponse.json({ error: "Invalid baseline id", code: "INVALID_ID" }, { status: 400 });
+    const baseline = await readRegressionBaseline(workspaceId, id);
+    if (!baseline) return NextResponse.json({ error: "Baseline not found", code: "BASELINE_NOT_FOUND" }, { status: 404 });
+    return NextResponse.json({
+      baseline, href: baseline.planId ? `/plans/${baseline.planId}#baseline-${id}` : null,
+    });
   }
 
   if (resource === "plan") {

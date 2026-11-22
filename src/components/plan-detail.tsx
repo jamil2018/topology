@@ -31,6 +31,7 @@ type PickerCase = { id: string; key: string; title: string; status: string };
 type MilestoneOption = { id: string; name: string; status: string };
 
 type LaunchedRun = { id: string; name: string; status: string };
+type BaselineSummary = { id: string; name: string; caseCount: number; runCount: number };
 
 const PLAN_STATUSES = ["draft", "active", "completed", "archived"] as const;
 
@@ -45,6 +46,7 @@ export function PlanDetail({
   environments,
   cases,
   milestones = [],
+  baselines = [],
 }: {
   plan: {
     id: string;
@@ -59,6 +61,7 @@ export function PlanDetail({
   environments: Array<{ id: string; name: string }>;
   cases: PickerCase[];
   milestones?: MilestoneOption[];
+  baselines?: BaselineSummary[];
 }) {
   const router = useRouter();
   const [transitionPending, startTransition] = useTransition();
@@ -88,6 +91,7 @@ export function PlanDetail({
   ]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [launchedRuns, setLaunchedRuns] = useState<LaunchedRun[]>([]);
+  const [baselineName, setBaselineName] = useState("");
   const launchSummary = useOverlayState();
 
   const casesDirty = !sameIdSet(selected, savedCaseIds);
@@ -244,6 +248,29 @@ export function PlanDetail({
       const runs = (data.runs ?? []) as LaunchedRun[];
       setLaunchedRuns(runs);
       launchSummary.open();
+      startTransition(() => router.refresh());
+    });
+  }
+
+  async function baselineAction(input: { action: "capture" } | { action: "launch"; baselineId: string }) {
+    if (!can("runs.create")) return;
+    return submit(async () => {
+      const body = input.action === "capture"
+        ? { ...input, planId: plan.id, name: baselineName.trim() || undefined }
+        : input;
+      const res = await fetch("/api/baselines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Baseline could not be saved or launched");
+      if (input.action === "launch") {
+        setLaunchedRuns(data.runs);
+        launchSummary.open();
+      } else {
+        setBaselineName("");
+      }
       startTransition(() => router.refresh());
     });
   }
@@ -488,6 +515,44 @@ export function PlanDetail({
         </ul>
       </section>
 
+      {baselines.length > 0 || can("runs.create") ? (
+        <section className="space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3">
+          <h2 className="text-sm font-semibold">Regression baselines</h2>
+          {can("runs.create") ? (
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="block min-w-52 space-y-1 text-sm">
+                <span>Baseline name</span>
+                <Input value={baselineName} maxLength={200} placeholder={`${plan.name} baseline`}
+                  onChange={(event) => setBaselineName(event.target.value)} />
+              </label>
+              <Button size="sm" variant="secondary" isDisabled={pending || casesDirty || !savedCaseIds.size}
+                onPress={() => void baselineAction({ action: "capture" })}>
+                Save baseline from saved plan
+              </Button>
+            </div>
+          ) : null}
+          {baselines.length ? (
+            <ul className="divide-y divide-[color:var(--topo-line)]">
+              {baselines.map((baseline) => (
+                <li id={`baseline-${baseline.id}`} key={baseline.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <div>
+                    <p className="text-sm font-medium">{baseline.name}</p>
+                    <p className="text-xs text-[color:var(--topo-muted)]">{baseline.caseCount} cases · {baseline.runCount} runs</p>
+                  </div>
+                  {can("runs.create") ? (
+                    <Button size="sm" variant="secondary" isDisabled={pending}
+                      aria-label={`Launch baseline ${baseline.name}`}
+                      onPress={() => void baselineAction({ action: "launch", baselineId: baseline.id })}>
+                      Launch baseline
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
+
       {plan.runs.length > 0 ? (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold">Runs from this plan</h2>
@@ -519,7 +584,7 @@ export function PlanDetail({
               </Modal.Heading>
               <p className="text-sm text-[color:var(--topo-muted)]">
                 Created {launchedRuns.length} run
-                {launchedRuns.length === 1 ? "" : "s"} from this plan matrix.
+                {launchedRuns.length === 1 ? "" : "s"}.
               </p>
             </Modal.Header>
             <Modal.Body className="space-y-2 px-4 py-4">

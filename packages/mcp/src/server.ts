@@ -45,10 +45,16 @@ export function createTopologyMcpServer(client: TopologyClient) {
     async ({ id }) => jsonText(await client.getPlan(id)),
   );
   server.tool(
+    "get_baseline",
+    "Read a regression baseline and its pinned case revisions and configuration matrix",
+    { id: z.uuid() },
+    async ({ id }) => jsonText(await client.getBaseline(id)),
+  );
+  server.tool(
     "list_catalog",
     "List folders, shared steps, custom field definitions, plans, or run templates",
     {
-      resource: z.enum(["folders", "shared_steps", "custom_fields", "plans", "run_templates"]),
+      resource: z.enum(["folders", "shared_steps", "custom_fields", "plans", "run_templates", "baselines"]),
       cursor: z.string().optional(),
       limit: z.number().int().min(1).max(100).optional(),
     },
@@ -115,6 +121,15 @@ export function createTopologyMcpServer(client: TopologyClient) {
   );
 
   const operationKey = z.string().min(1).max(128).describe("Reuse this key when retrying the same operation");
+  server.tool(
+    "launch_assigned_baseline",
+    "Create assigned manual runs from a saved regression baseline and its pinned revisions",
+    { idempotencyKey: operationKey, baselineId: z.uuid(), namePrefix: z.string().trim().min(1).max(200).optional() },
+    async ({ idempotencyKey, ...args }) => jsonText(await client.runOperation(idempotencyKey, {
+      action: "launch_baseline",
+      ...args,
+    })),
+  );
   server.tool(
     "launch_assigned_plan",
     "Launch the matrix of an active plan containing ready cases and assign the runs to the credential owner",

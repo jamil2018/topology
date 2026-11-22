@@ -25,6 +25,7 @@ import { cases, caseSteps, folders, sharedSteps } from "./cases";
 import { users, workspaces } from "./identity";
 import { apiTokens, commits, pullRequests, repositories } from "./integrations";
 import { failureSignatures, testImplementations } from "./quality";
+import type { CaseVersionSnapshot } from "@/lib/tcm/versions";
 
 export const environments = pgTable(
   "environments",
@@ -41,6 +42,28 @@ export const environments = pgTable(
   },
   (table) => [unique().on(table.workspaceId, table.name)],
 );
+
+export type RunCaseSnapshot = { id: string; key: string; title: string; steps: string; expectedResult: string };
+type BaselineStep = { position: number; action: string; expected: string; data: string };
+type BaselineCase = {
+  case: RunCaseSnapshot;
+  definition: CaseVersionSnapshot;
+  revision: string;
+  iterations: { index: number; values: Record<string, string>; steps: BaselineStep[] }[];
+};
+type BaselineCell = { browser: string | null; os: string | null; environmentId: string | null; environment: string };
+
+export const regressionBaselines = pgTable("regression_baselines", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  planId: uuid("plan_id").references(() => testPlans.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  caseSnapshots: jsonb("case_snapshots").$type<BaselineCase[]>().notNull(),
+  cells: jsonb("cells").$type<BaselineCell[]>().notNull(),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+}, (table) => [index("regression_baselines_project_plan_idx").on(table.workspaceId, table.planId)]);
 
 export const runs = pgTable("runs", {
   shareGeneration: integer("share_generation").default(0).notNull(),
@@ -79,6 +102,7 @@ export const runs = pgTable("runs", {
   planId: uuid("plan_id").references(() => testPlans.id, {
     onDelete: "set null",
   }),
+  baselineId: uuid("baseline_id").references(() => regressionBaselines.id, { onDelete: "set null" }),
   matrixBrowser: text("matrix_browser"),
   matrixOs: text("matrix_os"),
   startedAt: timestamp("started_at", { mode: "date" }),
@@ -147,6 +171,7 @@ export const runResults = pgTable(
     /** Browser/os (and similar) snapshot from the execution protocol. */
     environmentJson: text("environment_json"),
     caseRevision: text("case_revision"),
+    caseSnapshot: jsonb("case_snapshot").$type<RunCaseSnapshot>(),
     evidenceMatch: text("evidence_match").$type<RunnerEvidenceMatch>(),
     externalKey: text("external_key"),
     classname: text("classname"),

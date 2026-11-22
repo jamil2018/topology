@@ -116,7 +116,7 @@ export default async function RunDetailPage({ params }: Props) {
               status: s.status,
               notes: s.notes,
             })),
-            case: {
+            case: r.caseSnapshot ?? {
               id: r.case?.id ?? r.caseId ?? r.id,
               key: r.case?.key ?? r.externalKey ?? "AUTO",
               title: r.case?.title ?? r.title ?? "Untitled",

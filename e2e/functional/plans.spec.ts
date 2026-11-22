@@ -19,6 +19,24 @@ test("create a plan and open its detail", async ({ page }) => {
   await expect(page.getByRole("link", { name: "All plans" })).toBeVisible();
 });
 
+test("save and launch a regression baseline after editing its source case", async ({ page, makeCase, isolatedProject }) => {
+  const title = "Pinned checkout procedure";
+  const original = await makeCase(title);
+  const api = isolatedProject.admin;
+  const response = await api.post("/api/plans", { data: { name: "Checkout smoke", caseIds: [original.id] } });
+  expect(response.status()).toBe(201);
+  const { plan } = await response.json();
+  await page.goto(`/plans/${plan.id}`);
+  await page.getByLabel("Baseline name").fill("Checkout v1");
+  await page.getByRole("button", { name: "Save baseline from saved plan" }).click();
+  const launch = page.getByRole("button", { name: "Launch baseline Checkout v1" });
+  await expect(launch).toBeVisible();
+  expect((await api.patch(`/api/cases/${original.id}`, { data: { title: "Updated checkout procedure" } })).status()).toBe(200);
+  await launch.click();
+  await page.getByRole("button", { name: "Open first run" }).click();
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+});
+
 test("author → matrix plan → failure → triage → retest → report preserves history", async ({ page, makeCase, isolatedProject }) => {
   test.setTimeout(90_000);
   const created = await makeCase();

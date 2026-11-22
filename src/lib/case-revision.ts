@@ -20,7 +20,7 @@ export async function readCaseRevision(
       ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
       : value,
   );
-  return { definition, revision: createHash("sha256").update(snapshot).digest("hex") };
+  return { definition, steps, revision: createHash("sha256").update(snapshot).digest("hex") };
 }
 
 export async function currentCaseRevisions(

@@ -33,6 +33,7 @@ import { createProposal, notifyProposalCreated, toProposalListItem } from "@/lib
 import { isRunFrozen } from "@/lib/run-immutability";
 import { seedManualRunResults } from "@/lib/tcm/seed-run";
 import { launchPlan } from "@/lib/tcm/plans";
+import { BaselineError, launchRegressionBaseline } from "@/lib/tcm/baselines";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type AgentActor = {
@@ -70,6 +71,11 @@ const operationSchema = z.discriminatedUnion("action", [
     namePrefix: z.string().trim().min(1).max(200).optional(),
   }),
   z.object({
+    action: z.literal("launch_baseline"),
+    baselineId: z.uuid(),
+    namePrefix: z.string().trim().min(1).max(200).optional(),
+  }),
+  z.object({
     action: z.literal("handoff_run"),
     runId: z.uuid(),
     assigneeId: z.uuid(),
@@ -101,6 +107,7 @@ const capability = {
   create_run: "agent-run",
   create_retest: "agent-run",
   launch_plan: "agent-run",
+  launch_baseline: "agent-run",
   handoff_run: "agent-observe",
   request_workflow: "agent-run",
   record_result: "agent-observe",
@@ -203,6 +210,22 @@ async function applyOperation(
       targetId: operation.planId,
       sourceRefs: result.runs.map(({ id }) => id),
     };
+  }
+
+  if (operation.action === "launch_baseline") {
+    try {
+      const launched = await launchRegressionBaseline({ ...operation, workspaceId, actorId: userId, assignedAgent: true }, tx);
+      return {
+        status: 201,
+        body: { runs: launched.map((run) => ({ ...run, href: `/runs/${run.id}` })) },
+        targetType: "regression_baseline",
+        targetId: operation.baselineId,
+        sourceRefs: launched.map(({ id }) => id),
+      };
+    } catch (error) {
+      if (!(error instanceof BaselineError)) throw error;
+      throw new AgentOperationError(error.status, "BASELINE_UNAVAILABLE", error.message);
+    }
   }
 
   if (operation.action === "request_workflow") {

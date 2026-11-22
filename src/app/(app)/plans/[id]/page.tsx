@@ -10,6 +10,7 @@ import { environments, milestones } from "@/db/schema";
 import { resolveActiveProject } from "@/lib/project";
 import { isUuid, listCases } from "@/lib/queries";
 import { getPlan } from "@/lib/tcm/plans";
+import { listRegressionBaselines } from "@/lib/tcm/baselines";
 import { ensureMembership } from "@/lib/workspace";
 
 type Props = { params: Promise<{ id: string }> };
@@ -34,7 +35,7 @@ export default async function PlanDetailPage({ params }: Props) {
 
   const { id } = await params;
   if (!isUuid(id)) notFound();
-  const [plan, envs, cases, milestoneRows] = await Promise.all([
+  const [plan, envs, cases, milestoneRows, baselines] = await Promise.all([
     getPlan(ctx.project.id, id),
     db.query.environments.findMany({
       where: eq(environments.workspaceId, ctx.project.id),
@@ -44,6 +45,7 @@ export default async function PlanDetailPage({ params }: Props) {
       where: eq(milestones.workspaceId, ctx.project.id),
       orderBy: [asc(milestones.name)],
     }),
+    listRegressionBaselines({ workspaceId: ctx.project.id, planId: id, limit: 50 }),
   ]);
   if (!plan) notFound();
 
@@ -74,6 +76,7 @@ export default async function PlanDetailPage({ params }: Props) {
           status: r.status,
         })),
       }}
+      baselines={baselines}
       environments={envs.map((e) => ({ id: e.id, name: e.name }))}
       milestones={milestoneRows.map((m) => ({
         id: m.id,

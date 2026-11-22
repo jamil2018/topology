@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { apiTokens, auditEvents, cases, testImplementations, caseSteps, notifications, proposals, retestSources, runResults, runStepResults, runs, testPlanCases, testPlans, users, workspaces } from "@/db/schema";
+import { apiTokens, auditEvents, caseDatasetRows, cases, testImplementations, caseSteps, notifications, proposals, retestSources, runResults, runStepResults, runs, testPlanCases, testPlans, users, workspaces } from "@/db/schema";
 import { GET, POST } from "@/app/api/v1/agent/route";
 import { POST as uploadExecution } from "@/app/api/executions/route";
 import { ensurePullRequest, ensureRepository } from "@/lib/git-sync";
@@ -17,6 +17,7 @@ import { readCaseRevision } from "@/lib/case-revision";
 import { createProposal, reviewProposal } from "@/lib/proposals";
 import { ensureMembership } from "@/lib/workspace";
 import { resetAttachmentStorageCache } from "@/lib/attachments";
+import { captureRegressionBaseline } from "@/lib/tcm/baselines";
 
 const endpoint = "http://topology.test/api/v1/agent";
 
@@ -197,6 +198,54 @@ describe("Scoped agent operations", () => {
     expect(await (await assignedResult(override.id)).json()).toMatchObject({ results: [{ id: override.results[0].id }] });
     const assigned = await GET(request(readToken, new URLSearchParams({ resource: "runs", assignee: "me", status: "planned" })));
     expect((await assigned.json()).runs.map(({ id }: { id: string }) => id)).toEqual(expect.arrayContaining(stored.map(({ id }) => id)));
+  });
+
+  it("launches the pinned baseline steps and iterations after the source case has been archived and removed", async () => {
+    const [original] = await db.insert(cases).values({
+      workspaceId: projectId, key: "PINNED-SMOKE", title: "Version one", status: "ready",
+    }).returning();
+    await db.insert(caseSteps).values({
+      workspaceId: projectId, caseId: original.id, position: 0, action: "Open {{market}}", expected: "Old checkout",
+    });
+    await db.insert(caseDatasetRows).values([
+      { caseId: original.id, position: 0, valuesJson: JSON.stringify({ market: "US" }) },
+      { caseId: original.id, position: 1, valuesJson: JSON.stringify({ market: "EU" }) },
+    ]);
+    const [plan] = await db.insert(testPlans).values({
+      workspaceId: projectId, name: "Pinned smoke", matrixJson: JSON.stringify({ browsers: ["Chromium", "Firefox"] }),
+    }).returning();
+    await db.insert(testPlanCases).values({ planId: plan.id, caseId: original.id });
+    const before = await readCaseRevision(projectId, original.id);
+    const baseline = await captureRegressionBaseline({ workspaceId: projectId, planId: plan.id, actorId: ownerId });
+    expect(baseline).toMatchObject({ caseCount: 1, runCount: 2 });
+
+    await db.update(cases).set({ title: "Version two", status: "deprecated" }).where(eq(cases.id, original.id));
+    await db.update(caseSteps).set({ action: "New checkout" }).where(eq(caseSteps.caseId, original.id));
+    await db.delete(cases).where(eq(cases.id, original.id));
+    const input = { action: "launch_baseline", baselineId: baseline.id };
+    expect((await post(readToken, "baseline-unprivileged", input)).status).toBe(403);
+    const [first, replay] = await Promise.all([post(workToken, "pinned-run", input), post(workToken, "pinned-run", input)]);
+    expect([first.status, replay.status]).toEqual([201, 201]);
+    const payload = await first.json();
+    expect(await replay.json()).toEqual(payload);
+    expect(payload.runs.map(({ matrixBrowser }: { matrixBrowser: string }) => matrixBrowser)).toEqual(["Chromium", "Firefox"]);
+    const rows = await db.query.runs.findMany({ where: eq(runs.baselineId, baseline.id), with: {
+      results: { orderBy: (table, { asc }) => [asc(table.iterationIndex)], with: { stepResults: true } },
+    } });
+    expect(rows).toHaveLength(2);
+    for (const run of rows) {
+      expect(run.assigneeId).toBe(ownerId);
+      expect(run.results).toMatchObject([
+        { caseId: null, caseSnapshot: { title: "Version one" }, caseRevision: before!.revision,
+          stepResults: [{ action: "Open US", expected: "Old checkout" }] },
+        { caseId: null, caseSnapshot: { title: "Version one" }, caseRevision: before!.revision,
+          stepResults: [{ action: "Open EU", expected: "Old checkout" }] },
+      ]);
+    }
+    const response = await GET(request(readToken, new URLSearchParams({ resource: "baseline", id: baseline.id })));
+    expect(await response.json()).toMatchObject({ baseline: {
+      caseSnapshots: [{ revision: before!.revision, definition: { title: "Version one", status: "ready" } }],
+    } });
   });
 
   it("rolls back the observation when evidence storage fails and allows the same key to retry", async () => {
