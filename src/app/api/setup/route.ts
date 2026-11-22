@@ -1,5 +1,5 @@
 import { hash } from "bcryptjs";
-import { count } from "drizzle-orm";
+import { count, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
@@ -9,6 +9,9 @@ import { needsFirstRunSetup } from "@/lib/first-run";
 import { isUniqueViolation, readJsonBody } from "@/lib/http-errors";
 import { passwordSchema } from "@/lib/password";
 import { ensureMembership } from "@/lib/workspace";
+
+/** Transaction-scoped lock so concurrent first-admin setup cannot both succeed. */
+const SETUP_ADVISORY_LOCK = 872_014_001;
 
 const setupSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -33,6 +36,7 @@ export async function POST(request: Request) {
 
   try {
     const created = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(${SETUP_ADVISORY_LOCK})`);
       const [row] = await tx.select({ value: count() }).from(users);
       if (Number(row?.value ?? 0) > 0) {
         return null;
