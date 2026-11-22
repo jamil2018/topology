@@ -54,7 +54,13 @@ export default defineConfig({
       name: "performance",
       dependencies: ["setup"],
       testMatch: /performance\.spec\.ts/,
-      use: { ...devices["Desktop Chrome"], storageState: adminStorageState },
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: adminStorageState,
+        // DOM snapshots visit the live document on each action and skew the
+        // main-thread budget. Keep failure tracing with action metadata.
+        trace: { mode: "retain-on-failure", screenshots: false, snapshots: false, sources: true },
+      },
     },
     {
       name: "onboarding",

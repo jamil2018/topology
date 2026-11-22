@@ -49,21 +49,21 @@ function ResultStatusButtons({
   return (
     <div className="flex flex-wrap gap-1">
       {RESULT_STATUSES.map((status) => (
-        <Button
+        <button
           key={status}
           type="button"
-          isDisabled={disabled}
+          disabled={disabled}
           aria-label={
             stepPosition !== undefined
               ? `Mark step ${stepPosition + 1} of ${caseKey} as ${status}`
               : `Mark ${caseKey} as ${status}`
           }
           aria-pressed={value === status}
-          onPress={() => onChange(status)}
+          onClick={() => onChange(status)}
           className={statusButtonClass(status, value === status, disabled)}
         >
           {formatStatusLabel(status)}
-        </Button>
+        </button>
       ))}
     </div>
   );

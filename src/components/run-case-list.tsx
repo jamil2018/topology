@@ -273,21 +273,22 @@ export function RunCaseList({
                     }`}
                   >
                     {selectionEnabled ? (
-                      <TopoCheckbox
-                        compact
-                        className="mt-1.5"
-                        isSelected={checked}
-                        isDisabled={bulkPending}
-                        aria-label={`Select ${result.case.key}`}
-                        onChange={() => onToggleSelected?.(result.id)}
-                      />
+                      <label className="mt-1 flex h-8 w-6 shrink-0 cursor-pointer items-center justify-center">
+                        <input
+                          type="checkbox"
+                          className="size-4 cursor-pointer accent-[color:var(--topo-accent)] disabled:cursor-default"
+                          checked={checked}
+                          disabled={bulkPending}
+                          aria-label={`Select ${result.case.key}`}
+                          onChange={() => onToggleSelected?.(result.id)}
+                        />
+                      </label>
                     ) : null}
-                    <Button
+                    <button
                       type="button"
-                      variant="ghost"
                       aria-current={focused ? "true" : undefined}
-                      onPress={() => onSelect(result.id)}
-                      className="flex h-auto min-h-0 min-w-0 flex-1 items-start justify-start gap-2 px-0 py-0 text-left"
+                      onClick={() => onSelect(result.id)}
+                      className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-md text-left"
                     >
                       <span
                         aria-hidden
@@ -306,7 +307,7 @@ export function RunCaseList({
                           <span className="sr-only"> · {statusChipHint(result.status)}</span>
                         </span>
                       </span>
-                    </Button>
+                    </button>
                   </div>
                 </li>
               );

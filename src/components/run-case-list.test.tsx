@@ -69,6 +69,7 @@ describe("RunCaseList", () => {
     const user = userEvent.setup();
     const onStatusFilter = vi.fn();
     const onSelect = vi.fn();
+    const onToggleSelected = vi.fn();
 
     render(
       <RunCaseList
@@ -83,12 +84,22 @@ describe("RunCaseList", () => {
         onMineOnly={vi.fn()}
         onQueryChange={vi.fn()}
         onSelect={onSelect}
+        selectionEnabled
+        onToggleSelected={onToggleSelected}
       />,
     );
 
     await user.click(screen.getByRole("button", { name: /^Failed \d+$/ }));
     expect(onStatusFilter).toHaveBeenCalledWith("failed");
-    await user.click(screen.getByRole("button", { name: /CASE-2\s*Bravo/ }));
+    const checkbox = screen.getByRole("checkbox", { name: "Select CASE-2" });
+    checkbox.focus();
+    await user.keyboard(" ");
+    expect(onToggleSelected).toHaveBeenCalledWith("r2");
+    expect(onSelect).not.toHaveBeenCalled();
+
+    await user.tab();
+    expect(screen.getByRole("button", { name: /CASE-2\s*Bravo/ })).toHaveFocus();
+    await user.keyboard("{Enter}");
     expect(onSelect).toHaveBeenCalledWith("r2");
   });
 });
