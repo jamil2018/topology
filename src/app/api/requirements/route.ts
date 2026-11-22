@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { qualityEdges, requirements } from "@/db/schema";
+import { qualityEdges, requirements, testIntents } from "@/db/schema";
+import { getJiraRequirementSource, lockRequirement } from "@/lib/jira-requirements";
+import { listProjectRequirements } from "@/lib/project-requirements";
 import { requireProjectAccess } from "@/lib/project";
 
 const createSchema = z.object({
@@ -29,31 +31,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const rows = await db.query.requirements.findMany({
-    where: eq(requirements.workspaceId, access.ctx.project.id),
-    orderBy: [asc(requirements.key)],
-  });
-  const edges = await db.query.qualityEdges.findMany({
-    where: and(
-      eq(qualityEdges.workspaceId, access.ctx.project.id),
-      eq(qualityEdges.fromType, "requirement"),
-      eq(qualityEdges.relation, "covers"),
-    ),
-  });
-  const coveredIntentIdsByReq = new Map<string, string[]>();
-  for (const e of edges) {
-    if (e.toType !== "intent") continue;
-    const list = coveredIntentIdsByReq.get(e.fromId) ?? [];
-    list.push(e.toId);
-    coveredIntentIdsByReq.set(e.fromId, list);
-  }
-
-  return NextResponse.json({
-    requirements: rows.map((r) => ({
-      ...r,
-      coversIntentIds: coveredIntentIdsByReq.get(r.id) ?? [],
-    })),
-  });
+  return NextResponse.json({ requirements: await listProjectRequirements(access.ctx.project.id) });
 }
 
 export async function POST(request: Request) {
@@ -87,36 +65,29 @@ export async function POST(request: Request) {
   }
 
   try {
-    const [created] = await db
-      .insert(requirements)
-      .values({
-        workspaceId,
-        key: parsed.data.key,
-        title: parsed.data.title,
-        description: parsed.data.description,
-        criticality: parsed.data.criticality,
-      })
-      .returning();
+    return await db.transaction(async (tx) => {
+      const intentIds = [...new Set(parsed.data.coversIntentIds)];
+      if (intentIds.length) {
+        const found = await tx.select({ id: testIntents.id }).from(testIntents).where(and(
+          eq(testIntents.workspaceId, workspaceId), inArray(testIntents.id, intentIds),
+        ));
+        if (found.length !== intentIds.length) {
+          return NextResponse.json({ error: "Coverage intent not found in this project" }, { status: 400 });
+        }
+      }
 
-    if (parsed.data.coversIntentIds.length > 0) {
-      await db.insert(qualityEdges).values(
-        parsed.data.coversIntentIds.map((intentId) => ({
-          workspaceId,
-          fromType: "requirement" as const,
-          fromId: created.id,
-          toType: "intent" as const,
-          toId: intentId,
-          relation: "covers" as const,
-        })),
-      );
-    }
-
-    return NextResponse.json({ requirement: created }, { status: 201 });
+      const [created] = await tx.insert(requirements).values({
+        workspaceId, key: parsed.data.key, title: parsed.data.title,
+        description: parsed.data.description, criticality: parsed.data.criticality,
+      }).returning();
+      if (intentIds.length) await tx.insert(qualityEdges).values(intentIds.map((intentId) => ({
+        workspaceId, fromType: "requirement" as const, fromId: created.id,
+        toType: "intent" as const, toId: intentId, relation: "covers" as const,
+      })));
+      return NextResponse.json({ requirement: created }, { status: 201 });
+    });
   } catch {
-    return NextResponse.json(
-      { error: "Requirement key already exists or create failed" },
-      { status: 409 },
-    );
+    return NextResponse.json({ error: "Requirement key already exists or create failed" }, { status: 409 });
   }
 }
 
@@ -158,41 +129,39 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const { id, coversIntentIds, ...rest } = parsed.data;
-  const [updated] = await db
-    .update(requirements)
-    .set({ ...rest, updatedAt: new Date() })
-    .where(and(eq(requirements.id, id), eq(requirements.workspaceId, workspaceId)))
-    .returning();
-
-  if (!updated) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  if (coversIntentIds) {
-    await db
-      .delete(qualityEdges)
-      .where(
-        and(
-          eq(qualityEdges.workspaceId, workspaceId),
-          eq(qualityEdges.fromType, "requirement"),
-          eq(qualityEdges.fromId, id),
-          eq(qualityEdges.relation, "covers"),
-        ),
-      );
-    if (coversIntentIds.length > 0) {
-      await db.insert(qualityEdges).values(
-        coversIntentIds.map((intentId) => ({
-          workspaceId,
-          fromType: "requirement" as const,
-          fromId: id,
-          toType: "intent" as const,
-          toId: intentId,
-          relation: "covers" as const,
-        })),
-      );
+  const { id, coversIntentIds, ...patch } = parsed.data;
+  return db.transaction(async (tx) => {
+    const current = await lockRequirement(tx, workspaceId, id);
+    if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if ((patch.title !== undefined || patch.description !== undefined) && await getJiraRequirementSource(tx, workspaceId, id)) {
+      return NextResponse.json({ error: "Update the title or description in Jira" }, { status: 409 });
     }
-  }
 
-  return NextResponse.json({ requirement: updated });
+    const intentIds = coversIntentIds && [...new Set(coversIntentIds)];
+    if (intentIds?.length) {
+      const found = await tx.select({ id: testIntents.id }).from(testIntents).where(and(
+        eq(testIntents.workspaceId, workspaceId), inArray(testIntents.id, intentIds),
+      ));
+      if (found.length !== intentIds.length) {
+        return NextResponse.json({ error: "Coverage intent not found in this project" }, { status: 400 });
+      }
+    }
+
+    const [updated] = await tx.update(requirements).set({ ...patch, updatedAt: new Date() })
+      .where(and(eq(requirements.id, id), eq(requirements.workspaceId, workspaceId))).returning();
+
+    if (intentIds) {
+      await tx.delete(qualityEdges).where(and(
+        eq(qualityEdges.workspaceId, workspaceId), eq(qualityEdges.fromType, "requirement"),
+        eq(qualityEdges.fromId, id), eq(qualityEdges.toType, "intent"), eq(qualityEdges.relation, "covers"),
+        intentIds.length ? notInArray(qualityEdges.toId, intentIds) : undefined,
+      ));
+      if (intentIds.length) await tx.insert(qualityEdges).values(intentIds.map((intentId) => ({
+        workspaceId, fromType: "requirement" as const, fromId: id, toType: "intent" as const, toId: intentId,
+        relation: "covers" as const,
+      }))).onConflictDoNothing();
+    }
+
+    return NextResponse.json({ requirement: updated });
+  });
 }

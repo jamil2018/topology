@@ -30,6 +30,7 @@ export const authConfig = {
       const isInviteApi = pathname.startsWith("/api/invites/");
       const isInvitePage = pathname.startsWith("/invite/");
       const isGithubWebhook = pathname.startsWith("/api/webhooks/github");
+      const isJiraRequirementWebhook = pathname === "/api/webhooks/requirements/jira";
 
       if (
         isAuthRoute ||
@@ -43,7 +44,8 @@ export const authConfig = {
         isHealth ||
         isInviteApi ||
         isInvitePage ||
-        isGithubWebhook
+        isGithubWebhook ||
+        isJiraRequirementWebhook
       ) {
         return true;
       }

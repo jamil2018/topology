@@ -1,6 +1,8 @@
 import {
   doublePrecision,
   index,
+  jsonb,
+  primaryKey,
   integer,
   pgTable,
   text,
@@ -62,6 +64,40 @@ export const requirements = pgTable(
   (table) => [unique().on(table.workspaceId, table.key)],
 );
 
+export const jiraRequirementSources = pgTable(
+  "jira_requirement_sources",
+  {
+    requirementId: uuid("requirement_id").primaryKey()
+      .references(() => requirements.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    origin: text("origin").notNull(),
+    projectId: text("project_id").notNull(),
+    issueId: text("issue_id").notNull(),
+    issueKey: text("issue_key"),
+    revision: integer("revision").notNull().default(0),
+    contentHash: text("content_hash"),
+    remoteUpdatedAt: timestamp("remote_updated_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [unique("jira_requirement_sources_issue_unique").on(
+    table.workspaceId, table.origin, table.projectId, table.issueId,
+  )],
+);
+
+export const jiraRequirementRevisions = pgTable(
+  "jira_requirement_revisions",
+  {
+    requirementId: uuid("requirement_id").notNull()
+      .references(() => jiraRequirementSources.requirementId, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true, mode: "date" }).notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    sourceDescription: jsonb("source_description"),
+  },
+  (table) => [primaryKey({ columns: [table.requirementId, table.revision] })],
+);
+
 export const risks = pgTable(
   "risks",
   {
@@ -109,6 +145,7 @@ export const qualityEdges = pgTable(
     toType: qualityEntityTypeEnum("to_type").notNull(),
     toId: uuid("to_id").notNull(),
     relation: qualityRelationEnum("relation").notNull(),
+    reviewedJiraRevision: integer("reviewed_jira_revision").notNull().default(0),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (table) => [

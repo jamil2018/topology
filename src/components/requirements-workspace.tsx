@@ -9,6 +9,7 @@ import { Button, Input, TextArea } from "@heroui/react";
 import { EntityCollabPanel } from "./entity-collab-panel";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
+import type { listProjectRequirements } from "@/lib/project-requirements";
 
 type RequirementRow = {
   id: string;
@@ -17,13 +18,17 @@ type RequirementRow = {
   description: string;
   criticality: string;
   coversIntentIds: string[];
+  jira: Awaited<ReturnType<typeof listProjectRequirements>>[number]["jira"];
+  coverageLinks: Awaited<ReturnType<typeof listProjectRequirements>>[number]["coverageLinks"];
 };
 
 export function RequirementsWorkspace({
   initial,
+  jiraConfigured = false,
   selectedId = null,
 }: {
   initial: RequirementRow[];
+  jiraConfigured?: boolean;
   selectedId?: string | null;
 }) {
   const router = useRouter();
@@ -45,6 +50,32 @@ export function RequirementsWorkspace({
     criticality: "P2",
   });
   const [proposalMessage, setProposalMessage] = useState<string | null>(null);
+  const [jiraIssueId, setJiraIssueId] = useState("");
+
+  async function changeJiraCoverage(requirementId: string, action: { action: "bind"; issueId: string } | {
+    action: "review"; edgeId: string; revision: number;
+  }) {
+    await submit(async () => {
+      setError(null);
+      const response = await fetch(`/api/requirements/${requirementId}/jira`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(typeof data.error === "string" ? data.error : "Could not update Jira coverage");
+        return;
+      }
+      const refreshed = await fetch("/api/requirements");
+      if (!refreshed.ok) {
+        setError("Jira coverage changed. Reload the page to see it.");
+        return;
+      }
+      setItems((await refreshed.json()).requirements);
+      setJiraIssueId("");
+    });
+  }
 
   async function draftCoverageProposal(requirementId: string) {
     if (!can("intents.edit") && !can("proposals.create")) return;
@@ -103,7 +134,7 @@ export function RequirementsWorkspace({
       return;
     }
     const row = data.requirement as RequirementRow;
-    setItems((prev) => [{ ...row, coversIntentIds: [] }, ...prev]);
+    setItems((prev) => [{ ...row, coversIntentIds: [], jira: null, coverageLinks: [] }, ...prev]);
     setDraft({ key: "", title: "", description: "", criticality: "P2" });
     startTransition(() => router.refresh());
     });
@@ -191,7 +222,7 @@ export function RequirementsWorkspace({
                   className={`h-auto w-full rounded-none px-4 py-3 text-left ${
                     selected === req.id ? "bg-[color:var(--topo-chip)]/80" : ""
                   }`}
-                  onPress={() => setSelected(req.id)}
+                  onPress={() => { setSelected(req.id); setJiraIssueId(""); }}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -209,6 +240,7 @@ export function RequirementsWorkspace({
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       <StatusChip mono>{req.criticality}</StatusChip>
+                      {req.coverageLinks.some((link) => link.suspect) ? <StatusChip>Coverage needs review</StatusChip> : null}
                       <StatusChip mono>
                         {req.coversIntentIds.length} intent
                         {req.coversIntentIds.length === 1 ? "" : "s"}
@@ -231,6 +263,45 @@ export function RequirementsWorkspace({
                       >
                         Draft coverage proposal
                       </Button>
+                    ) : null}
+                    {req.jira ? (
+                      <section aria-label="Jira coverage" className="space-y-2">
+                        <p className="text-sm">
+                          {req.jira.href ? <a href={req.jira.href} className="underline">{req.jira.issueKey}</a> : `Jira issue ${req.jira.issueId}`}
+                          {req.jira.revision > 0 ? ` · Revision ${req.jira.revision}` : " · Waiting for Jira"}
+                        </p>
+                        {req.coverageLinks.length ? (
+                          <ul className="space-y-2">
+                            {req.coverageLinks.map((link) => (
+                              <li key={link.edgeId} className="flex flex-wrap items-center gap-2 text-sm">
+                                <Link href={`/intents?intent=${link.intent.id}`} className="underline">
+                                  {link.intent.key} {link.intent.title}
+                                </Link>
+                                {link.suspect && can("requirements.edit") ? (
+                                  <Button size="sm" variant="tertiary" isDisabled={pending}
+                                    onPress={() => void changeJiraCoverage(req.id, {
+                                      action: "review", edgeId: link.edgeId, revision: req.jira!.revision,
+                                    })}
+                                  >Confirm coverage for {link.intent.key}</Button>
+                                ) : link.suspect ? <StatusChip>Review needed</StatusChip> : null}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </section>
+                    ) : jiraConfigured && can("requirements.edit") && can("project.manage") ? (
+                      <div className="flex flex-wrap items-end gap-2">
+                        <label className="topo-field"><span>Jira issue ID</span><Input
+                          aria-label="Jira issue ID"
+                          value={jiraIssueId}
+                          inputMode="numeric"
+                          onChange={(event) => setJiraIssueId(event.target.value)}
+                        /></label>
+                        <Button size="sm" variant="tertiary"
+                          isDisabled={pending || !/^\d{1,32}$/.test(jiraIssueId)}
+                          onPress={() => void changeJiraCoverage(req.id, { action: "bind", issueId: jiraIssueId })}
+                        >Link Jira issue</Button>
+                      </div>
                     ) : null}
                     <EntityCollabPanel
                       entityType="requirement"

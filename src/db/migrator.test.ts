@@ -35,7 +35,7 @@ describe("journaled migrator", () => {
       readFileSync(path.join(folder, "meta/_journal.json"), "utf8"),
     ) as { entries: { tag: string; idx: number }[] };
 
-    expect(journal.entries).toHaveLength(16);
+    expect(journal.entries).toHaveLength(17);
     expect(journal.entries[0]?.idx).toBe(0);
     expect(journal.entries[0]?.tag).toBe("0000_baseline");
     expect(journal.entries[1]?.idx).toBe(1);
@@ -59,9 +59,10 @@ describe("journaled migrator", () => {
     expect(journal.entries[13]?.tag).toBe("0013_regression_baselines");
     expect(journal.entries[14]?.tag).toBe("0014_case_review_policy");
     expect(journal.entries[15]?.tag).toBe("0015_vendor_run_history");
+    expect(journal.entries[16]?.tag).toBe("0016_jira_requirement_revisions");
 
     const files = readMigrationFiles({ migrationsFolder: folder });
-    expect(files).toHaveLength(16);
+    expect(files).toHaveLength(17);
     const baseline = files[0]!.sql.join("\n");
     expect(baseline).toContain('CREATE TABLE "users"');
     expect(baseline).toContain('CREATE TABLE "attachments"');
@@ -141,6 +142,8 @@ describe("journaled migrator", () => {
     expect(sql).toContain('"resolution"');
     expect(sql).toContain("post_pr_status_checks");
     expect(sql).toContain("post_pr_summary_comment");
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "jira_requirement_revisions"');
+    expect(sql).toContain('ADD COLUMN IF NOT EXISTS "reviewed_jira_revision"');
   });
 
   it("refuses to run without DATABASE_URL", async () => {

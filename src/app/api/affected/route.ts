@@ -98,6 +98,7 @@ export async function POST(request: Request) {
     impact,
     caseIds,
     rankedCases,
+    suspectCoverageLinks,
     pathRulesApplied,
     unknownComponentKeys,
     rulesSource,
@@ -113,6 +114,7 @@ export async function POST(request: Request) {
     impact,
     caseIds,
     rankedCases,
+    suspectCoverageLinks,
     summary: {
       components: impact.components.length,
       requirements: impact.requirements.length,

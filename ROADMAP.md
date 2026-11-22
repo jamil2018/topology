@@ -21,7 +21,7 @@ Project-scoped agent credentials, transactional proposal review, opt-in project 
 ## Remaining adoption and workflow work
 
 - Qualify hosted GitHub callbacks and run a live GitLab CI sandbox. GitHub artifact pull delivery has passed a live sandbox. Run the reference journeys in connected Codex and Claude Code sessions and measure the pilot.
-- Qualify historical TestRail and Qase migration against live exports and extend it to Zephyr and Xray. Sync Jira requirement revisions, add first-class Gherkin and Cucumber mapping, and reconcile Playwright source discovery.
+- Qualify historical TestRail and Qase migration against live exports and extend it to Zephyr and Xray. Qualify signed Jira requirement callbacks on a connected Jira Cloud project. Add first-class Gherkin and Cucumber mapping, and reconcile Playwright source discovery.
 - Add cross-project dashboards and sharing, scheduled reports, integration administration, and remotely hosted OAuth-backed MCP.
 - Qualify self-hosted deployments and live vendor and issue providers. Clean-install fixtures cover CLI, MCP, Playwright, Jest, Cypress, and pytest.
 

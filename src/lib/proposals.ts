@@ -40,6 +40,7 @@ import {
   getAiProviderConfig,
   isAiProviderEnabled as isAiConfigEnabled,
 } from "@/lib/ai-provider";
+import { getJiraRequirementSource } from "@/lib/jira-requirements";
 
 const PRIORITIES = new Set(["P0", "P1", "P2", "P3"]);
 const CASE_STATUSES = new Set([
@@ -839,6 +840,9 @@ async function applyUpdateDiff(
       eq(requirements.workspaceId, workspaceId),
     )).for("update");
     assertCurrentRevision(current, diff);
+    if ((asString(after.title) || after.description !== undefined) && await getJiraRequirementSource(tx, workspaceId, entityId)) {
+      throw new ProposalApplyError("Update the title or description in Jira", 409);
+    }
     const patch: Partial<typeof requirements.$inferInsert> = {
       updatedAt: new Date(),
     };

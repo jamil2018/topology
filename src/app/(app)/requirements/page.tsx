@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { and, asc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { RequirementsWorkspace } from "@/components/requirements-workspace";
-import { db } from "@/db";
-import { qualityEdges, requirements } from "@/db/schema";
-import { resolveActiveProject } from "@/lib/project";
+import { jiraRequirementTarget } from "@/lib/jira-requirement-webhook";
+import { ctxHasAction, resolveActiveProject } from "@/lib/project";
+import { listProjectRequirements } from "@/lib/project-requirements";
 
 export const metadata: Metadata = {
   title: "Requirements · Topology",
@@ -23,35 +22,15 @@ export default async function RequirementsPage({
   const ctx = await resolveActiveProject(session.user.id);
   if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
+  if (!ctxHasAction(ctx, "requirements.view")) redirect("/");
   const workspaceId = ctx.project.id;
-  const params = await searchParams;
-  const rows = await db.query.requirements.findMany({
-    where: eq(requirements.workspaceId, workspaceId),
-    orderBy: [asc(requirements.key)],
-  });
-  const edges = await db.query.qualityEdges.findMany({
-    where: and(
-      eq(qualityEdges.workspaceId, workspaceId),
-      eq(qualityEdges.fromType, "requirement"),
-      eq(qualityEdges.relation, "covers"),
-    ),
-  });
-  const coveredIntentIdsByReq = new Map<string, string[]>();
-  for (const e of edges) {
-    if (e.toType !== "intent") continue;
-    const list = coveredIntentIdsByReq.get(e.fromId) ?? [];
-    list.push(e.toId);
-    coveredIntentIdsByReq.set(e.fromId, list);
-  }
-
-  const initial = rows.map((r) => ({
-    ...r,
-    coversIntentIds: coveredIntentIdsByReq.get(r.id) ?? [],
-  }));
+  const [params, initial] = await Promise.all([searchParams, listProjectRequirements(workspaceId)]);
+  const jiraConfigured = Boolean(jiraRequirementTarget(workspaceId));
 
   return (
     <RequirementsWorkspace
       initial={initial}
+      jiraConfigured={jiraConfigured}
       selectedId={params.requirement ?? null}
     />
   );

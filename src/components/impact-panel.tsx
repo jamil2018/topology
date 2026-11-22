@@ -18,6 +18,7 @@ type AffectedResponse = {
   pathsSource?: string;
   caseIds?: string[];
   rankedCases?: Array<{ id: string; title: string; key: string; priority: string; href: string }>;
+  suspectCoverageLinks?: Array<{ edgeId: string; requirementKey: string; intentKey: string; jiraRevision: number; href: string }>;
   pullRequestId?: string | null;
   summary: {
     components: number;
@@ -453,6 +454,19 @@ export function ImpactPanel() {
             <p className="text-sm text-[color:var(--topo-muted)]">
               Unmapped paths · <code>{result.impact.unmappedPaths.join(", ")}</code>
             </p>
+          ) : null}
+          {result.suspectCoverageLinks?.length ? (
+            <div>
+              <h3 className="text-sm font-medium">Jira coverage needs review</h3>
+              <ul className="mt-1 space-y-1 text-sm">
+                {result.suspectCoverageLinks.map((link) => (
+                  <li key={link.edgeId}>
+                    <Link href={link.href} className="underline">{link.requirementKey}</Link>
+                    {" · "}{link.intentKey}{" · Jira revision "}{link.jiraRevision}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           {result.rankedCases?.length ? (
             <details>

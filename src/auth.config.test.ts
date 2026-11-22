@@ -31,6 +31,8 @@ describe("authConfig.authorized", () => {
     expect(authorized("/api/releases/analyze", null)).toBe(true);
     expect(authorized("/api/releases/compare", null)).toBe(true);
     expect(authorized("/api/webhooks/github", null)).toBe(true);
+    expect(authorized("/api/webhooks/requirements/jira", null)).toBe(true);
+    expect(authorized("/api/webhooks/requirements/jira/config", null)).toBe(false);
   });
 
   it("allows exact CLI bearer endpoints while keeping neighboring session APIs private", () => {

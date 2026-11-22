@@ -113,6 +113,13 @@
       "when": 1795400000006,
       "tag": "0015_vendor_run_history",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795400000007,
+      "tag": "0016_jira_requirement_revisions",
+      "breakpoints": true
     }
   ]
 }

@@ -87,15 +87,29 @@ Set `TOPOLOGY_GITHUB_RUNNER_TOKEN` to a repository-scoped credential with Action
 
 Runner requests and release evidence are available by API and MCP.
 
+## Jira requirement revisions
+
+Use a signed Jira Cloud admin webhook to sync explicitly linked requirements. Configure one Jira site and project for each Topology project. The deployment controls the Jira HTTPS origin, Jira numeric project ID, and the environment variable that holds a dedicated webhook secret.
+
+```bash
+TOPOLOGY_JIRA_REQUIREMENT_TARGETS='[{"workspaceId":"TOPOLOGY_PROJECT_UUID","origin":"https://example.atlassian.net","projectId":"10001","secretEnv":"TOPOLOGY_JIRA_REQUIREMENT_SECRET_EXAMPLE"}]'
+```
+
+Set `TOPOLOGY_JIRA_REQUIREMENT_SECRET_EXAMPLE` to the same random secret configured in Jira, at least 32 bytes. Use a different secret for each Topology project. Configure Jira to send issue-created and issue-updated events including the body to `https://topology.example.com/api/webhooks/requirements/jira?workspaceId=TOPOLOGY_PROJECT_UUID`. Restrict the Jira webhook with a JQL filter for the approved project and requirement issue types. [Jira Cloud secure admin webhooks](https://developer.atlassian.com/cloud/jira/platform/webhooks/#secure-admin-webhooks)
+
+A project admin with requirement edit access selects an existing requirement in **Requirements**, enters the numeric Jira issue ID, and chooses **Link Jira issue**. The next matching delivery copies the Jira summary and description, and saves the first source revision. Only explicit mappings are updated. A later title or description change creates a new revision and flags the requirement's test intent coverage links for review. Jira continues to own the title and description. Topology keeps its own requirement key, priority, and graph links. An editor can open each linked intent and use **Confirm coverage** for the displayed revision. A newer revision requires a new review.
+
+Read the stored title and description for each revision through `GET /api/requirements/{id}/jira`. Use the returned `nextBeforeRevision` as the `beforeRevision` query parameter for older pages. The affected-path API returns `suspectCoverageLinks` with the requirement, intent, and reviewed and current Jira revisions. Suspect links still participate in test selection and are shown on the Impact page. A repeated delivery is idempotent. Stale deliveries and unmapped issues leave the graph untouched. Jira issue deletion, bulk backfill, and hosted callback qualification are open.
+
 ## GitLab CI
 
-Configure a GitLab.com repository, an approved pipeline ref, and a dedicated project `ci-write` reporter credential. Use a project access token with API scope for dispatch and merge-request reads.
+Configure a GitLab.com repository, an approved pipeline ref, and a dedicated project `ci-write` reporter credential. Use an API-scoped token for dispatch and merge-request reads. GitLab.com project access tokens require Premium or Ultimate. An authorized existing sandbox user can use a personal API token restricted through that user’s project access. [GitLab project access tokens](https://docs.gitlab.com/user/project/settings/project_access_tokens/)
 
 ```dotenv
 TOPOLOGY_GITLAB_RUNNER_TARGETS='[{"repositoryId":"REPOSITORY_UUID","workflow":"playwright","ref":"main","environments":["smoke"],"reporterTokenId":"CI_TOKEN_UUID"}]'
 TOPOLOGY_GITLAB_RELEASE_POLICIES='[{"repositoryId":"REPOSITORY_UUID","version":"1","workflow":"playwright","environments":["smoke"],"caseKeys":["AUTH-001"]}]'
 ```
 
-Set `TOPOLOGY_GITLAB_RUNNER_TOKEN` in the Topology process. Ingest the merge request and its exact head through the GitLab webhook or Git ingest. Submit `request_workflow` with the same fields as GitHub. Topology checks the open, non-draft, same-project merge request against GitLab and creates the pipeline on the approved ref. The test job checks out the separately supplied head SHA. Use GitLab 18.1 or newer for pipeline inputs. [Pipeline API](https://docs.gitlab.com/api/pipelines/#create-a-new-pipeline)
+Set `TOPOLOGY_GITLAB_RUNNER_TOKEN` in the Topology process. Ingest the merge request through `POST /api/git/ingest` using a project `ci-write` credential. Send the approved repository URL, `provider: "gitlab"`, and `pullRequest` with its GitLab IID as `number`, the exact `headSha`, current `status`, and changed `paths`. Submit `request_workflow` with the same fields as GitHub. Topology checks the open, non-draft, same-project merge request against GitLab and creates the pipeline on the approved ref. The test job checks out the separately supplied head SHA. Use GitLab 18.1 or newer for pipeline inputs. [Pipeline API](https://docs.gitlab.com/api/pipelines/#create-a-new-pipeline)
 
 The [GitLab example pipeline](../packages/cli/examples/topology-gitlab-verification.yml) runs Playwright and publishes `topology-evidence.json` from a separate report job. For automatic delivery, scope the protected `TOPOLOGY_REPORT_TOKEN` CI variable to the `topology-evidence` environment and set `TOPOLOGY_URL` there. For pull delivery, download the evidence from the confirmed pipeline and use `topology run upload` with the reporter credential. Submit evidence from the original pipeline job. A different report for that request requires a new, explicitly approved request. [GitLab CI variable scopes](https://docs.gitlab.com/ci/variables/#limit-the-environment-scope-of-a-cicd-variable)

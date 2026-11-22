@@ -4,6 +4,7 @@ import { db } from "@/db";
 import {
   cases,
   components,
+  jiraRequirementSources,
   pathComponentRules,
   qualityEdges,
   requirements,
@@ -14,6 +15,7 @@ import {
   mapDbPathRules,
   mapPathRulesByComponentKey,
 } from "@/lib/impact-path-rules";
+import { intentForCoverageEdge, requirementForCoverageEdge } from "@/lib/project-requirements";
 import { collectCaseIdsForIntents } from "@/lib/resolve-impact-cases";
 
 /**
@@ -76,6 +78,16 @@ export async function getWorkspaceImpact(
     title: string;
     priority: string;
     intentIds: string[];
+    href: string;
+  }>;
+  suspectCoverageLinks: Array<{
+    edgeId: string;
+    requirementId: string;
+    requirementKey: string;
+    intentId: string;
+    intentKey: string;
+    jiraRevision: number;
+    reviewedJiraRevision: number;
     href: string;
   }>;
   pathRulesApplied: number;
@@ -154,15 +166,39 @@ export async function getWorkspaceImpact(
     })),
   });
 
-  const caseIds = await resolveCaseIdsForIntents(
-    workspaceId,
-    impact.intents.map((i) => i.id),
-  );
+  const impactedRequirements = new Map(impact.requirements.map((item) => [item.id, item]));
+  const impactedIntents = new Map(impact.intents.map((item) => [item.id, item]));
+  const [caseIds, jiraSources] = await Promise.all([
+    resolveCaseIdsForIntents(workspaceId, [...impactedIntents.keys()]),
+    impactedRequirements.size ? db.select({
+      requirementId: jiraRequirementSources.requirementId, revision: jiraRequirementSources.revision,
+    }).from(jiraRequirementSources).where(and(
+      eq(jiraRequirementSources.workspaceId, workspaceId),
+      inArray(jiraRequirementSources.requirementId, [...impactedRequirements.keys()]),
+    )) : Promise.resolve([]),
+  ]);
+  const jiraRevisions = new Map(jiraSources.map((source) => [source.requirementId, source.revision]));
+  const suspectCoverageLinks = edgeRows.flatMap((edge) => {
+    const isRequirementCoverage = edge.relation === "covers" && (
+      (edge.fromType === "requirement" && edge.toType === "intent") ||
+      (edge.fromType === "intent" && edge.toType === "requirement")
+    );
+    if (!isRequirementCoverage) return [];
+    const requirement = impactedRequirements.get(requirementForCoverageEdge(edge));
+    const intent = impactedIntents.get(intentForCoverageEdge(edge));
+    const revision = requirement ? jiraRevisions.get(requirement.id) : undefined;
+    if (!requirement || !intent || revision === undefined || revision <= edge.reviewedJiraRevision) return [];
+    return [{
+      edgeId: edge.id, requirementId: requirement.id, requirementKey: requirement.key, intentId: intent.id,
+      intentKey: intent.key, jiraRevision: revision, reviewedJiraRevision: edge.reviewedJiraRevision,
+      href: `/requirements?requirement=${requirement.id}`,
+    }];
+  }).sort((a, b) => a.requirementKey.localeCompare(b.requirementKey) || a.intentKey.localeCompare(b.intentKey));
 
   const caseRows = caseIds.length ? await db.select({
     id: cases.id, key: cases.key, title: cases.title, priority: cases.priority, intentId: cases.intentId,
   }).from(cases).where(and(eq(cases.workspaceId, workspaceId), eq(cases.status, "ready"), inArray(cases.id, caseIds))) : [];
-  const impactedIntentIds = new Set(impact.intents.map(({ id }) => id));
+  const impactedIntentIds = impactedIntents;
   const caseIntents = new Map<string, string[]>();
   for (const implementation of implRows) {
     if (!implementation.caseId || !impactedIntentIds.has(implementation.intentId)) continue;
@@ -183,6 +219,7 @@ export async function getWorkspaceImpact(
     impact,
     caseIds,
     rankedCases,
+    suspectCoverageLinks,
     pathRulesApplied: pathRules.length,
     unknownComponentKeys: unknownKeys,
     rulesSource,
