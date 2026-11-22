@@ -5,7 +5,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { environments, testPlans } from "@/db/schema";
 import { requireProjectAccess } from "@/lib/project";
-import { listPlans, matrixFromBody, replacePlanCases } from "@/lib/tcm/plans";
+import { invalidPlanSelection, listPlans, matrixFromBody, replacePlanCases } from "@/lib/tcm/plans";
 
 const matrixSchema = z.object({
   browsers: z.array(z.string()).optional(),
@@ -71,19 +71,19 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const [plan] = await db
-    .insert(testPlans)
-    .values({
+  const invalid = await invalidPlanSelection(access.ctx.project.id, parsed.data);
+  if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+  const plan = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(testPlans).values({
       workspaceId: access.ctx.project.id,
       name: parsed.data.name,
       description: parsed.data.description,
       milestoneId: parsed.data.milestoneId ?? null,
       matrixJson: matrixFromBody(parsed.data.matrix ?? {}),
       createdById: session.user.id,
-    })
-    .returning();
-  if (parsed.data.caseIds?.length) {
-    await replacePlanCases(plan.id, parsed.data.caseIds);
-  }
+    }).returning();
+    if (parsed.data.caseIds?.length) await replacePlanCases(created.id, parsed.data.caseIds, tx);
+    return created;
+  });
   return NextResponse.json({ plan }, { status: 201 });
 }

@@ -5,7 +5,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { environments, testPlans } from "@/db/schema";
 import { requireProjectAccess } from "@/lib/project";
-import { getPlan, matrixFromBody, replacePlanCases } from "@/lib/tcm/plans";
+import { getPlan, invalidPlanSelection, matrixFromBody, replacePlanCases } from "@/lib/tcm/plans";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -88,9 +88,10 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid plan update" }, { status: 400 });
   }
-  const [plan] = await db
-    .update(testPlans)
-    .set({
+  const invalid = await invalidPlanSelection(access.ctx.project.id, parsed.data);
+  if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+  const plan = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(testPlans).set({
       ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
       ...(parsed.data.description !== undefined
         ? { description: parsed.data.description }
@@ -104,11 +105,11 @@ export async function PATCH(request: Request, { params }: Params) {
         : {}),
       updatedAt: new Date(),
     })
-    .where(eq(testPlans.id, id))
-    .returning();
-  if (parsed.data.caseIds) {
-    await replacePlanCases(id, parsed.data.caseIds);
-  }
+    .where(and(eq(testPlans.id, id), eq(testPlans.workspaceId, access.ctx.project.id))).returning();
+    if (updated && parsed.data.caseIds) await replacePlanCases(id, parsed.data.caseIds, tx);
+    return updated;
+  });
+  if (!plan) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ plan });
 }
 

@@ -39,6 +39,12 @@ export function createTopologyMcpServer(client: TopologyClient) {
     async (args) => jsonText(await client.getCase(args)),
   );
   server.tool(
+    "get_plan",
+    "Read a project plan's case selection and matrix",
+    { id: z.uuid() },
+    async ({ id }) => jsonText(await client.getPlan(id)),
+  );
+  server.tool(
     "list_catalog",
     "List folders, shared steps, custom field definitions, plans, or run templates",
     {
@@ -66,11 +72,12 @@ export function createTopologyMcpServer(client: TopologyClient) {
 
   server.tool(
     "list_runs",
-    "List test runs with optional status and cursor",
+    "List test runs, optionally filtered to work assigned to the credential owner",
     {
       cursor: z.string().optional(),
       limit: z.number().int().min(1).max(100).optional(),
       status: z.enum(["planned", "in_progress", "completed", "aborted"]).optional(),
+      assignee: z.literal("me").optional(),
     },
     async (args) => jsonText(await client.listRuns(args)),
   );
@@ -89,10 +96,11 @@ export function createTopologyMcpServer(client: TopologyClient) {
 
   server.tool(
     "list_results",
-    "List results, optionally filtered by run or status",
+    "List results by run, status, or assignment to the credential owner",
     {
       runId: z.string().optional(),
       status: z.string().optional(),
+      assignee: z.literal("me").optional(),
       cursor: z.string().optional(),
       limit: z.number().int().min(1).max(100).optional(),
     },
@@ -107,6 +115,15 @@ export function createTopologyMcpServer(client: TopologyClient) {
   );
 
   const operationKey = z.string().min(1).max(128).describe("Reuse this key when retrying the same operation");
+  server.tool(
+    "launch_assigned_plan",
+    "Launch the matrix of an active plan containing ready cases and assign the runs to the credential owner",
+    { idempotencyKey: operationKey, planId: z.uuid(), namePrefix: z.string().trim().min(1).max(200).optional() },
+    async ({ idempotencyKey, ...args }) => jsonText(await client.runOperation(idempotencyKey, {
+      action: "launch_plan",
+      ...args,
+    })),
+  );
   server.tool(
     "create_assigned_run",
     "Create a manual run of approved cases and assign it to the credential owner",

@@ -28,7 +28,8 @@ Usage:
   topology release compare --before a.json --after b.json
   topology coverage [filter]
   topology test get <keyOrId>
-  topology agent list cases|runs|results [--q <text>] [--status <status>] [--cursor <cursor>]
+  topology agent list cases|runs|results|plans [--q <text>] [--status <status>] [--cursor <cursor>] [--assignee me]
+  topology agent get plan <uuid>
   topology agent apply <operation.json> --idempotency-key <key> [--evidence <file>]
   topology query '<dsl>'
 
@@ -375,12 +376,17 @@ async function cmdTestGet(args: string[]) {
 
 async function cmdAgent(sub: string | undefined, args: string[]) {
   const resource = args[0];
-  if (sub === "list" && ["cases", "runs", "results"].includes(resource ?? "")) {
+  if (sub === "list" && ["cases", "runs", "results", "plans"].includes(resource ?? "")) {
     const params = new URLSearchParams({ resource });
-    for (const name of ["q", "status", "cursor", "limit", "runId"]) {
+    for (const name of ["q", "status", "cursor", "limit", "runId", "assignee"]) {
       const value = getFlag(args, `--${name}`);
       if (value !== undefined) params.set(name, value);
     }
+    console.log(JSON.stringify(await api("GET", `/api/v1/agent?${params}`), null, 2));
+    return;
+  }
+  if (sub === "get" && resource === "plan" && args[1] && isUuid(args[1])) {
+    const params = new URLSearchParams({ resource, id: args[1] });
     console.log(JSON.stringify(await api("GET", `/api/v1/agent?${params}`), null, 2));
     return;
   }

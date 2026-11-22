@@ -32,6 +32,7 @@ import { emitLive, type LiveEvent } from "@/lib/live";
 import { createProposal, notifyProposalCreated, toProposalListItem } from "@/lib/proposals";
 import { isRunFrozen } from "@/lib/run-immutability";
 import { seedManualRunResults } from "@/lib/tcm/seed-run";
+import { launchPlan } from "@/lib/tcm/plans";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type AgentActor = {
@@ -64,6 +65,11 @@ const operationSchema = z.discriminatedUnion("action", [
     sourceResultIds: z.array(z.uuid()).min(1).max(500),
   }),
   z.object({
+    action: z.literal("launch_plan"),
+    planId: z.uuid(),
+    namePrefix: z.string().trim().min(1).max(200).optional(),
+  }),
+  z.object({
     action: z.literal("handoff_run"),
     runId: z.uuid(),
     assigneeId: z.uuid(),
@@ -94,6 +100,7 @@ const capability = {
   propose_coverage: "agent-propose",
   create_run: "agent-run",
   create_retest: "agent-run",
+  launch_plan: "agent-run",
   handoff_run: "agent-observe",
   request_workflow: "agent-run",
   record_result: "agent-observe",
@@ -183,6 +190,18 @@ async function applyOperation(
       targetType: "run",
       targetId: run.id,
       sourceRefs: operation.sourceResultIds,
+    };
+  }
+
+  if (operation.action === "launch_plan") {
+    const result = await launchPlan({ ...operation, workspaceId, actorId: userId, assignedAgent: true }, tx);
+    if (!result.ok) throw new AgentOperationError(result.status, "PLAN_UNAVAILABLE", result.error);
+    return {
+      status: 201,
+      body: { runs: result.runs.map((run) => ({ ...run, href: `/runs/${run.id}` })), href: `/plans/${operation.planId}` },
+      targetType: "test_plan",
+      targetId: operation.planId,
+      sourceRefs: result.runs.map(({ id }) => id),
     };
   }
 

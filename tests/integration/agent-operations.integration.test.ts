@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { apiTokens, auditEvents, cases, testImplementations, caseSteps, notifications, proposals, retestSources, runResults, runStepResults, users, workspaces } from "@/db/schema";
+import { apiTokens, auditEvents, cases, testImplementations, caseSteps, notifications, proposals, retestSources, runResults, runStepResults, runs, testPlanCases, testPlans, users, workspaces } from "@/db/schema";
 import { GET, POST } from "@/app/api/v1/agent/route";
 import { POST as uploadExecution } from "@/app/api/executions/route";
 import { ensurePullRequest, ensureRepository } from "@/lib/git-sync";
@@ -151,6 +151,52 @@ describe("Scoped agent operations", () => {
       .rejects.toThrow("link requires");
     expect(await db.query.cases.findFirst({ where: and(eq(cases.workspaceId, projectId), eq(cases.key, key)) })).toBeUndefined();
     expect((await db.query.proposals.findFirst({ where: eq(proposals.id, id) }))?.status).toBe("pending");
+  });
+
+  it("launches an active matrix once and finds effective assignments before paging", async () => {
+    const teammate = await db.query.users.findFirst({ where: eq(users.email, "member@topology.local") });
+    const [plan] = await db.insert(testPlans).values({
+      workspaceId: projectId, name: "Agent matrix",
+      matrixJson: JSON.stringify({ browsers: ["Chromium", "Firefox"], operatingSystems: ["Linux"] }),
+    }).returning();
+    await db.insert(testPlanCases).values({ planId: plan.id, caseId: readyCaseId });
+    const launch = { action: "launch_plan", planId: plan.id };
+    expect((await post(workToken, "draft-matrix", launch)).status).toBe(409);
+    await db.update(testPlans).set({ status: "active" }).where(eq(testPlans.id, plan.id));
+    const preview = await GET(request(readToken, new URLSearchParams({ resource: "plan", id: plan.id })));
+    expect(await preview.json()).toMatchObject({
+      plan: { status: "active", matrix: { browsers: ["Chromium", "Firefox"] }, cases: [{ id: readyCaseId, status: "ready" }] },
+      unavailableCases: 0,
+    });
+    const [first, replay] = await Promise.all([
+      post(workToken, "launch-matrix", launch), post(workToken, "launch-matrix", launch),
+    ]);
+    expect([first.status, replay.status]).toEqual([201, 201]);
+    const launched = await first.json();
+    expect(await replay.json()).toEqual(launched);
+    expect(launched.runs).toMatchObject([
+      { assigneeId: ownerId, matrixBrowser: "Chromium", matrixOs: "Linux" },
+      { assigneeId: ownerId, matrixBrowser: "Firefox", matrixOs: "Linux" },
+    ]);
+    const stored = await db.query.runs.findMany({ where: eq(runs.planId, plan.id), with: {
+      results: { with: { stepResults: true } },
+    } });
+    expect(stored).toHaveLength(2);
+    for (const run of stored) expect(run.results[0].stepResults).toHaveLength(1);
+
+    const [inherited, override] = stored;
+    await db.update(runResults).set({ assigneeId: teammate!.id }).where(eq(runResults.id, override.results[0].id));
+    const assignedResult = (runId: string) => GET(request(readToken, new URLSearchParams({
+      resource: "results", runId, assignee: "me", limit: "1",
+    })));
+    expect(await (await assignedResult(inherited.id)).json()).toMatchObject({ results: [{ id: inherited.results[0].id }] });
+    expect(await (await assignedResult(override.id)).json()).toEqual({ results: [], nextCursor: null });
+
+    await db.update(runs).set({ assigneeId: teammate!.id }).where(eq(runs.id, override.id));
+    await db.update(runResults).set({ assigneeId: ownerId }).where(eq(runResults.id, override.results[0].id));
+    expect(await (await assignedResult(override.id)).json()).toMatchObject({ results: [{ id: override.results[0].id }] });
+    const assigned = await GET(request(readToken, new URLSearchParams({ resource: "runs", assignee: "me", status: "planned" })));
+    expect((await assigned.json()).runs.map(({ id }: { id: string }) => id)).toEqual(expect.arrayContaining(stored.map(({ id }) => id)));
   });
 
   it("rolls back the observation when evidence storage fails and allows the same key to retry", async () => {

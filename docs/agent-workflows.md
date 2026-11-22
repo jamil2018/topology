@@ -8,7 +8,7 @@ Settings → Integrations creates a project token with read and proposal capabil
 | --- | --- |
 | `agent-read` | List cases, runs, and results, read graph context and evidence, inspect workflow requests and release reports |
 | `agent-propose` | Submit catalog and coverage changes for human review |
-| `agent-run` | Create an assigned manual run or retest, or request an approved GitHub Actions workflow or GitLab pipeline |
+| `agent-run` | Create an assigned manual run or retest, launch an active matrix plan, or request an approved GitHub Actions workflow or GitLab pipeline |
 | `agent-observe` | Record one result or step with optional evidence, or hand off a manual run assigned to the credential owner |
 
 Each credential is bound to one project and its owner. Expiring or revoking the credential, removing its owner from the project, or archiving the project closes scoped access. A project header, when supplied, must match the credential. Agent writes to the new API use an `Idempotency-Key`. Reuse the same key for a retry and a new key for a new operation. Successful effects, their attribution, and retry receipts are committed together.
@@ -41,6 +41,8 @@ topology release evidence --pull-request-id PULL_REQUEST_UUID
 ```
 
 MCP exposes `list_cases`, `propose_coverage`, `create_assigned_run`, `get_result`, `record_observation`, `create_retest`, `handoff_run`, `get_affected_tests`, `request_pr_workflow`, `get_workflow_request`, and `get_pr_release_evidence`. For scoped proposals, always pass `idempotencyKey`.
+
+Use `assignee=me` when listing runs or results to find assigned work. A result assignee takes precedence over the run assignee. The plans catalog and `GET /api/v1/agent?resource=plan&id=PLAN_UUID` expose the planned cases and matrix. Pass `{"action":"launch_plan","planId":"PLAN_UUID"}` with an idempotency key, or use MCP `get_plan` and `launch_assigned_plan`. A project member must activate the plan first. Every selected case must be ready and all matrix environments must still be available. Topology assigns the resulting manual runs to the credential owner and commits the entire matrix together.
 
 REST `record_result` and MCP `record_observation` accept one optional `evidence` object with `filename`, `dataBase64`, and optional `contentType`. The file must contain 1 byte to 1 MiB. The result stores the attachment and the audit entry links it to the exact result or step observation. The executor shows it with other result attachments. A project-bound `agent-read` token can download it at the returned URL. Retry a storage failure with the same key and evidence.
 

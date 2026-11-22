@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, count, desc, eq, inArray, lt } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { dbErrorResponse, isUniqueViolation, readJsonBody } from "@/lib/http-errors";
@@ -10,9 +10,10 @@ import { isUuid } from "@/lib/queries/ids";
 import { readCaseRevision } from "@/lib/case-revision";
 import { loadCaseTcm } from "@/lib/tcm/case-tcm";
 import { seedManualRunResults } from "@/lib/tcm/seed-run";
+import { parseMatrixJson } from "@/lib/tcm/matrix";
 import {
   caseStatusEnum, caseVersions, cases, customFieldDefs, folders, resultStatusEnum, runResults,
-  runs, runStatusEnum, runTemplates, sharedSteps, testImplementations, testIntents, testPlans, workspaces,
+  runs, runStatusEnum, runTemplates, sharedSteps, testImplementations, testIntents, testPlanCases, testPlans, workspaces,
 } from "@/db/schema";
 import {
   createIssueFromResult,
@@ -68,6 +69,11 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const resource = searchParams.get("resource") ?? "cases";
+  const assignee = searchParams.get("assignee");
+  const assigneeId = assignee === "me" ? authResult.userId : null;
+  if ((resource === "runs" || resource === "results") && assignee !== null && !assigneeId) {
+    return NextResponse.json({ error: "Use assignee=me with a credential tied to a user", code: "INVALID_FILTER" }, { status: 400 });
+  }
 
   if (resource === "cases") {
     const status = z.enum(caseStatusEnum.enumValues).optional().safeParse(searchParams.get("status") ?? undefined);
@@ -114,6 +120,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ case: { ...row, ...tcm }, versions, revision: revision?.revision ?? null, href: `/cases/${encodeURIComponent(row.key)}` });
   }
 
+  if (resource === "plan") {
+    const id = searchParams.get("id") ?? "";
+    if (!isUuid(id)) return NextResponse.json({ error: "Invalid plan id", code: "INVALID_ID" }, { status: 400 });
+    const plan = await db.query.testPlans.findFirst({ where: and(eq(testPlans.id, id), eq(testPlans.workspaceId, workspaceId)) });
+    if (!plan) return NextResponse.json({ error: "Plan not found", code: "PLAN_NOT_FOUND" }, { status: 404 });
+    const linked = await db.select({ id: cases.id, key: cases.key, title: cases.title, status: cases.status })
+      .from(testPlanCases).leftJoin(cases, and(eq(testPlanCases.caseId, cases.id), eq(cases.workspaceId, workspaceId)))
+      .where(eq(testPlanCases.planId, id)).orderBy(asc(testPlanCases.position));
+    const { matrixJson, ...details } = plan;
+    return NextResponse.json({
+      plan: { ...details, matrix: parseMatrixJson(matrixJson), cases: linked.filter((row) => row.id !== null) },
+      unavailableCases: linked.filter((row) => row.id === null).length,
+      href: `/plans/${id}`,
+    });
+  }
+
   if (Object.hasOwn(catalogResources, resource)) {
     const cursor = cursorId(searchParams);
     if (cursor === null) return NextResponse.json({ error: "Invalid cursor", code: "INVALID_CURSOR" }, { status: 400 });
@@ -127,7 +149,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ items: selected, nextCursor });
   }
 
-  if (resource === "runs" && (searchParams.has("cursor") || searchParams.has("status") ||
+  if (resource === "runs" && (assigneeId || searchParams.has("cursor") || searchParams.has("status") ||
       searchParams.has("limit") || new URL(request.url).pathname === "/api/v1/agent")) {
     const cursor = cursorId(searchParams);
     const status = z.enum(runStatusEnum.enumValues).optional().safeParse(searchParams.get("status") ?? undefined);
@@ -139,6 +161,10 @@ export async function GET(request: Request) {
       eq(runs.workspaceId, workspaceId),
       cursor ? lt(runs.id, cursor) : undefined,
       status.data ? eq(runs.status, status.data) : undefined,
+      assigneeId ? or(
+        eq(runs.assigneeId, assigneeId),
+        inArray(runs.id, db.select({ id: runResults.runId }).from(runResults).where(eq(runResults.assigneeId, assigneeId))),
+      ) : undefined,
     ), orderBy: [desc(runs.id)], limit: limit + 1 });
     const { selected, nextCursor } = pageById(rows, limit);
     return NextResponse.json({ runs: selected, nextCursor });
@@ -208,6 +234,15 @@ export async function GET(request: Request) {
         inArray(runResults.runId, projectRuns),
         status.data ? eq(runResults.status, status.data) : undefined,
         cursor ? lt(runResults.id, cursor.id) : undefined,
+        assigneeId ? or(
+          eq(runResults.assigneeId, assigneeId),
+          and(
+            isNull(runResults.assigneeId),
+            inArray(runResults.runId, db.select({ id: runs.id }).from(runs).where(and(
+              eq(runs.workspaceId, workspaceId), eq(runs.assigneeId, assigneeId),
+            ))),
+          ),
+        ) : undefined,
       ),
       with: { case: true, run: true },
       orderBy: [desc(runResults.id)],

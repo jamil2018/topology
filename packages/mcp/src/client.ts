@@ -48,11 +48,12 @@ export class TopologyClient {
     return this.request(`/api/agent?${qs}`);
   }
 
-  listRuns(page?: { cursor?: string; limit?: number; status?: string }) {
+  listRuns(page?: { cursor?: string; limit?: number; status?: string; assignee?: "me" }) {
     const qs = new URLSearchParams({ resource: "runs" });
     if (page?.cursor) qs.set("cursor", page.cursor);
     if (page?.limit != null) qs.set("limit", String(page.limit));
     if (page?.status) qs.set("status", page.status);
+    if (page?.assignee) qs.set("assignee", page.assignee);
     return this.request(`/api/v1/agent?${qs}`);
   }
 
@@ -63,6 +64,11 @@ export class TopologyClient {
     return this.request(`/api/v1/agent?${qs}`);
   }
 
+  getPlan(id: string) {
+    const qs = new URLSearchParams({ resource: "plan", id });
+    return this.request(`/api/v1/agent?${qs}`);
+  }
+
   listCatalog(args: { resource: string; cursor?: string; limit?: number }) {
     const qs = new URLSearchParams({ resource: args.resource });
     if (args.cursor) qs.set("cursor", args.cursor);
@@ -70,10 +76,11 @@ export class TopologyClient {
     return this.request(`/api/v1/agent?${qs}`);
   }
 
-  listResults(opts?: { runId?: string; status?: string; cursor?: string; limit?: number }) {
+  listResults(opts?: { runId?: string; status?: string; cursor?: string; limit?: number; assignee?: "me" }) {
     const qs = new URLSearchParams({ resource: "results" });
     if (opts?.runId) qs.set("runId", opts.runId);
     if (opts?.status) qs.set("status", opts.status);
+    if (opts?.assignee) qs.set("assignee", opts.assignee);
     if (opts?.cursor) qs.set("cursor", opts.cursor);
     if (opts?.limit != null) qs.set("limit", String(opts.limit));
     return this.request(`/api/agent?${qs}`);

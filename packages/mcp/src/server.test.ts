@@ -7,11 +7,13 @@ import { createTopologyMcpServer } from "./server";
 const AGENT_TOOLS = [
   "list_cases",
   "get_case",
+  "get_plan",
   "list_catalog",
   "create_case",
   "list_runs",
   "create_run",
   "create_assigned_run",
+  "launch_assigned_plan",
   "get_result",
   "get_workflow_request",
   "get_pr_release_evidence",
