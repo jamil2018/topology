@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Button } from "@heroui/react";
 
 export default function ReportsError({
   retry,
@@ -20,13 +21,9 @@ export default function ReportsError({
         Unexpected error while loading run reports.
       </p>
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={retry}
-          className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)]"
-        >
+        <Button type="button" size="sm" variant="primary" onPress={retry}>
           Try again
-        </button>
+        </Button>
         <Link
           href="/runs"
           className="rounded-md border border-[color:var(--topo-line)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)]"

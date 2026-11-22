@@ -4,6 +4,7 @@ import { useProjectActions } from "./project-actions";
 import { useState } from "react";
 import { Button, Input, Label, TextField } from "@heroui/react";
 import { BookmarkSimpleIcon, FloppyDiskIcon, TrashIcon } from "@phosphor-icons/react";
+import { TopoSelect } from "./ui/topo-select";
 
 export type SavedViewRow = {
   id: string;
@@ -121,38 +122,63 @@ export function SavedViewsBar({
           const active = view.id === activeViewId;
           return (
             <div key={view.id} className="inline-flex items-center gap-0.5">
-              <button
+              <Button
                 type="button"
-                onClick={() => onApply(view)}
-                className={`rounded-md px-2 py-1 text-xs transition-colors ${
-                  active
-                    ? "bg-[color:var(--topo-accent)] text-[color:var(--accent-foreground)]"
-                    : "border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-                }`}
+                size="sm"
+                variant={active ? "primary" : "secondary"}
+                onPress={() => onApply(view)}
+                className="h-auto rounded-md px-2 py-1 text-xs"
               >
                 {view.name}{view.visibility === "team" ? " · Team" : ""}
-              </button>
-              {writable && (view.createdById === userId || (view.visibility === "team" && canAdmin)) ? <button type="button" className="p-1 text-xs underline" aria-label={`Edit view ${view.name}`} onClick={() => { onApply(view); setEditing(view); setName(view.name); setVisibility(view.visibility ?? "private"); setShowSave(true); }}>Edit</button> : null}
-              <button
+              </Button>
+              {writable && (view.createdById === userId || (view.visibility === "team" && canAdmin)) ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="p-1 text-xs underline"
+                  aria-label={`Edit view ${view.name}`}
+                  onPress={() => {
+                    onApply(view);
+                    setEditing(view);
+                    setName(view.name);
+                    setVisibility(view.visibility ?? "private");
+                    setShowSave(true);
+                  }}
+                >
+                  Edit
+                </Button>
+              ) : null}
+              <Button
                 type="button"
-                disabled={saving || !writable || (Boolean(view.createdById) && view.createdById !== userId && !canAdmin)}
+                size="sm"
+                variant="ghost"
+                isIconOnly
+                isDisabled={saving || !writable || (Boolean(view.createdById) && view.createdById !== userId && !canAdmin)}
                 aria-label={`Delete view ${view.name}`}
-                className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
-                onClick={() => void removeView(view.id)}
+                className="rounded p-1 text-[color:var(--topo-muted)]"
+                onPress={() => void removeView(view.id)}
               >
                 <TrashIcon size={12} />
-              </button>
+              </Button>
             </div>
           );
         })
       )}
       {showSave ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <label className="text-xs">Visibility
-            <select aria-label="View visibility" value={visibility} onChange={(event) => setVisibility(event.target.value as "private" | "team")} className="ml-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-2">
-              <option value="private">Only me</option><option value="team">Project team</option>
-            </select>
-          </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <TopoSelect
+            label="Visibility"
+            ariaLabel="View visibility"
+            className="w-40"
+            value={visibility}
+            onChange={(value) => setVisibility(value as "private" | "team")}
+            options={[
+              { id: "private", label: "Only me" },
+              { id: "team", label: "Project team" },
+            ]}
+            compact
+          />
           <TextField name="view-name" className="w-36">
             <Label className="sr-only">View name</Label>
             <Input

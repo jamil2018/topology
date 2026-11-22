@@ -353,7 +353,9 @@ export { isUuid } from "@/lib/queries/ids";
 export {
   listCases,
   listCasesPage,
+  listPickerCases,
   type ListedCase,
+  type PickerListedCase,
 } from "@/lib/queries/list-cases";
 export {
   listRuns,

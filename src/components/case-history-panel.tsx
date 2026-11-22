@@ -74,6 +74,7 @@ export function CaseHistoryPanel({
       {loading ? (
         <ol
           className="space-y-3"
+          role="status"
           aria-busy="true"
           aria-label="Loading activity"
         >

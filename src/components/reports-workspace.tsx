@@ -4,7 +4,7 @@ import { formatDateTime } from "@/lib/format-date";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Input, ListBox, Select } from "@heroui/react";
+import { Button, Input, ListBox, Select } from "@heroui/react";
 import { motion, useReducedMotion } from "motion/react";
 import { ChartLineIcon, PlayIcon } from "@phosphor-icons/react";
 import { PageHeader } from "./page-header";
@@ -130,8 +130,9 @@ export function ReportsWorkspace({
         actions={
           <Link
             href="/runs"
-            className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+            className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
           >
+            <PlayIcon size={14} weight="bold" aria-hidden />
             Open runs
           </Link>
         }
@@ -487,7 +488,7 @@ export function ReportsWorkspace({
         ) : filtered.length === 0 ? (
           <p className="rounded-md border border-dashed border-[color:var(--topo-line)] px-3 py-10 text-center text-sm text-[color:var(--topo-muted)]">
             No reports match this filter.
-            <button className="mx-auto mt-2 block underline" onClick={() => { setSearch(""); setKind("all"); }}>Clear filters</button>
+            <Button variant="ghost" size="sm" className="mx-auto mt-2 block underline" onPress={() => { setSearch(""); setKind("all"); }}>Clear filters</Button>
           </p>
         ) : (
           <ul className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] divide-y divide-[color:var(--topo-line)]">

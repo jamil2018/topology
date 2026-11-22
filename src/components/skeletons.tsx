@@ -249,12 +249,15 @@ export function RunsPageSkeleton() {
   return (
     <div className="space-y-4">
       <PageHeaderSkeleton descriptionLines={1} badgeCount={1} actionCount={1} />
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+        <Bone className="h-9 w-full sm:w-36" />
+        <Bone className="h-9 w-full sm:w-40" />
+        <Bone className="h-9 w-full sm:w-36" />
+        <Bone className="h-9 w-full sm:w-44" />
+      </div>
       <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
         <div className="space-y-2 border-b border-[color:var(--topo-line)] p-2.5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Bone className="h-9 min-w-0 flex-1" />
-            <Bone className="h-9 w-full sm:w-36" />
-          </div>
+          <Bone className="h-9 w-full" />
         </div>
         <ul className="divide-y divide-[color:var(--topo-line)]">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -303,7 +306,13 @@ export function StartRunPageSkeleton() {
 export function HubPageSkeleton() {
   return (
     <div className="space-y-5">
-      <PageHeaderSkeleton descriptionLines={2} badgeCount={2} actionCount={3} />
+      <div className="flex w-full justify-end" aria-hidden>
+        <div className="flex h-7 items-center gap-0.5 rounded-md border border-[color:var(--topo-line)] p-0.5">
+          <Bone className="h-6 w-[4.25rem] rounded" />
+          <Bone className="h-6 w-[4.5rem] rounded" />
+        </div>
+      </div>
+      <PageHeaderSkeleton descriptionLines={2} badgeCount={2} actionCount={1} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
         <div className="min-h-[280px] space-y-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4 sm:col-span-2 lg:col-span-3 lg:row-span-2">
           <div className="flex justify-between gap-3">
@@ -505,6 +514,212 @@ export function RunDetailSkeleton() {
           <Bone className="h-8 w-full" />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Table body only — keep CasesTable search chrome mounted while refetching. */
+export function CasesTableBodySkeleton({
+  rows = 8,
+}: {
+  rows?: number;
+}) {
+  return (
+    <>
+      <div className="hidden md:block" aria-hidden>
+        {Array.from({ length: rows }).map((_, i) => (
+          <CaseTableRowSkeleton key={i} />
+        ))}
+      </div>
+      <ul className="divide-y divide-[color:var(--topo-line)] md:hidden" aria-hidden>
+        {Array.from({ length: Math.min(rows, 6) }).map((_, i) => (
+          <li key={i}>
+            <SimpleListRowSkeleton />
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/** Runs list rows inside the bordered panel (toolbar stays outside). */
+export function RunsListBodySkeleton({
+  rows = 6,
+}: {
+  rows?: number;
+}) {
+  return (
+    <ul className="divide-y divide-[color:var(--topo-line)]" aria-hidden>
+      {Array.from({ length: rows }).map((_, i) => (
+        <li key={i} className="px-3 py-2.5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1 space-y-2">
+              <Bone className="h-4 w-48 max-w-[70%]" />
+              <Bone className="h-3 w-56 max-w-full" />
+              <Bone className="h-1.5 w-40 max-w-full rounded-full" />
+            </div>
+            <Bone className="h-5 w-20 shrink-0 rounded" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function NotificationListSkeleton({
+  rows = 4,
+}: {
+  rows?: number;
+}) {
+  return (
+    <ul
+      className="divide-y divide-[color:var(--topo-line)]"
+      aria-hidden
+    >
+      {Array.from({ length: rows }).map((_, i) => (
+        <li key={i} className="space-y-2 py-3">
+          <Bone className="h-4 w-48 max-w-[80%]" />
+          <Bone className="h-3 w-full max-w-md" />
+          <Bone className="h-3 w-20" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function PanelListSkeleton({
+  rows = 4,
+  withActions = true,
+}: {
+  rows?: number;
+  withActions?: boolean;
+}) {
+  return (
+    <ul
+      className="divide-y divide-[color:var(--topo-line)] overflow-hidden rounded-md border border-[color:var(--topo-line)]"
+      aria-hidden
+    >
+      {Array.from({ length: rows }).map((_, i) => (
+        <li
+          key={i}
+          className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
+        >
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Bone className="h-4 w-40 max-w-[70%]" />
+            <Bone className="h-3 w-52 max-w-full" />
+          </div>
+          {withActions ? (
+            <div className="flex gap-2">
+              <Bone className="h-8 w-16" />
+              <Bone className="h-8 w-16" />
+            </div>
+          ) : (
+            <Bone className="h-5 w-20 rounded" />
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function InlineRowsSkeleton({
+  rows = 3,
+  dense = false,
+}: {
+  rows?: number;
+  dense?: boolean;
+}) {
+  return (
+    <ul className={cx("space-y-2", dense ? "mt-2" : "mt-3")} aria-hidden>
+      {Array.from({ length: rows }).map((_, i) => (
+        <li key={i} className="flex items-center justify-between gap-2">
+          <Bone className={cx("h-3 max-w-full", dense ? "w-36" : "w-48")} />
+          <Bone className="h-3 w-16 shrink-0" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function FormFieldsSkeleton({
+  fields = 3,
+}: {
+  fields?: number;
+}) {
+  return (
+    <div className="space-y-3" aria-hidden>
+      {Array.from({ length: fields }).map((_, i) => (
+        <div key={i} className="space-y-1.5">
+          <Bone className="h-3 w-16" />
+          <Bone className={i === fields - 1 ? "h-20 w-full" : "h-9 w-full"} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function CommandPaletteResultsSkeleton({
+  rows = 5,
+}: {
+  rows?: number;
+}) {
+  return (
+    <ul className="py-1.5" aria-hidden>
+      <li className="px-3 pb-1 pt-2">
+        <Bone className="h-3 w-16" />
+      </li>
+      {Array.from({ length: rows }).map((_, i) => (
+        <li key={i} className="flex items-center gap-2.5 px-3 py-2">
+          <Bone className="h-4 w-4 shrink-0 rounded" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Bone className="h-3.5 w-40 max-w-[70%]" />
+            <Bone className="h-3 w-28 max-w-[50%]" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function CardGridSkeleton({
+  cards = 4,
+}: {
+  cards?: number;
+}) {
+  return (
+    <ul className="mt-3 grid gap-2 sm:grid-cols-2" aria-hidden>
+      {Array.from({ length: cards }).map((_, i) => (
+        <li
+          key={i}
+          className="space-y-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3"
+        >
+          <Bone className="h-3 w-24" />
+          <Bone className="h-6 w-16" />
+          <Bone className="h-3 w-32" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function PlansPageSkeleton() {
+  return (
+    <div className="space-y-5">
+      <PageHeaderSkeleton descriptionLines={1} badgeCount={1} actionCount={1} />
+      <ul className="space-y-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <li
+            key={i}
+            className="flex flex-col gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Bone className="h-4 w-48 max-w-[70%]" />
+              <Bone className="h-3 w-64 max-w-full" />
+            </div>
+            <Bone className="h-5 w-20 rounded" />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

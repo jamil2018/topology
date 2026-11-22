@@ -1,4 +1,5 @@
 "use client";
+import { Button, Input } from "@heroui/react";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -150,14 +151,14 @@ export function ProjectSwitcher({
       }`}
     >
       <div className="border-b border-[color:var(--topo-line)] p-1.5">
-        <input
+        <Input
           ref={searchRef}
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search projects…"
           aria-label="Search projects"
-          className="w-full rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-xs text-[color:var(--topo-ink)] outline-none placeholder:text-[color:var(--topo-muted)] focus:border-[color:var(--topo-accent)]"
+          className="w-full text-xs"
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             if (e.key === "Escape") return;
@@ -174,23 +175,27 @@ export function ProjectSwitcher({
           filtered.map((project) => {
             const selected = project.id === active?.id;
             return (
-              <button
+              <div
                 key={project.id}
-                type="button"
                 role="option"
                 aria-selected={selected}
-                className={`flex w-full flex-col px-2.5 py-1.5 text-left text-sm ${
-                  selected
-                    ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
-                    : "text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
-                }`}
-                onClick={() => select(project.id)}
               >
-                <span className="truncate font-medium">{project.name}</span>
-                <span className="truncate font-medium text-xs opacity-70">
-                  {project.slug} · {project.role}
-                </span>
-              </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className={`flex w-full flex-col px-2.5 py-1.5 text-left text-sm ${
+                    selected
+                      ? "topo-selected-surface"
+                      : "text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
+                  }`}
+                  onPress={() => select(project.id)}
+                >
+                  <span className="truncate font-medium">{project.name}</span>
+                  <span className="truncate font-medium text-xs opacity-70">
+                    {project.slug} · {project.role}
+                  </span>
+                </Button>
+              </div>
             );
           })
         )}
@@ -214,22 +219,22 @@ export function ProjectSwitcher({
   if (collapsed) {
     return (
       <div ref={rootRef} className="relative flex justify-center px-2 pb-2">
-        <button
+        <Button
           ref={triggerRef}
           type="button"
-          title={active?.name ?? "Project"}
+          variant="ghost"
           aria-label={`Project: ${active?.name ?? "none"}`}
           aria-haspopup="listbox"
           aria-expanded={open}
-          disabled={pending}
+          isDisabled={pending}
           className="flex h-9 w-9 items-center justify-center rounded-lg bg-[color:var(--topo-chip)] text-[color:var(--topo-accent)]"
-          onClick={() => setOpen((v) => !v)}
+          onPress={() => setOpen((v) => !v)}
         >
           <FolderSimpleIcon size={16} weight="fill" />
-        </button>
+        </Button>
         {listbox}
         {error ? (
-          <p className="absolute left-0 top-full mt-1 w-56 px-1 text-xs text-red-600">
+          <p className="absolute left-0 top-full mt-1 w-56 px-1 text-xs text-red-600 dark:text-red-400">
             {error}
           </p>
         ) : null}
@@ -239,13 +244,13 @@ export function ProjectSwitcher({
 
   return (
     <div ref={rootRef} className="relative mx-2 mb-2">
-      <button
+      <Button
         ref={triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        disabled={pending}
-        onClick={() => setOpen((v) => !v)}
+        isDisabled={pending}
+        onPress={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-2.5 py-2 text-left text-sm transition-colors hover:bg-[color:var(--topo-chip)]"
       >
         <FolderSimpleIcon
@@ -261,12 +266,12 @@ export function ProjectSwitcher({
           weight="bold"
           className="shrink-0 text-[color:var(--topo-muted)]"
         />
-      </button>
+      </Button>
 
       {listbox}
 
       {error ? (
-        <p className="mt-1 px-1 text-xs text-red-600">{error}</p>
+        <p className="mt-1 px-1 text-xs text-red-600 dark:text-red-400">{error}</p>
       ) : null}
     </div>
   );

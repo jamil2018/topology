@@ -15,6 +15,7 @@ import { LinkAutomationPanel } from "./link-automation-panel";
 import { PageHeader } from "./page-header";
 import { SavedViewsBar, type SavedViewRow } from "./saved-views-bar";
 import { StatusChip } from "./status-chip";
+import { TopoSelect } from "./ui/topo-select";
 
 const INTENT_LIST_PAGE_SIZE = 20;
 
@@ -208,49 +209,55 @@ export function IntentsWorkspace({
             setActiveViewId(null);
           }}
         />
-        <select
-          aria-label="Criticality filter"
-          className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm"
+        <TopoSelect
+          ariaLabel="Criticality filter"
+          className="w-40"
           value={criticalityFilter}
-          onChange={(e) => {
-            setCriticalityFilter(e.target.value);
+          onChange={(value) => {
+            setCriticalityFilter(value);
             setActiveViewId(null);
           }}
-        >
-          <option value="all">All criticality</option>
-          <option value="P0">P0</option>
-          <option value="P1">P1</option>
-          <option value="P2">P2</option>
-          <option value="P3">P3</option>
-        </select>
-        <select
-          aria-label="Status filter"
-          className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm"
+          options={[
+            { id: "all", label: "All criticality" },
+            { id: "P0", label: "P0" },
+            { id: "P1", label: "P1" },
+            { id: "P2", label: "P2" },
+            { id: "P3", label: "P3" },
+          ]}
+          compact
+        />
+        <TopoSelect
+          ariaLabel="Status filter"
+          className="w-36"
           value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value);
+          onChange={(value) => {
+            setStatusFilter(value);
             setActiveViewId(null);
           }}
-        >
-          <option value="all">All status</option>
-          <option value="draft">draft</option>
-          <option value="ready">ready</option>
-          <option value="deprecated">deprecated</option>
-        </select>
-        <select
-          aria-label="Sort intents"
-          className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm"
+          options={[
+            { id: "all", label: "All status" },
+            { id: "draft", label: "draft" },
+            { id: "ready", label: "ready" },
+            { id: "deprecated", label: "deprecated" },
+          ]}
+          compact
+        />
+        <TopoSelect
+          ariaLabel="Sort intents"
+          className="w-44"
           value={sort}
-          onChange={(e) => {
-            setSort(e.target.value as IntentViewConfig["sort"]);
+          onChange={(value) => {
+            setSort(value as IntentViewConfig["sort"]);
             setActiveViewId(null);
           }}
-        >
-          <option value="key">Sort by key</option>
-          <option value="title">Sort by title</option>
-          <option value="criticality">Sort by criticality</option>
-          <option value="status">Sort by status</option>
-        </select>
+          options={[
+            { id: "key", label: "Sort by key" },
+            { id: "title", label: "Sort by title" },
+            { id: "criticality", label: "Sort by criticality" },
+            { id: "status", label: "Sort by status" },
+          ]}
+          compact
+        />
         <SavedViewsBar
           entity="intents"
           initialViews={initialViews}
@@ -285,10 +292,11 @@ export function IntentsWorkspace({
                 ];
                 return (
                   <li key={intent.id}>
-                    <button
+                    <Button
                       type="button"
-                      onClick={() => setSelected(intent.id)}
-                      className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[color:var(--topo-chip)]/60 ${
+                      variant="ghost"
+                      onPress={() => setSelected(intent.id)}
+                      className={`flex h-auto w-full items-start justify-between gap-3 rounded-none px-4 py-3 text-left text-sm transition-colors hover:bg-[color:var(--topo-chip)]/60 ${
                         selected === intent.id
                           ? "bg-[color:var(--topo-chip)]/80"
                           : ""
@@ -316,7 +324,7 @@ export function IntentsWorkspace({
                           ))}
                         </div>
                       </div>
-                    </button>
+                    </Button>
                   </li>
                 );
               })}

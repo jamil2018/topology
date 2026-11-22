@@ -41,15 +41,22 @@ export async function startManualRun(
     name: "Select all visible cases",
   });
   await expect(selectAll).toBeChecked();
-  await selectAll.click();
+  // Control overlays steal pointer hits; Space toggles controlled TopoCheckbox.
+  await selectAll.scrollIntoViewIfNeeded();
+  await selectAll.focus();
+  await selectAll.press("Space");
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
 
   for (const title of titles) {
-    await page.getByLabel("Search", { exact: true }).fill(title);
-    await page
-      .getByRole("checkbox", { name: `Select ${title}`, exact: true })
-      .check();
-    await page.getByLabel("Search", { exact: true }).fill("");
+    await page.locator('[data-slot="search-field-input"]').fill(title);
+    const rowCheckbox = page.getByRole("checkbox", {
+      name: `Select ${title}`,
+      exact: true,
+    });
+    await rowCheckbox.scrollIntoViewIfNeeded();
+    await rowCheckbox.focus();
+    await rowCheckbox.press("Space");
+    await page.locator('[data-slot="search-field-input"]').fill("");
   }
   await expect(
     page.getByText(`${titles.length} selected`, { exact: true }),

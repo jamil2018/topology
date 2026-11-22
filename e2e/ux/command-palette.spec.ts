@@ -25,6 +25,11 @@ test("command palette opens and jumps to test cases", async ({ page }) => {
 test("escape closes the command palette", async ({ page }) => {
   await page.goto("/cases");
   await expect(page.getByRole("heading", { name: "Test cases" })).toBeVisible();
+  // Cases search can steal focus; blur so the global ⌘K listener fires cleanly.
+  await page.evaluate(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+  });
 
   await page.keyboard.press("ControlOrMeta+k");
   const dialog = page.getByRole("dialog", { name: "Command palette" });

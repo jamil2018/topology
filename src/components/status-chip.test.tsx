@@ -47,6 +47,12 @@ describe("StatusChip hydration", () => {
     expect(html).not.toContain("bg-emerald");
   });
 
+  it("pairs accent chips with accent-foreground instead of hardcoded white", () => {
+    const html = renderToString(<StatusChip tone="accent">immediate</StatusChip>);
+    expect(html).toContain("--accent-foreground");
+    expect(html).not.toContain("text-white");
+  });
+
   it("does not start a spin when reduced motion is preferred", () => {
     reduceMotion.mockReturnValue(true);
     const { container } = render(<StatusChip>Running</StatusChip>);

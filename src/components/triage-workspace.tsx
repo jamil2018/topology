@@ -2,12 +2,14 @@
 import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Input } from "@heroui/react";
+import { TopoCheckbox } from "./ui/topo-checkbox";
 import { motion } from "motion/react";
 import { clusterTriageBySignature } from "@topology/domain/client";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
+import { TopoSelect } from "./ui/topo-select";
 import { useLiveUpdates } from "./use-live-updates";
 import type { LiveEvent } from "@/lib/live-event";
 
@@ -160,11 +162,11 @@ export function TriageWorkspace({
     },
   });
 
-  const clusters = toClusterItems(queue);
+  const clusters = useMemo(() => toClusterItems(queue), [queue]);
   useEffect(() => {
     const openTarget = () => {
       const id = window.location.hash.replace("#failure-", "");
-      const cluster = toClusterItems(queue).find((item) => item.items.some((member) => member.id === id));
+      const cluster = clusters.find((item) => item.items.some((member) => member.id === id));
       if (cluster) {
         setExpanded((current) => new Set([...current, cluster.signatureId]));
         requestAnimationFrame(() => document.getElementById(`failure-${id}`)?.scrollIntoView({ block: "center" }));
@@ -172,7 +174,7 @@ export function TriageWorkspace({
     };
     openTarget(); window.addEventListener("hashchange", openTarget);
     return () => window.removeEventListener("hashchange", openTarget);
-  }, [queue]);
+  }, [clusters]);
 
   function toggleCluster(signatureId: string) {
     setExpanded((prev) => {
@@ -384,23 +386,20 @@ export function TriageWorkspace({
   function renderResolutionPicker(onConfirm: () => void, onCancel: () => void) {
     return (
       <div className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-2">
-        <label className="space-y-1 text-xs text-[color:var(--topo-muted)]">
-          Resolution
-          <select
-            aria-label="Resolution outcome"
-            value={resolutionDraft}
-            onChange={(e) =>
-              setResolutionDraft(e.target.value as TriageResolution)
-            }
-            className="block rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs text-[color:var(--topo-ink)]"
-          >
-            {TRIAGE_RESOLUTIONS.map((value) => (
-              <option key={value} value={value}>
-                {RESOLUTION_LABELS[value]}
-              </option>
-            ))}
-          </select>
-        </label>
+        <TopoSelect
+          label="Resolution"
+          ariaLabel="Resolution outcome"
+          className="min-w-[10rem]"
+          value={resolutionDraft}
+          onChange={(value) =>
+            setResolutionDraft(value as TriageResolution)
+          }
+          options={TRIAGE_RESOLUTIONS.map((value) => ({
+            id: value,
+            label: RESOLUTION_LABELS[value],
+          }))}
+          compact
+        />
         <Button
           size="sm"
           variant="primary"
@@ -492,21 +491,20 @@ export function TriageWorkspace({
         }`}
       >
         {can("runs.create") || can("triage.manage") ? (
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              aria-label={`Select ${item.caseKey || item.caseTitle}`}
-              checked={selected.includes(item.id)}
-              onChange={(event) =>
-                setSelected((ids) =>
-                  event.target.checked
-                    ? [...ids, item.id]
-                    : ids.filter((id) => id !== item.id),
-                )
-              }
-            />
+          <TopoCheckbox
+            compact
+            aria-label={`Select ${item.caseKey || item.caseTitle}`}
+            isSelected={selected.includes(item.id)}
+            onChange={(isSelected) =>
+              setSelected((ids) =>
+                isSelected
+                  ? [...ids, item.id]
+                  : ids.filter((id) => id !== item.id),
+              )
+            }
+          >
             Select
-          </label>
+          </TopoCheckbox>
         ) : null}
 
         <div className="min-w-0">
@@ -576,10 +574,11 @@ export function TriageWorkspace({
                 {item.notes}
               </p>
               {item.notes.length > 160 || item.notes.split("\n").length > 3 ? (
-                <button
+                <Button
                   type="button"
-                  className="mt-1 text-xs text-[color:var(--topo-accent)] hover:underline"
-                  onClick={() =>
+                  variant="ghost"
+                  className="mt-1 h-auto min-h-0 px-0 py-0 text-xs text-[color:var(--topo-accent)] hover:bg-transparent hover:underline"
+                  onPress={() =>
                     setExpandedNotes((prev) => {
                       const next = new Set(prev);
                       if (next.has(item.id)) next.delete(item.id);
@@ -589,7 +588,7 @@ export function TriageWorkspace({
                   }
                 >
                   {expandedNotes.has(item.id) ? "Show less" : "Show more"}
-                </button>
+                </Button>
               ) : null}
             </div>
           ) : null}
@@ -725,9 +724,14 @@ export function TriageWorkspace({
               </Button>
             </>
           ) : null}
-          <button type="button" className="text-xs" onClick={() => setSelected([])}>
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-xs"
+            onPress={() => setSelected([])}
+          >
             Clear
-          </button>
+          </Button>
           {resolveBulk
             ? renderResolutionPicker(
                 () => void bulkSetStatus("resolved", resolutionDraft),
@@ -782,12 +786,17 @@ export function TriageWorkspace({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i, 10) * 0.02 }}
               >
-                <div className="flex w-full items-start justify-between gap-3 px-3 py-3">
-                  <button
+                <div
+                  className={`flex w-full items-start justify-between gap-3 px-3 py-3 ${
+                    isOpen ? "topo-selected-surface" : ""
+                  }`}
+                >
+                  <Button
                     type="button"
+                    variant="ghost"
                     aria-expanded={isOpen}
-                    onClick={() => toggleCluster(cluster.signatureId)}
-                    className="min-w-0 flex-1 text-left hover:opacity-90"
+                    onPress={() => toggleCluster(cluster.signatureId)}
+                    className="h-auto min-h-0 min-w-0 flex-1 justify-start px-0 py-0 text-left text-[color:var(--topo-ink)] hover:bg-transparent"
                   >
                     <div className="flex flex-wrap items-center gap-1.5">
                       <StatusChip tone="danger" mono>
@@ -813,7 +822,7 @@ export function TriageWorkspace({
                       {" · "}
                       {isOpen ? "Hide failures" : "Show failures"}
                     </p>
-                  </button>
+                  </Button>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
                     <Button
                       size="sm"

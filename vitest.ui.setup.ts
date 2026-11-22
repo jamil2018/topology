@@ -40,13 +40,24 @@ function installObjectUrl() {
     });
   }
 }
+/** HeroUI Tabs SelectionIndicator (react-aria SharedElementTransition) needs this. */
+function installAnimations() {
+  if (
+    typeof Element !== "undefined" &&
+    typeof Element.prototype.getAnimations !== "function"
+  ) {
+    Element.prototype.getAnimations = () => [];
+  }
+}
 installStorage();
 installMedia();
 installObjectUrl();
+installAnimations();
 beforeEach(() => {
   installStorage();
   installMedia();
   installObjectUrl();
+  installAnimations();
 });
 afterEach(() => {
   window.localStorage?.clear();

@@ -5,11 +5,14 @@ import { useListPage, useQueryState } from "./use-list-page";
 import type { PaginatedList } from "@/lib/list-pagination";
 import { useProjectActions } from "./project-actions";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useOptimistic,
   useRef,
@@ -47,8 +50,8 @@ import {
   flattenFolderTree,
 } from "@/lib/folder-tree";
 import { parseCaseViewConfig } from "@/lib/saved-views";
+import { useLatestRef } from "@/lib/use-latest-ref";
 import { CaseCreateDialog } from "./case-create-dialog";
-import { CaseEditPanel } from "./case-edit-panel";
 import { CasesBulkBar } from "./cases-bulk-bar";
 import {
   applyBulkPatch,
@@ -79,6 +82,41 @@ import {
   type CaseCommandDetail,
 } from "./command-palette";
 
+// bundle-dynamic-imports: CaseEditPanel is heavy; load only when a case is open.
+const CaseEditPanel = dynamic(
+  () =>
+    import("./case-edit-panel").then((mod) => ({ default: mod.CaseEditPanel })),
+  { ssr: false },
+);
+
+// rerender-memo-with-default-value: stable empty defaults for memoized children
+const EMPTY_VIEWS: SavedViewRow[] = [];
+
+type CaseFieldDef = {
+  key: string;
+  label: string;
+  type: string;
+  options?: string[];
+};
+
+let caseFieldDefsPromise: Promise<CaseFieldDef[]> | null = null;
+
+function loadCaseFieldDefs(): Promise<CaseFieldDef[]> {
+  if (!caseFieldDefsPromise) {
+    caseFieldDefsPromise = fetch("/api/custom-fields?entity=case")
+      .then(async (res) => {
+        if (!res.ok) return [];
+        const data = await res.json().catch(() => ({}));
+        const fields = (data.fields ?? []) as CaseFieldDef[];
+        return fields.filter(
+          (f) => f.type === "select" || f.type === "boolean" || f.type === "text",
+        );
+      })
+      .catch(() => []);
+  }
+  return caseFieldDefsPromise;
+}
+
 export function CasesWorkspace({
   initialCases,
   initialPage,
@@ -86,7 +124,7 @@ export function CasesWorkspace({
   selectedCase = null,
   counts,
   folders,
-  initialViews = [],
+  initialViews = EMPTY_VIEWS,
   projectPrefix = "CASE",
   selectedCaseKey = null,
 }: {
@@ -106,24 +144,23 @@ export function CasesWorkspace({
   const paramsKey = searchParams.toString();
   const [pending, startTransition] = useTransition();
   const [folderFilter, setFolderFilter] = useQueryState<FolderTreeSelection>("folder", "all", (value) => value);
+  // rerender-use-deferred-value: keep folder highlight instant; defer table/query work.
+  const deferredFolderFilter = useDeferredValue(folderFilter);
+  const listStale = folderFilter !== deferredFolderFilter;
   const [treeCollapsed, setTreeCollapsed] = useState(true);
   const [browserPanel, setBrowserPanel] = useState<"folders" | "cases" | null>(null);
   const [createParentId, setCreateParentId] = useState<string | null>(null);
   const [folderActionId, setFolderActionId] = useState<string | null>(null);
-  const [search, setSearch] = useQueryState("q", "", String);
+  const [search, setSearch] = useQueryState("q", "", String, {
+    debounceMs: 200,
+    replace: true,
+  });
   const [statusFilter, setStatusFilter] = useQueryState("status", "all", String);
   const [priorityFilter, setPriorityFilter] = useQueryState("priority", "all", String);
   const [sort, setSort] = useQueryState<CaseListSort>("sort", "key", (value) => ["key", "title", "folder", "priority", "status"].includes(value) ? value as CaseListSort : "key");
   const [sortDir, setSortDir] = useQueryState<CaseListSortDir>("dir", "asc", (value) => value === "desc" ? "desc" : "asc");
   const [page, setPage] = useQueryState("page", 1, (value) => Math.max(1, Number(value) || 1), false);
-  const [caseFieldDefs, setCaseFieldDefs] = useState<
-    Array<{
-      key: string;
-      label: string;
-      type: string;
-      options?: string[];
-    }>
-  >([]);
+  const [caseFieldDefs, setCaseFieldDefs] = useState<CaseFieldDef[]>([]);
   const [customFieldFilters, setCustomFieldFilters] = useState<
     Record<string, string>
   >(() => {
@@ -193,35 +230,15 @@ export function CasesWorkspace({
     });
     return () => cancelAnimationFrame(frame);
   }, [historyCase]);
-  const [inspectorContainer, setInspectorContainer] = useState<HTMLDialogElement | null>(null);
+  const [inspectorContainer, setInspectorContainer] = useState<HTMLElement | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
   const [pendingCase, setPendingCase] = useState<CaseRow | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.resolve(fetch("/api/custom-fields?entity=case"))
-      .then(async (res) => {
-        if (cancelled || !res || !res.ok) return;
-        const data = await res.json().catch(() => ({}));
-        if (cancelled) return;
-        const fields = (data.fields ?? []) as Array<{
-          key: string;
-          label: string;
-          type: string;
-          options?: string[];
-        }>;
-        setCaseFieldDefs(
-          fields.filter(
-            (f) => f.type === "select" || f.type === "boolean" || f.type === "text",
-          ),
-        );
-      })
-      .catch(() => {
-        /* ignore load errors */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+
+  // Load custom-field filter defs on first demand (move-effect-to-event / no-fetch-in-effect).
+  const ensureCaseFieldDefs = useCallback(() => {
+    if (caseFieldDefs.length > 0) return;
+    void loadCaseFieldDefs().then(setCaseFieldDefs);
+  }, [caseFieldDefs.length]);
 
   useEffect(() => {
     const next: Record<string, string> = {};
@@ -231,7 +248,17 @@ export function CasesWorkspace({
       if (key.startsWith("cf.")) next[key.slice(3)] = value;
       else if (key.startsWith("cf_")) next[key.slice(3)] = value;
     }
-    setCustomFieldFilters(next);
+    setCustomFieldFilters((prev) => {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (
+        prevKeys.length === nextKeys.length &&
+        nextKeys.every((key) => prev[key] === next[key])
+      ) {
+        return prev;
+      }
+      return next;
+    });
   }, [paramsKey]);
 
   function setCustomFieldFilter(key: string, value: string) {
@@ -250,8 +277,9 @@ export function CasesWorkspace({
     window.history.pushState(null, "", url.pathname + url.search + url.hash);
   }
 
+  // Drive remote fetch from deferred folder so a click paints the tree first.
   const queryParams = new URLSearchParams({
-    folder: folderFilter,
+    folder: deferredFolderFilter,
     q: search,
     status: statusFilter,
     priority: priorityFilter,
@@ -306,14 +334,20 @@ export function CasesWorkspace({
   const deleteModal = useOverlayState();
   const caseDeleteModal = useOverlayState();
   const unsavedModal = useOverlayState();
-  const [visitedCases, setVisitedCases] = useState(new Map<string, CaseRow>());
+  // Visited cases stay in state so URL-param sync can resolve them during render
+  // without reading a ref (react-hooks/refs).
+  const [visitedCases, setVisitedCases] = useState(() => new Map<string, CaseRow>());
   const [appliedParams, setAppliedParams] = useState(paramsKey);
   if (appliedParams !== paramsKey) {
     const previousCase = new URLSearchParams(appliedParams).get("case");
     setAppliedParams(paramsKey);
     if (searchParams.get("new") === "1") setShowCreate(true);
     const caseParam = searchParams.get("case");
-    const candidates = [...(selectedCase ? [selectedCase] : []), ...listedCases, ...visitedCases.values()];
+    const candidates = [
+      ...(selectedCase ? [selectedCase] : []),
+      ...listedCases,
+      ...visitedCases.values(),
+    ];
     const target = caseParam ? candidates.find((row) => row.id === caseParam || row.key === caseParam) : null;
     if (caseParam !== previousCase && (target || !caseParam)) {
       if (editorDirty && historyCase?.id !== target?.id) {
@@ -374,11 +408,24 @@ export function CasesWorkspace({
       ? folders.find((folder) => folder.id === folderActionId)
       : null) ?? selectedFolder;
 
+  // Immediate selection for the folder tree highlight.
   const activeFolderFilter: FolderTreeSelection =
     folderFilter === "unfiled"
       ? "unfiled"
       : selectedFolder
         ? selectedFolder.id
+        : "all";
+
+  // Deferred selection for table filtering (rerender-use-deferred-value).
+  const deferredSelectedFolder =
+    deferredFolderFilter === "all" || deferredFolderFilter === "unfiled"
+      ? null
+      : (folders.find((folder) => folder.id === deferredFolderFilter) ?? null);
+  const listFolderFilter: FolderTreeSelection =
+    deferredFolderFilter === "unfiled"
+      ? "unfiled"
+      : deferredSelectedFolder
+        ? deferredSelectedFolder.id
         : "all";
 
   const selectedFolderCount = actionFolder
@@ -389,27 +436,28 @@ export function CasesWorkspace({
     ? folders.filter((folder) => folder.parentId === actionFolder.id).length
     : 0;
 
-  const filteredSorted = useMemo(
-    () =>
-      filterAndSortCases(
-        optimisticCases,
-        activeFolderFilter,
-        search,
-        sort,
-        sortDir,
-        statusFilter,
-        priorityFilter,
-      ),
-    [
+  const filteredSorted = useMemo(() => {
+    // Remote list API already applies filters/sort/page — skip redundant client pass.
+    if (remote.data) return optimisticCases;
+    return filterAndSortCases(
       optimisticCases,
-      activeFolderFilter,
+      listFolderFilter,
       search,
       sort,
       sortDir,
       statusFilter,
       priorityFilter,
-    ],
-  );
+    );
+  }, [
+    remote.data,
+    optimisticCases,
+    listFolderFilter,
+    search,
+    sort,
+    sortDir,
+    statusFilter,
+    priorityFilter,
+  ]);
 
   const localPage = useMemo(
     () => paginateCases(filteredSorted, page, CASE_WORKSPACE_PAGE_SIZE),
@@ -419,7 +467,10 @@ export function CasesWorkspace({
   const pageData = remote.data ? { ...remote.data, items: optimisticCases } : localPage;
   const totalCases = counts ? counts.reduce((sum, item) => sum + item.total, 0) : initialCases.length;
   const hasSearch = search.trim().length > 0;
-  const pageIds = pageData.items.map((row) => row.id);
+  const pageIds = useMemo(
+    () => pageData.items.map((row) => row.id),
+    [pageData.items],
+  );
   const [cursor, setCursor] = useState(0);
   const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
   const cursorIndex =
@@ -440,47 +491,91 @@ export function CasesWorkspace({
     folderModal.close();
   }, [can, folderModal, generatedKey]);
 
+  const focusedRowRef = useLatestRef(focusedRow);
+  const pageItemsRef = useLatestRef(pageData.items);
+  const cursorIndexRef = useLatestRef(cursorIndex);
+  const selectionAnchorRef = useLatestRef(selectionAnchor);
+  const canEditCases = can("cases.edit");
+  // Filled after handlers are declared; shortcuts/open use this to avoid stale closures.
+  const workspaceHandlersRef = useRef<{
+    requestOpen: (row: CaseRow) => void;
+    requestClosePeek: () => void;
+    openDeleteCase: (row: CaseRow) => void;
+    duplicateCase: (row: CaseRow) => void | Promise<void>;
+    inlinePatch: (id: string, patch: CaseInlinePatch) => void | Promise<void>;
+    openCreateFolder: (parentId?: string | null) => void;
+    openRenameFolder: (folderId?: string) => void;
+    openDeleteFolder: (folderId?: string) => void;
+    dropCasesOnFolder: (
+      folderId: string | null,
+      caseIds: string[],
+    ) => void | Promise<void>;
+    reparentFolder: (
+      folderId: string,
+      parentId: string | null,
+    ) => void | Promise<void>;
+    mergeCase: (row: CaseRow) => void;
+    commitOpen: (row: CaseRow | null) => void;
+  } | null>(null);
+
   const openFocused = useCallback(() => {
-    if (focusedRow) requestOpen(focusedRow);
-  }, [editorDirty, focusedRow, historyCase]);
+    const row = focusedRowRef.current;
+    if (row) workspaceHandlersRef.current?.requestOpen(row);
+  }, [focusedRowRef]);
 
-  function openFocusedField(field: "status" | "priority") {
-    if (!focusedRow) return;
-    const node = document.querySelector<HTMLElement>(
-      caseFieldShortcutSelector(focusedRow.id, field),
-    );
-    if (!can("cases.edit")) return;
-    node?.focus();
-    if (node instanceof HTMLSelectElement) {
-      try { node.showPicker?.(); } catch { /* Keyboard arrows remain available. */ }
-    } else node?.click();
-  }
+  const openFocusedField = useCallback(
+    (field: "status" | "priority") => {
+      const row = focusedRowRef.current;
+      if (!row || !canEditCases) return;
+      const node = document.querySelector<HTMLElement>(
+        caseFieldShortcutSelector(row.id, field),
+      );
+      node?.focus();
+      if (node instanceof HTMLSelectElement) {
+        try {
+          node.showPicker?.();
+        } catch {
+          /* Keyboard arrows remain available. */
+        }
+      } else node?.click();
+    },
+    [canEditCases, focusedRowRef],
+  );
 
-  function extendSelection(delta: number) {
-    const items = pageData.items;
-    if (items.length === 0) return;
-    const from = selectionAnchor ?? cursorIndex;
-    const next = Math.min(items.length - 1, Math.max(0, cursorIndex + delta));
-    if (selectionAnchor == null) setSelectionAnchor(cursorIndex);
-    const ids = selectionRangeIds(
-      items.map((row) => row.id),
-      from,
-      next,
-    );
-    setSelectedIds((prev) => {
-      const copy = new Set(prev);
-      for (const id of ids) copy.add(id);
-      return copy;
-    });
-    setCursor(next);
-  }
+  const extendSelection = useCallback(
+    (delta: number) => {
+      const items = pageItemsRef.current;
+      if (items.length === 0) return;
+      const currentCursor = cursorIndexRef.current;
+      const from = selectionAnchorRef.current ?? currentCursor;
+      const next = Math.min(
+        items.length - 1,
+        Math.max(0, currentCursor + delta),
+      );
+      if (selectionAnchorRef.current == null) setSelectionAnchor(currentCursor);
+      const ids = selectionRangeIds(
+        items.map((row) => row.id),
+        from,
+        next,
+      );
+      setSelectedIds((prev) => {
+        const copy = new Set(prev);
+        for (const id of ids) copy.add(id);
+        return copy;
+      });
+      setCursor(next);
+    },
+    [cursorIndexRef, pageItemsRef, selectionAnchorRef],
+  );
 
   useShortcut("create", openCreate);
   useShortcut(
     "nav-next",
     useCallback(() => {
-      setCursor((index) => Math.min(pageData.items.length - 1, index + 1));
-    }, [pageData.items.length]),
+      setCursor((index) =>
+        Math.min(pageItemsRef.current.length - 1, index + 1),
+      );
+    }, [pageItemsRef]),
   );
   useShortcut(
     "nav-prev",
@@ -493,26 +588,32 @@ export function CasesWorkspace({
   useShortcut(
     "select",
     useCallback(() => {
-      if (!focusedRow) return;
-      setSelectionAnchor(cursorIndex);
-      toggleSelect(focusedRow.id);
-    }, [cursorIndex, focusedRow]),
+      const row = focusedRowRef.current;
+      if (!row) return;
+      setSelectionAnchor(cursorIndexRef.current);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(row.id)) next.delete(row.id);
+        else next.add(row.id);
+        return next;
+      });
+    }, [cursorIndexRef, focusedRowRef]),
   );
   useShortcut(
     "nav-next-extend",
-    useCallback(() => extendSelection(1), [cursorIndex, pageData.items, selectionAnchor]),
+    useCallback(() => extendSelection(1), [extendSelection]),
   );
   useShortcut(
     "nav-prev-extend",
-    useCallback(() => extendSelection(-1), [cursorIndex, pageData.items, selectionAnchor]),
+    useCallback(() => extendSelection(-1), [extendSelection]),
   );
   useShortcut(
     "status",
-    useCallback(() => openFocusedField("status"), [focusedRow]),
+    useCallback(() => openFocusedField("status"), [openFocusedField]),
   );
   useShortcut(
     "priority",
-    useCallback(() => openFocusedField("priority"), [focusedRow]),
+    useCallback(() => openFocusedField("priority"), [openFocusedField]),
   );
   useShortcut(
     "escape",
@@ -530,11 +631,10 @@ export function CasesWorkspace({
         setShowCreate(false);
         return;
       }
-      if (historyCase) requestClosePeek();
+      if (historyCase) workspaceHandlersRef.current?.requestClosePeek();
     }, [
       caseDeleteModal.isOpen,
       deleteModal.isOpen,
-      editorDirty,
       folderModal.isOpen,
       historyCase,
       showCreate,
@@ -555,26 +655,30 @@ export function CasesWorkspace({
     pageData.total,
   );
 
-  function toggleSort(next: CaseListSort) {
-    setActiveViewId(null);
-    if (sort === next) {
-      setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
-    } else {
-      setSort(next);
-      setSortDir("asc");
-    }
-  }
+  // rerender-functional-setstate: stable callbacks for memoized table/tree children.
+  const toggleSort = useCallback(
+    (next: CaseListSort) => {
+      setActiveViewId(null);
+      if (sort === next) {
+        setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
+      } else {
+        setSort(next);
+        setSortDir("asc");
+      }
+    },
+    [sort, setSort, setSortDir],
+  );
 
-  function toggleSelect(id: string) {
+  const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  }
+  }, []);
 
-  function toggleSelectPage() {
+  const toggleSelectPage = useCallback(() => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (allPageSelected) {
@@ -584,7 +688,37 @@ export function CasesWorkspace({
       }
       return next;
     });
-  }
+  }, [allPageSelected, pageIds]);
+
+  const handleSearch = useCallback(
+    (value: string) => {
+      setActiveViewId(null);
+      setSearch(value);
+    },
+    [setSearch],
+  );
+
+  const handleFolderSelect = useCallback(
+    (id: FolderTreeSelection) => {
+      setActiveViewId(null);
+      // Urgent: tree highlight. Table/query consume deferredFolderFilter.
+      setFolderFilter(id);
+      setTreeCollapsed(true);
+      if (historyCase) {
+        setBrowserPanel("cases");
+        requestAnimationFrame(() =>
+          document
+            .querySelector<HTMLInputElement>('[aria-label="Search cases"]')
+            ?.focus({ preventScroll: true }),
+        );
+      }
+    },
+    [historyCase, setFolderFilter],
+  );
+
+  const handleToggleTreeCollapsed = useCallback(() => {
+    setTreeCollapsed((value) => !value);
+  }, []);
 
   function applySavedView(view: SavedViewRow) {
     const config = parseCaseViewConfig(JSON.stringify(view.config));
@@ -616,7 +750,9 @@ export function CasesWorkspace({
 
   function commitOpen(row: CaseRow | null) {
     setBrowserPanel(null);
-    if (row) setVisitedCases((previous) => new Map(previous).set(row.key, row));
+    if (row) {
+      setVisitedCases((prev) => new Map(prev).set(row.key, row));
+    }
     setHistoryCase(row);
     setEditorDirty(false);
     setPendingCase(null);
@@ -727,24 +863,37 @@ export function CasesWorkspace({
     return () => publishPaletteFocus({ kind: "none" });
   }, [focusedRow, selectedIds]);
 
+  const displayCasesRef = useLatestRef(displayCases);
+  const historyCaseRef = useLatestRef(historyCase);
+  const inlinePatchLatestRef = useLatestRef(inlinePatch);
+  const duplicateCaseLatestRef = useLatestRef(duplicateCase);
   useEffect(() => {
     function onCommand(event: Event) {
       const detail = (event as CustomEvent<CaseCommandDetail>).detail;
       if (!detail?.id) return;
       if (detail.type === "status") {
-        void inlinePatch(detail.id, { status: detail.value });
+        void inlinePatchLatestRef.current(detail.id, { status: detail.value });
       } else if (detail.type === "priority") {
-        void inlinePatch(detail.id, { priority: detail.value });
+        void inlinePatchLatestRef.current(detail.id, {
+          priority: detail.value,
+        });
       } else if (detail.type === "duplicate") {
         const row =
-          displayCases.find((item) => item.id === detail.id) ??
-          (historyCase?.id === detail.id ? historyCase : null);
-        if (row) void duplicateCase(row);
+          displayCasesRef.current.find((item) => item.id === detail.id) ??
+          (historyCaseRef.current?.id === detail.id
+            ? historyCaseRef.current
+            : null);
+        if (row) void duplicateCaseLatestRef.current(row);
       }
     }
     window.addEventListener(TOPOLOGY_CASE_COMMAND, onCommand);
     return () => window.removeEventListener(TOPOLOGY_CASE_COMMAND, onCommand);
-  });
+  }, [
+    displayCasesRef,
+    duplicateCaseLatestRef,
+    historyCaseRef,
+    inlinePatchLatestRef,
+  ]);
 
   async function submitFolder() {
     if (!can("folders.manage")) return;
@@ -1210,8 +1359,117 @@ export function CasesWorkspace({
     setImportViewFolderId(null);
   }
 
+  // advanced-event-handler-refs / no-ref-current-in-render: sync in layout effect.
+  useLayoutEffect(() => {
+    workspaceHandlersRef.current = {
+      requestOpen,
+      requestClosePeek,
+      openDeleteCase,
+      duplicateCase,
+      inlinePatch,
+      openCreateFolder,
+      openRenameFolder,
+      openDeleteFolder,
+      dropCasesOnFolder,
+      reparentFolder,
+      mergeCase,
+      commitOpen,
+    };
+  });
+
+  const onOpenCase = useCallback((row: CaseRow) => {
+    workspaceHandlersRef.current?.requestOpen(row);
+  }, []);
+  const onCloseCase = useCallback(() => {
+    workspaceHandlersRef.current?.requestClosePeek();
+  }, []);
+  const onDeleteCase = useCallback((row: CaseRow) => {
+    workspaceHandlersRef.current?.openDeleteCase(row);
+  }, []);
+  const onDuplicateCase = useCallback((row: CaseRow) => {
+    void workspaceHandlersRef.current?.duplicateCase(row);
+  }, []);
+  const onInlinePatchCase = useCallback((id: string, patch: CaseInlinePatch) => {
+    void workspaceHandlersRef.current?.inlinePatch(id, patch);
+  }, []);
+  const onCreateRootFolder = useCallback(() => {
+    workspaceHandlersRef.current?.openCreateFolder(null);
+  }, []);
+  const onCreateSubfolder = useCallback((parentId: string) => {
+    workspaceHandlersRef.current?.openCreateFolder(parentId);
+  }, []);
+  const onRenameFolder = useCallback((folderId: string) => {
+    workspaceHandlersRef.current?.openRenameFolder(folderId);
+  }, []);
+  const onDeleteFolderAction = useCallback((folderId: string) => {
+    workspaceHandlersRef.current?.openDeleteFolder(folderId);
+  }, []);
+  const onDropCases = useCallback((folderId: string | null, caseIds: string[]) => {
+    void workspaceHandlersRef.current?.dropCasesOnFolder(folderId, caseIds);
+  }, []);
+  const onReparentFolder = useCallback(
+    (folderId: string, parentId: string | null) => {
+      void workspaceHandlersRef.current?.reparentFolder(folderId, parentId);
+    },
+    [],
+  );
+  const onCaseDuplicated = useCallback(
+    (next: CaseRow) => {
+      workspaceHandlersRef.current?.mergeCase(next);
+      workspaceHandlersRef.current?.commitOpen(next);
+      startTransition(() => router.refresh());
+    },
+    [router],
+  );
+  const onCaseSaved = useCallback(
+    (next: {
+      id: string;
+      key: string;
+      title: string;
+      priority: string;
+      status: string;
+      tags: string[];
+      folder: { id: string; name: string } | null;
+    }) => {
+      workspaceHandlersRef.current?.mergeCase({
+        id: next.id,
+        key: next.key,
+        title: next.title,
+        priority: next.priority,
+        status: next.status,
+        tags: next.tags,
+        folder: next.folder,
+      });
+      setHistoryCase((prev) =>
+        prev && prev.id === next.id ? { ...prev, ...next } : prev,
+      );
+    },
+    [],
+  );
+  const onFoldersPanelOpenChange = useCallback(
+    (open: boolean) => {
+      setBrowserPanel((current) =>
+        open ? "folders" : current === "folders" ? null : current,
+      );
+    },
+    [],
+  );
+  const onCasesPanelOpenChange = useCallback((open: boolean) => {
+    setBrowserPanel((current) =>
+      open ? "cases" : current === "cases" ? null : current,
+    );
+  }, []);
+  const inspecting = Boolean(historyCase);
+
   return (
-    <div className="space-y-4">
+    <div
+      className={`flex min-h-0 flex-col gap-4 ${
+        inspecting
+          ? "flex-1 overflow-hidden"
+          : "md:flex-1 md:overflow-hidden"
+      }`}
+    >
+      <div className="shrink-0 space-y-4">
       <PageHeader
         eyebrow=""
         title="Test cases"
@@ -1363,7 +1621,7 @@ export function CasesWorkspace({
               <Modal.Heading className="text-base font-semibold text-[color:var(--topo-ink)]">
                 CSV import preview
               </Modal.Heading>
-              <p className="text-sm text-[color:var(--topo-mute)]">
+              <p className="text-sm text-[color:var(--topo-muted)]">
                 Dry run — nothing is written until you confirm.
               </p>
               <p className="text-sm text-[color:var(--topo-muted)]">
@@ -1408,7 +1666,7 @@ export function CasesWorkspace({
                   {csvPreview.sample.length > 0 ? (
                     <div className="overflow-x-auto rounded-md border border-[color:var(--topo-line)]">
                       <table className="min-w-full text-left text-sm">
-                        <thead className="bg-[color:var(--topo-panel)] text-[color:var(--topo-mute)]">
+                        <thead className="bg-[color:var(--topo-panel)] text-[color:var(--topo-muted)]">
                           <tr>
                             <th className="px-3 py-2 font-medium">Key</th>
                             <th className="px-3 py-2 font-medium">Title</th>
@@ -1433,7 +1691,7 @@ export function CasesWorkspace({
                               <td className="px-3 py-2">
                                 {row.structuredStepCount || "—"}
                               </td>
-                              <td className="px-3 py-2 text-xs text-[color:var(--topo-mute)]">
+                              <td className="px-3 py-2 text-xs text-[color:var(--topo-muted)]">
                                 {row.customFields
                                   ? Object.entries(row.customFields)
                                       .map(([k, v]) => `${k}=${v}`)
@@ -1448,7 +1706,7 @@ export function CasesWorkspace({
                   ) : null}
                 </>
               ) : (
-                <p className="text-sm text-[color:var(--topo-mute)]">
+                <p className="text-sm text-[color:var(--topo-muted)]">
                   {csvPending === "preview"
                     ? "Reading CSV…"
                     : "No preview loaded."}
@@ -1652,7 +1910,11 @@ export function CasesWorkspace({
 
 
 
-      <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+      <div
+        className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2"
+        onFocusCapture={ensureCaseFieldDefs}
+        onPointerEnter={ensureCaseFieldDefs}
+      >
         <div className="flex flex-wrap items-end gap-2">
           <Select
             className="w-[8.5rem]"
@@ -1829,8 +2091,7 @@ export function CasesWorkspace({
         ) : null}
       </AnimatePresence>
 
-      {remote.error ? <div role="alert" className="topo-feedback">{remote.error} <button onClick={remote.retry}>Retry</button></div> : null}
-      {remote.loading ? <p role="status" className="text-xs text-[color:var(--topo-muted)]">Updating cases…</p> : null}
+      {remote.error ? <div role="alert" className="topo-feedback">{remote.error} <Button variant="ghost" size="sm" onPress={remote.retry}>Retry</Button></div> : null}
       <AnimatePresence>
         {showCreate && can("cases.create") ? (
           <CaseCreateDialog
@@ -1851,11 +2112,17 @@ export function CasesWorkspace({
           />
         ) : null}
       </AnimatePresence>
+      </div>
 
       <div
-        className={`topo-cases-grid grid gap-3${historyCase ? " topo-cases-grid--inspecting" : ""}`}
+        className={`topo-cases-grid grid min-h-0 flex-1 gap-3 md:overflow-hidden${historyCase ? " topo-cases-grid--inspecting" : ""}`}
       >
-        <CaseBrowserPanel kind="folders" collapsed={Boolean(historyCase)} open={browserPanel === "folders"} onOpenChange={(open) => setBrowserPanel(current => open ? "folders" : current === "folders" ? null : current)}>
+        <CaseBrowserPanel
+          kind="folders"
+          collapsed={inspecting}
+          open={browserPanel === "folders"}
+          onOpenChange={onFoldersPanelOpenChange}
+        >
           <FolderTreePane
             folders={folders}
             folderCounts={folderCounts}
@@ -1863,67 +2130,63 @@ export function CasesWorkspace({
             totalCount={totalCases}
             selected={activeFolderFilter}
             collapsed={treeCollapsed}
-            inline={Boolean(historyCase)}
-            onToggleCollapsed={() => setTreeCollapsed((value) => !value)}
-            onSelect={(id) => {
-              setActiveViewId(null);
-              setFolderFilter(id);
-              setTreeCollapsed(true);
-              if (historyCase) {
-                setBrowserPanel("cases");
-                requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[aria-label="Search cases"]')?.focus({ preventScroll: true }));
-              }
-            }}
-            onCreateRoot={() => openCreateFolder(null)}
-            onCreateSubfolder={(parentId) => openCreateFolder(parentId)}
-            onRename={(folderId) => openRenameFolder(folderId)}
-            onDelete={(folderId) => openDeleteFolder(folderId)}
-            onDropCases={(folderId, caseIds) => {
-              void dropCasesOnFolder(folderId, caseIds);
-            }}
-            onReparentFolder={(folderId, parentId) => {
-              void reparentFolder(folderId, parentId);
-            }}
+            inline={inspecting}
+            onToggleCollapsed={handleToggleTreeCollapsed}
+            onSelect={handleFolderSelect}
+            onCreateRoot={onCreateRootFolder}
+            onCreateSubfolder={onCreateSubfolder}
+            onRename={onRenameFolder}
+            onDelete={onDeleteFolderAction}
+            onDropCases={onDropCases}
+            onReparentFolder={onReparentFolder}
           />
         </CaseBrowserPanel>
-        <CaseBrowserPanel kind="cases" collapsed={Boolean(historyCase)} open={browserPanel === "cases"} onOpenChange={(open) => setBrowserPanel(current => open ? "cases" : current === "cases" ? null : current)}>
-        <CasesTable
-          cases={pageData.items}
-          totalCases={totalCases}
-          folders={folders}
-          flatFolders={flatFolders}
-          search={search}
-          hasSearch={hasSearch}
-          matchCount={pageData.total}
-          sort={sort}
-          sortDir={sortDir}
-          selectedIds={selectedIds}
-          allPageSelected={allPageSelected}
-          activeId={historyCase?.id ?? null}
-          cursorIndex={cursorIndex}
-          rangeStart={rangeStart}
-          rangeEnd={rangeEnd}
-          total={pageData.total}
-          page={pageData.page}
-          totalPages={pageData.totalPages}
-          showPagination={pageData.total > CASE_WORKSPACE_PAGE_SIZE}
-          onSearch={(value) => {
-            setActiveViewId(null);
-            setSearch(value);
-          }}
-          onToggleSort={toggleSort}
-          onToggleSelect={toggleSelect}
-          onToggleSelectPage={toggleSelectPage}
-          onOpen={requestOpen}
-          onDelete={openDeleteCase}
-          onDuplicate={(row) => void duplicateCase(row)}
-          onInlinePatch={(id, patch) => void inlinePatch(id, patch)}
-          onPageChange={setPage}
-        />
+        <CaseBrowserPanel
+          kind="cases"
+          collapsed={inspecting}
+          open={browserPanel === "cases"}
+          onOpenChange={onCasesPanelOpenChange}
+        >
+          <div
+            className={`flex min-h-0 flex-col md:h-full${listStale ? " opacity-70 transition-opacity" : ""}`}
+            aria-busy={listStale || remote.loading || undefined}
+          >
+            <CasesTable
+              cases={pageData.items}
+              totalCases={totalCases}
+              folders={folders}
+              flatFolders={flatFolders}
+              search={search}
+              hasSearch={hasSearch}
+              matchCount={pageData.total}
+              sort={sort}
+              sortDir={sortDir}
+              selectedIds={selectedIds}
+              allPageSelected={allPageSelected}
+              activeId={historyCase?.id ?? null}
+              cursorIndex={cursorIndex}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              total={pageData.total}
+              page={pageData.page}
+              totalPages={pageData.totalPages}
+              showPagination={pageData.total > CASE_WORKSPACE_PAGE_SIZE}
+              loading={Boolean(remote.loading && pageData.items.length === 0)}
+              onSearch={handleSearch}
+              onToggleSort={toggleSort}
+              onToggleSelect={toggleSelect}
+              onToggleSelectPage={toggleSelectPage}
+              onOpen={onOpenCase}
+              onDelete={onDeleteCase}
+              onDuplicate={onDuplicateCase}
+              onInlinePatch={onInlinePatchCase}
+              onPageChange={setPage}
+            />
+          </div>
         </CaseBrowserPanel>
 
         {historyCase ? (
-          <ResponsiveInspector onContainer={setInspectorContainer} label={`Case ${historyCase.key}`} onClose={requestClosePeek}>
+          <ResponsiveInspector onContainer={setInspectorContainer} label={`Case ${historyCase.key}`} onClose={onCloseCase}>
           <CaseEditPanel
             key={historyCase.id}
             caseId={historyCase.id}
@@ -1931,27 +2194,10 @@ export function CasesWorkspace({
             caseTitle={historyCase.title}
             folders={folders}
             flatFolders={flatFolders}
-            onClose={requestClosePeek}
+            onClose={onCloseCase}
             onDirtyChange={setEditorDirty}
-            onDuplicated={(next) => {
-              mergeCase(next);
-              commitOpen(next);
-              startTransition(() => router.refresh());
-            }}
-            onSaved={(next) => {
-              mergeCase({
-                id: next.id,
-                key: next.key,
-                title: next.title,
-                priority: next.priority,
-                status: next.status,
-                tags: next.tags,
-                folder: next.folder,
-              });
-              setHistoryCase((prev) =>
-                prev && prev.id === next.id ? { ...prev, ...next } : prev,
-              );
-            }}
+            onDuplicated={onCaseDuplicated}
+            onSaved={onCaseSaved}
           />
       <Modal.Backdrop UNSTABLE_portalContainer={inspectorContainer ?? undefined} isOpen={unsavedModal.isOpen} onOpenChange={(open) => { if (open) unsavedModal.open(); else keepEditing(); }}>
           <Modal.Container placement="center" size="sm">

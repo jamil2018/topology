@@ -128,13 +128,13 @@ describe("ConnectAgentPanel", () => {
   it("switches client tabs and generates a scoped token into the snippet", async () => {
     render(<ConnectAgentPanel defaultUrl="http://127.0.0.1:4317" compact />);
 
-    expect(screen.getByRole("tab", { name: "Cursor" })).toHaveAttribute(
-      "aria-selected",
+    expect(screen.getByRole("radio", { name: "Cursor" })).toHaveAttribute(
+      "aria-checked",
       "true",
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Generic stdio" }));
-    expect(screen.getByRole("tab", { name: "Generic stdio" })).toHaveAttribute(
-      "aria-selected",
+    fireEvent.click(screen.getByRole("radio", { name: "Generic stdio" }));
+    expect(screen.getByRole("radio", { name: "Generic stdio" })).toHaveAttribute(
+      "aria-checked",
       "true",
     );
     expect(screen.getByText(/Generic stdio snippet/i)).toBeTruthy();

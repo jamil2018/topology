@@ -1,5 +1,23 @@
 import { test, expect } from "./fixtures";
 import AxeBuilder from "@axe-core/playwright";
+import type { Locator, Page } from "@playwright/test";
+
+/**
+ * HeroUI Checkbox.Control intercepts pointer hits; React Aria also ignores
+ * force-clicks on the covered input. Focus + Space toggles selection reliably
+ * across Chromium/Firefox/WebKit for controlled TopoCheckbox.
+ */
+async function clickHeroUiCheckbox(
+  root: Page | Locator,
+  name?: string | RegExp,
+) {
+  const checkbox = name
+    ? root.getByRole("checkbox", { name })
+    : root.getByRole("checkbox").first();
+  await checkbox.scrollIntoViewIfNeeded();
+  await checkbox.focus();
+  await checkbox.press("Space");
+}
 
 for (const theme of ["light", "dark"] as const) {
   test(`screen families are accessible in ${theme}`, async ({ page }, info) => {
@@ -9,7 +27,7 @@ for (const theme of ["light", "dark"] as const) {
     await page.goto('/');
     await settings;
     const saved = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH');
-    await page.getByRole('button', {name: theme === 'dark' ? 'Dark theme' : 'Light theme',exact:true}).click();
+    await page.getByRole('radiogroup', { name: 'Color theme' }).getByRole('radio', { name: theme === 'dark' ? 'Dark theme' : 'Light theme', exact: true }).click();
     expect((await saved).ok()).toBeTruthy();
     for (const route of ["/", "/cases", "/runs", "/runs/new", "/plans", "/triage", "/automation", "/reports", "/settings", "/requirements", "/releases", "/cases/import", "/intents", "/journeys", "/components", "/risks", "/milestones"]) {
       await page.goto(route);
@@ -48,9 +66,13 @@ test("review template, create fresh run, retest failure and follow lineage", asy
   const name = `Refinement ${Date.now()}`;
   await page.goto("/runs/new");
   await page.getByLabel("Run name", { exact: true }).filter({visible:true}).fill(name);
-  await page.getByRole("checkbox", { name: "Select all visible cases" }).click();
+  const selectAll = page.getByRole("checkbox", { name: "Select all visible cases" });
+  await expect(selectAll).toBeChecked();
+  await clickHeroUiCheckbox(page, "Select all visible cases");
+  await expect(selectAll).not.toBeChecked();
   await expect(page.getByRole("button", { name: /^Create run/ })).toBeDisabled();
-  await page.getByRole("checkbox", { name: "Select all visible cases" }).click();
+  await clickHeroUiCheckbox(page, "Select all visible cases");
+  await expect(selectAll).toBeChecked();
   await page.getByRole("button", { name: "Save as template", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Template saved" })).toBeVisible();
   await page.goto("/runs");
@@ -69,7 +91,8 @@ test("review template, create fresh run, retest failure and follow lineage", asy
   await page.getByRole("button", { name: /Mark (?!step).* as failed/ }).click();
   await page.getByText(/Reuse this run · Retest history/).click();
   const failures = page.getByRole("group", { name: "Select failures to retest" });
-  await failures.getByRole("checkbox").first().check();
+  await expect(failures.getByRole("checkbox").first()).toBeVisible();
+  await clickHeroUiCheckbox(failures);
   await page.getByRole("link", { name: /Review retest/ }).click();
   await expect(page.locator("main h1")).toHaveText("Review retest");
   const retestCreation = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/runs/retest");
@@ -92,7 +115,7 @@ test("execution reflows with accessible actions in both themes", async ({ page }
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
     const saved = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH');
-    await page.getByRole('button', {name:theme === 'dark' ? 'Dark theme' : 'Light theme',exact:true}).click();
+    await page.getByRole('radiogroup', { name: 'Color theme' }).getByRole('radio', { name: theme === 'dark' ? 'Dark theme' : 'Light theme', exact: true }).click();
     expect((await saved).ok()).toBeTruthy();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     for (const width of [320, 390, 834, 1194, 1366, 1440, 1920]) {

@@ -19,10 +19,10 @@ test("content-first case creation and run setup preserve data and recover from e
   await page.getByLabel('Title', {exact:true}).fill(`UX check ${Date.now()}`);
   await page.getByLabel('Step 1 action', {exact:true}).fill('Open checkout');
   await page.getByLabel('Step 1 expected', {exact:true}).fill('Cart is visible');
-  await page.locator('summary').filter({hasText:'Case details'}).click();
+  await page.getByRole('button', { name: /Case details/ }).click();
   await expect(page.getByLabel('Key', {exact:true})).not.toHaveValue('');
   await page.getByLabel('Description', {exact:true}).fill('Keep this optional context');
-  await page.locator('summary').filter({hasText:'Case details'}).click();
+  await page.getByRole('button', { name: /Case details/ }).click();
   const created = page.waitForResponse(r=>r.url().endsWith('/api/cases') && r.request().method()==='POST');
   await page.getByRole('button', {name:'Save case',exact:true}).click();
   const response = await created; expect(response.ok()).toBeTruthy();
@@ -33,16 +33,20 @@ test("content-first case creation and run setup preserve data and recover from e
   await expect(page).toHaveURL(new RegExp(`case=${data.case.key}`));
   await expect(page.getByRole('button', {name:'Save case',exact:true})).not.toBeVisible();
   await page.goto(`/runs/new?cases=${data.case.id}`);
-  await expect(page.getByLabel('Environment',{exact:true})).not.toBeVisible();
-  await expect(page.getByText('Enter a run name to continue.')).toBeVisible();
+  const runOptions = page.getByRole('button', { name: /Run options/ });
+  await expect(runOptions).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('status').filter({ hasText: 'Enter a run name to continue.' }).first()).toBeVisible();
   await page.getByLabel('Run name',{exact:true}).fill('UX review run');
-  await page.locator('summary').filter({hasText:'Run options'}).click();
-  await page.getByLabel('Environment',{exact:true}).fill('');
+  await runOptions.click();
+  await expect(runOptions).toHaveAttribute('aria-expanded', 'true');
+  const environment = page.getByLabel('Environment',{exact:true}).locator('visible=true');
+  await environment.fill('');
   await expect(page.getByRole('button',{name:/Create run ·/})).toBeDisabled();
-  await expect(page.getByText('Enter an environment in Run options.')).toBeVisible();
-  await page.getByLabel('Environment',{exact:true}).fill('staging');
-  await expect(page.getByLabel('Environment',{exact:true})).toBeVisible();
-  await page.locator('summary').filter({hasText:'Run options'}).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Enter an environment in Run options.' }).first()).toBeVisible();
+  await environment.fill('staging');
+  await expect(environment).toBeVisible();
+  await runOptions.click();
+  await expect(runOptions).toHaveAttribute('aria-expanded', 'false');
   await page.route('**/api/runs', route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Temporary test outage. Try again.'})}));
   await page.getByRole('button',{name:/Create run ·/}).click();
   await expect(page.getByRole('alert').filter({hasText:'Temporary test outage'})).toBeVisible();
@@ -61,30 +65,32 @@ test("content-first case creation and run setup preserve data and recover from e
   await page.getByRole('button',{name:/^Mark [^ ]+ as passed$/}).click();
   await expect(page.getByRole('button',{name:/^Mark [^ ]+ as passed$/})).toHaveAttribute('aria-pressed','true');
   await expect(page.getByRole('button',{name:'Abort run',exact:true})).not.toBeVisible();
-  await page.locator('summary').filter({hasText:'More actions'}).click();
-  await page.getByRole('button',{name:'Abort run',exact:true}).click();
+  await page.getByRole('button',{name:'More actions',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Abort run',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Abort this run?'})).toBeVisible();
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
 });
 
 test("integration disclosures preserve direct links and keyboard access", async ({page})=>{
   await page.goto('/settings?section=integrations');
-  await expect(page.locator('#ci')).not.toHaveAttribute('open','');
-  const summary = page.locator('#ci > summary');
-  await summary.focus(); await page.keyboard.press('Enter');
-  await expect(page.locator('#ci')).toHaveAttribute('open','');
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  const ciTrigger = page.locator('#ci').getByRole('button').first();
+  await expect(ciTrigger).toHaveAttribute('aria-expanded', 'false');
+  await ciTrigger.focus();
+  await page.keyboard.press('Enter');
+  await expect(ciTrigger).toHaveAttribute('aria-expanded', 'true');
   await page.goto('/settings?section=integrations#webhooks');
-  await expect(page.locator('#webhooks')).toHaveAttribute('open','');
+  await expect(page.locator('#webhooks').getByRole('button').first()).toHaveAttribute('aria-expanded', 'true');
   await page.goto('/settings?section=integrations#ci');
-  await expect(page.locator('#ci')).toHaveAttribute('open','');
-  await page.locator('#webhooks > summary').click();
-  await expect(page.locator('#webhooks')).not.toHaveAttribute('open','');
+  await expect(page.locator('#ci').getByRole('button').first()).toHaveAttribute('aria-expanded', 'true');
+  await page.locator('#webhooks').getByRole('button').first().click();
+  await expect(page.locator('#webhooks').getByRole('button').first()).toHaveAttribute('aria-expanded', 'false');
   await page.goto('/settings?section=integrations#webhooks');
-  await expect(page.locator('#webhooks')).toHaveAttribute('open','');
+  await expect(page.locator('#webhooks').getByRole('button').first()).toHaveAttribute('aria-expanded', 'true');
   await page.goBack();
-  await expect(page.locator('#ci')).toHaveAttribute('open','');
+  await expect(page.locator('#ci').getByRole('button').first()).toHaveAttribute('aria-expanded', 'true');
   await page.goto('/settings?section=ci');
-  await expect(page.locator('#ci')).toHaveAttribute('open','');
+  await expect(page.locator('#ci').getByRole('button').first()).toHaveAttribute('aria-expanded', 'true');
 });
 
 for (const width of [320,768,1440]) {
@@ -104,13 +110,15 @@ for (const width of [320,768,1440]) {
 
 test("filtering does not silently change the chosen cases", async ({page}) => {
   await page.goto('/runs/new');
+  await expect(page.getByRole('heading', { name: 'Start a run' })).toBeVisible();
   const create = page.getByRole('button',{name:/Create run ·/});
   const initial = await create.textContent();
-  await page.getByRole('textbox',{name:'Search',exact:true}).fill('no-matching-ux-case');
+  const caseSearch = page.locator('[data-slot="search-field-input"]');
+  await caseSearch.fill('no-matching-ux-case');
   await expect(page.getByText(/selected cases are outside these filters/)).toBeVisible();
   await expect(create).toHaveText(initial!);
   await page.getByRole('button',{name:'Clear filters',exact:true}).click();
-  await expect(page.getByRole('textbox',{name:'Search',exact:true})).toHaveValue('');
+  await expect(page.locator('[data-slot="search-field-input"]')).toHaveValue('');
   await expect(create).toHaveText(initial!);
 });
 
@@ -131,7 +139,7 @@ for (const theme of ['Light', 'Dark']) {
     page.on('console', message=>{if(message.type()==='error') errors.push(message.text());});
     await gotoReady(page, '/');
     const savedTheme = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH');
-    await page.getByRole('button',{name:`${theme} theme`,exact:true}).click();
+    await page.getByRole('radiogroup', { name: 'Color theme' }).getByRole('radio', { name: `${theme} theme`, exact: true }).click();
     await savedTheme;
     for (const route of ['/runs','/plans','/reports','/triage','/automation']) {
       await gotoReady(page, route);

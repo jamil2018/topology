@@ -10,6 +10,7 @@ import { Button, Input } from "@heroui/react";
 import { Alert } from "./alert";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
+import { TopoSelect } from "./ui/topo-select";
 
 export type ReleaseListItem = {
   id: string;
@@ -265,38 +266,30 @@ export function ReleasesWorkspace({
         </div>
         {covSnapshots.length >= 2 ? (
           <div className="mt-3 flex flex-wrap items-end gap-2">
-            <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
-              Before
-              <select
-                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
-                value={covBefore}
-                onChange={(e) => setCovBefore(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {covSnapshots.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {formatDate(s.capturedAt)}
-                    {s.label ? ` · ${s.label}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
-              After
-              <select
-                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
-                value={covAfter}
-                onChange={(e) => setCovAfter(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {covSnapshots.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {formatDate(s.capturedAt)}
-                    {s.label ? ` · ${s.label}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <TopoSelect
+              label="Before"
+              placeholder="Select…"
+              className="min-w-[12rem]"
+              value={covBefore}
+              onChange={setCovBefore}
+              options={covSnapshots.map((s) => ({
+                id: s.id,
+                label: `${formatDate(s.capturedAt)}${s.label ? ` · ${s.label}` : ""}`,
+              }))}
+              compact
+            />
+            <TopoSelect
+              label="After"
+              placeholder="Select…"
+              className="min-w-[12rem]"
+              value={covAfter}
+              onChange={setCovAfter}
+              options={covSnapshots.map((s) => ({
+                id: s.id,
+                label: `${formatDate(s.capturedAt)}${s.label ? ` · ${s.label}` : ""}`,
+              }))}
+              compact
+            />
             <Button onPress={() => void openCoverageCompare()}>Compare</Button>
           </div>
         ) : covSnapshots.length === 1 ? (
@@ -312,36 +305,24 @@ export function ReleasesWorkspace({
             Compare releases
           </h2>
           <div className="mt-3 flex flex-wrap items-end gap-2">
-            <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
-              Before
-              <select
-                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
-                value={compareBefore}
-                onChange={(e) => setCompareBefore(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {items.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
-              After
-              <select
-                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
-                value={compareAfter}
-                onChange={(e) => setCompareAfter(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {items.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <TopoSelect
+              label="Before"
+              placeholder="Select…"
+              className="min-w-[12rem]"
+              value={compareBefore}
+              onChange={setCompareBefore}
+              options={items.map((r) => ({ id: r.id, label: r.name }))}
+              compact
+            />
+            <TopoSelect
+              label="After"
+              placeholder="Select…"
+              className="min-w-[12rem]"
+              value={compareAfter}
+              onChange={setCompareAfter}
+              options={items.map((r) => ({ id: r.id, label: r.name }))}
+              compact
+            />
             <Button onPress={openCompare}>Compare</Button>
           </div>
         </div>

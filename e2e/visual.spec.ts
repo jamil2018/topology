@@ -8,7 +8,7 @@ for (const theme of ["light", "dark"] as const) {
     const loaded = page.waitForResponse((response) => response.url().includes("/api/settings") && response.request().method() === "GET");
     await page.goto("/");
     await loaded;
-    await page.getByRole("button", { name: `${theme === "light" ? "Light" : "Dark"} theme` }).click();
+    await page.getByRole("radiogroup", { name: "Color theme" }).getByRole("radio", { name: `${theme === "light" ? "Light" : "Dark"} theme`, exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     for (const [url, title, name] of [
       ["/", "Home", "home"], ["/cases", "Test cases", "cases"], ["/runs", "Test runs", "runs"],

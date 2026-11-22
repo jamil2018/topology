@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@heroui/react";
+import { Button, Input, Label, TextField } from "@heroui/react";
 import { StatusChip } from "./status-chip";
+import { TopoSelect } from "./ui/topo-select";
 
 const PROVIDERS = [
   { id: "none", label: "None (air-gapped)" },
@@ -85,7 +86,7 @@ export function AiSettingsPanel() {
       </p>
 
       {loadError ? (
-        <p className="text-sm text-red-600">{loadError}</p>
+        <p className="text-sm text-red-600 dark:text-red-400">{loadError}</p>
       ) : state ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-[color:var(--topo-muted)]">
           <span>Effective:</span>
@@ -103,40 +104,17 @@ export function AiSettingsPanel() {
         </div>
       ) : null}
 
-      <label className="block space-y-1 text-sm">
-        <span className="text-[color:var(--topo-ink)]">Workspace provider</span>
-        <select
-          className="w-full max-w-md rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-bg)] px-2 py-1.5 text-sm"
-          value={provider}
-          onChange={(e) => setProvider(e.target.value)}
-        >
-          {PROVIDERS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <TopoSelect
+        label="Workspace provider"
+        className="w-full max-w-md"
+        value={provider}
+        onChange={setProvider}
+        options={PROVIDERS.map((p) => ({ id: p.id, label: p.label }))}
+      />
 
-      <label className="block space-y-1 text-sm">
-        <span className="text-[color:var(--topo-ink)]">Model override</span>
-        <input
-          className="w-full max-w-md rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-bg)] px-2 py-1.5 text-sm font-mono"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="e.g. gpt-4o-mini"
-        />
-      </label>
+      <TextField name="ai-model" className="w-full max-w-md" variant="secondary"><Label>Model override</Label><Input className="font-mono" value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. gpt-4o-mini" /></TextField>
 
-      <label className="block space-y-1 text-sm">
-        <span className="text-[color:var(--topo-ink)]">Base URL override</span>
-        <input
-          className="w-full max-w-md rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-bg)] px-2 py-1.5 text-sm font-mono"
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder="Azure endpoint or http://127.0.0.1:11434/v1"
-        />
-      </label>
+      <TextField name="ai-base-url" className="w-full max-w-md" variant="secondary"><Label>Base URL override</Label><Input className="font-mono" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="Azure endpoint or http://127.0.0.1:11434/v1" /></TextField>
 
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onPress={() => void save()} isDisabled={saving}>

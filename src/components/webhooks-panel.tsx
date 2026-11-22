@@ -3,9 +3,11 @@
 import { useEffect, useState, useTransition } from "react";
 import { Button, Input, TextArea } from "@heroui/react";
 import { formatDateTime } from "@/lib/format-date";
+import { InlineRowsSkeleton } from "./skeletons";
 import { StatusChip } from "./status-chip";
 import { useMutationFeedback } from "./use-mutation-feedback";
 import { useProjectActions } from "./project-actions";
+import { TopoCheckbox } from "./ui/topo-checkbox";
 
 const WEBHOOK_EVENTS = [
   "run.completed",
@@ -377,17 +379,15 @@ export function WebhooksPanel() {
             </legend>
             <div className="flex flex-wrap gap-3">
               {WEBHOOK_EVENTS.map((event) => (
-                <label
+                <TopoCheckbox
                   key={event}
-                  className="flex items-center gap-1.5 text-xs font-mono"
+                  compact
+                  className="text-xs font-mono"
+                  isSelected={draft.events.has(event)}
+                  onChange={() => toggleDraftEvent(event)}
                 >
-                  <input
-                    type="checkbox"
-                    checked={draft.events.has(event)}
-                    onChange={() => toggleDraftEvent(event)}
-                  />
                   {event}
-                </label>
+                </TopoCheckbox>
               ))}
             </div>
           </fieldset>
@@ -539,9 +539,13 @@ export function WebhooksPanel() {
                       </Button>
                     </div>
                     {deliveriesLoading ? (
-                      <p className="text-xs text-[color:var(--topo-muted)]">
-                        Loading…
-                      </p>
+                      <div
+                        role="status"
+                        aria-busy="true"
+                        aria-label="Loading deliveries"
+                      >
+                        <InlineRowsSkeleton rows={3} dense />
+                      </div>
                     ) : deliveries.length === 0 ? (
                       <p className="text-xs text-[color:var(--topo-muted)]">
                         No deliveries recorded yet.

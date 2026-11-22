@@ -2,6 +2,7 @@
 import { formatDateTime } from "@/lib/format-date";
 
 import Link from "next/link";
+import { Button } from "@heroui/react";
 import { PlayIcon, PrinterIcon } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "motion/react";
 import { BrandMark } from "./brand-mark";
@@ -224,14 +225,16 @@ export function ReportDetail({
                     {format}
                   </a>
                 ))}
-                <button
+                <Button
                   type="button"
-                  onClick={() => window.print()}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+                  size="sm"
+                  variant="secondary"
+                  onPress={() => window.print()}
+                  className="inline-flex items-center gap-1.5"
                 >
                   <PrinterIcon size={14} weight="bold" aria-hidden />
                   Print
-                </button>
+                </Button>
               </>
             ) : (
               <>

@@ -9,17 +9,19 @@ import type { ResultRow, RunDetail } from "./run-executor-model";
 vi.mock("./run-productivity-actions", () => ({ RunProductivityActions: () => null }));
 
 const refresh = vi.hoisted(() => vi.fn());
+const push = vi.hoisted(() => vi.fn());
 const live = vi.hoisted(() => ({ reconnect: undefined as undefined | (() => Promise<void>) }));
 vi.mock("./use-live-updates", () => ({ useLiveUpdates: (_onEvent: unknown, options: {onReconnect: () => Promise<void>}) => { live.reconnect = options.onReconnect; return "live"; } }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh }),
+  useRouter: () => ({ refresh, push }),
 }));
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   refresh.mockClear();
+  push.mockClear();
 });
 
 const testerId = "44444444-4444-4444-4444-444444444444";
@@ -210,10 +212,12 @@ describe("RunExecutor retest failures", () => {
     );
 
     await user.click(screen.getByText("More actions"));
-    const link = screen.getByRole("link", { name: /Retest 1 failure/i });
-    expect(link).toHaveAttribute("href", `/runs/new?retest=${failedId}`);
+    const item = screen.getByRole("menuitem", { name: /Retest 1 failure/i });
+    expect(item).toBeInTheDocument();
     // Active runs keep retest in More actions, not as the accent header CTA.
-    expect(link.className).not.toMatch(/topo-accent/);
+    expect(screen.queryByRole("link", { name: /Retest 1 failure/i })).not.toBeInTheDocument();
+    await user.click(item);
+    expect(push).toHaveBeenCalledWith(`/runs/new?retest=${failedId}`);
   });
 });
 
@@ -226,7 +230,7 @@ describe("RunExecutor abort confirmation", () => {
     render(<RunExecutor run={{ ...baseRun, status: "planned" }} />);
 
     await user.click(screen.getByText("More actions"));
-    await user.click(screen.getByRole("button", { name: "Abort run" }));
+    await user.click(screen.getByRole("menuitem", { name: "Abort run" }));
     expect(
       screen.getByRole("heading", { name: "Abort this run?" }),
     ).toBeInTheDocument();
@@ -250,7 +254,7 @@ describe("RunExecutor abort confirmation", () => {
     render(<RunExecutor run={{ ...baseRun, status: "planned" }} />);
 
     await user.click(screen.getByText("More actions"));
-    await user.click(screen.getByRole("button", { name: "Abort run" }));
+    await user.click(screen.getByRole("menuitem", { name: "Abort run" }));
     await user.click(screen.getByRole("button", { name: "Abort run" }));
 
     expect(fetchMock).toHaveBeenCalledWith(

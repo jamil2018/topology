@@ -1,4 +1,5 @@
 "use client";
+import { TopoCheckbox } from "./ui/topo-checkbox";
 import { useProjectActions } from "./project-actions";
 import { useMutationFeedback } from "./use-mutation-feedback";
 
@@ -6,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { Button, Input, Modal, TextArea, useOverlayState } from "@heroui/react";
+import { PlayIcon } from "@phosphor-icons/react";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 import { fanOutMatrix, type PlanMatrixInput } from "@/lib/tcm/matrix";
@@ -14,6 +16,7 @@ import {
   BROWSER_PRESETS,
   OS_PRESETS,
 } from "./plan-matrix-fields";
+import { TopoSelect } from "./ui/topo-select";
 
 type PlanCase = {
   id: string;
@@ -317,9 +320,11 @@ export function PlanDetail({
             <Button
               size="sm"
               variant="primary"
+              className="gap-1.5"
               isDisabled={pending || !can("runs.create") || selected.size === 0}
               onPress={() => void launch()}
             >
+              <PlayIcon size={14} weight="bold" aria-hidden />
               Launch matrix
             </Button>
           </div>
@@ -364,38 +369,36 @@ export function PlanDetail({
           />
         </label>
         <div className="flex flex-wrap gap-3">
-          <label className="space-y-1 text-sm">
-            <span className="block">Status</span>
-            <select
-              className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
-              value={status}
-              disabled={!can("runs.edit")}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              {PLAN_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
+          <TopoSelect
+            label="Status"
+            ariaLabel="Status"
+            className="w-40"
+            value={status}
+            isDisabled={!can("runs.edit")}
+            onChange={setStatus}
+            options={PLAN_STATUSES.map((s) => ({
+              id: s,
+              label: s,
+            }))}
+            compact
+          />
           {milestones.length > 0 ? (
-            <label className="space-y-1 text-sm">
-              <span className="block">Milestone</span>
-              <select
-                className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
-                value={milestoneId}
-                disabled={!can("runs.edit")}
-                onChange={(e) => setMilestoneId(e.target.value)}
-              >
-                <option value="">None</option>
-                {milestones.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <TopoSelect
+              label="Milestone"
+              ariaLabel="Milestone"
+              className="w-48"
+              value={milestoneId}
+              isDisabled={!can("runs.edit")}
+              onChange={setMilestoneId}
+              options={[
+                { id: "", label: "None" },
+                ...milestones.map((m) => ({
+                  id: m.id,
+                  label: m.name,
+                })),
+              ]}
+              compact
+            />
           ) : null}
         </div>
         {can("runs.edit") ? (
@@ -475,19 +478,7 @@ export function PlanDetail({
         <ul className="max-h-80 divide-y divide-[color:var(--topo-line)] overflow-y-auto rounded-md border border-[color:var(--topo-line)]">
           {visible.map((c) => (
             <li key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-              <input
-                type="checkbox"
-                disabled={!can("runs.edit")}
-                checked={selected.has(c.id)}
-                onChange={(e) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    if (e.target.checked) next.add(c.id);
-                    else next.delete(c.id);
-                    return next;
-                  })
-                }
-              />
+              <TopoCheckbox compact isDisabled={!can("runs.edit")} isSelected={selected.has(c.id)} onChange={(isSelected) => setSelected((prev) => { const next = new Set(prev); if (isSelected) next.add(c.id); else next.delete(c.id); return next; })} />
               <span className="font-mono text-xs text-[color:var(--topo-accent)]">
                 {c.key}
               </span>

@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
+import type { Selection } from "@heroui/react";
+import { ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import {
+  ListChecksIcon,
+  PlayIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
 import { useQualityGraph } from "./quality-graph-provider";
@@ -14,6 +21,7 @@ import {
 } from "@/lib/hub-view-pref";
 import { OverviewDashboard } from "./overview-dashboard";
 import { QaHome } from "./qa-home";
+import { TopoSelect } from "./ui/topo-select";
 import {
   PERSONA_ALL_HINT,
   PERSONAS,
@@ -25,6 +33,11 @@ import {
 
 export type { HubPersona, HubPulseData as Pulse, HubView };
 export { parseHubPersona };
+
+const HOME_VIEWS = [
+  { id: "home" as const, label: "My work" },
+  { id: "overview" as const, label: "Overview" },
+];
 
 function hubViewKey(projectId: string) {
   return `topology:hub-view:${projectId}`;
@@ -61,6 +74,137 @@ function writeStoredPersona(projectId: string | null, persona: HubPersona | null
   } catch {
     /* Storage unavailable. */
   }
+}
+
+function HomeViewSwitcher({
+  view,
+  onViewChange,
+}: {
+  view: HubView;
+  onViewChange: (next: HubView) => void;
+}) {
+  function focusTab(id: HubView) {
+    const el = document.getElementById(`home-view-tab-${id}`);
+    el?.focus();
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const idx = HOME_VIEWS.findIndex((v) => v.id === view);
+    if (idx < 0) return;
+    let nextIdx = idx;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIdx = (idx + 1) % HOME_VIEWS.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIdx = (idx - 1 + HOME_VIEWS.length) % HOME_VIEWS.length;
+    } else if (event.key === "Home") {
+      nextIdx = 0;
+    } else if (event.key === "End") {
+      nextIdx = HOME_VIEWS.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    const next = HOME_VIEWS[nextIdx]!.id;
+    onViewChange(next);
+    focusTab(next);
+  }
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Home view"
+      className="inline-flex h-7 items-center rounded-md border border-[color:var(--topo-line)] p-0.5"
+      onKeyDown={onKeyDown}
+    >
+      {HOME_VIEWS.map(({ id, label }) => {
+        const selected = view === id;
+        return (
+          <button
+            key={id}
+            id={`home-view-tab-${id}`}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            tabIndex={selected ? 0 : -1}
+            className={`rounded px-2.5 py-0.5 text-xs font-medium transition-colors ${
+              selected
+                ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
+                : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+            }`}
+            onClick={() => onViewChange(id)}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function OverviewToolbar({
+  persona,
+  onPersonaChange,
+  qualityGraphEnabled,
+  releases,
+  selectedRelease,
+  onReleaseChange,
+}: {
+  persona: HubPersona | null;
+  onPersonaChange: (next: HubPersona | null) => void;
+  qualityGraphEnabled: boolean;
+  releases: ReleaseOption[];
+  selectedRelease: ReleaseOption | null;
+  onReleaseChange: (releaseId: string | null) => void;
+}) {
+  const activePersonaHint =
+    persona == null
+      ? PERSONA_ALL_HINT
+      : (PERSONAS.find((p) => p.id === persona)?.hint ?? null);
+  const personaKey = persona ?? "all";
+
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-1">
+        <ToggleButtonGroup
+          aria-label="Overview persona"
+          selectionMode="single"
+          disallowEmptySelection
+          size="sm"
+          isDetached
+          selectedKeys={new Set([personaKey])}
+          onSelectionChange={(keys: Selection) => {
+            if (keys === "all") return;
+            const next = [...keys][0];
+            if (next == null || next === "all") onPersonaChange(null);
+            else onPersonaChange(String(next) as HubPersona);
+          }}
+        >
+          <ToggleButton id="all">All</ToggleButton>
+          {PERSONAS.map((p) => (
+            <ToggleButton key={p.id} id={p.id}>
+              {p.label}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+        {activePersonaHint ? (
+          <p className="max-w-md px-0.5 text-xs text-[color:var(--topo-muted)]">
+            {activePersonaHint}
+          </p>
+        ) : null}
+      </div>
+      {qualityGraphEnabled && releases.length > 0 ? (
+        <TopoSelect
+          compact
+          label="Release"
+          ariaLabel="Release switcher"
+          className="min-w-[10rem]"
+          value={selectedRelease?.id ?? ""}
+          onChange={(id) => onReleaseChange(id || null)}
+          options={releases.map((r) => ({ id: r.id, label: r.name }))}
+        />
+      ) : null}
+    </div>
+  );
 }
 
 export function HubPulse({
@@ -152,16 +296,16 @@ export function HubPulse({
   }
 
   const isOverview = view === "overview";
-  const activePersonaHint =
-    persona == null
-      ? PERSONA_ALL_HINT
-      : (PERSONAS.find((p) => p.id === persona)?.hint ?? null);
   const primaryHref = pulse.cases.total > 0 ? "/runs/new" : "/cases?new=1";
   const primaryLabel = pulse.cases.total > 0 ? "Start run" : "New case";
   const failingCount = pulse.failingNow?.length ?? 0;
 
   return (
     <div className="space-y-5">
+      <div className="flex w-full justify-end">
+        <HomeViewSwitcher view={view} onViewChange={setView} />
+      </div>
+
       <PageHeader
         eyebrow=""
         title={isOverview ? "Overview" : "Home"}
@@ -180,15 +324,15 @@ export function HubPulse({
             ) : (
               <StatusChip tone="success">Triage clear</StatusChip>
             )}
-            {isOverview && milestone ? (
+            {milestone ? (
               <StatusChip tone={statusToneForRun(milestone.readiness.status)}>
                 {milestone.badge}
               </StatusChip>
             ) : null}
-            {isOverview && qualityGraphEnabled && selectedRelease ? (
+            {qualityGraphEnabled && selectedRelease ? (
               <StatusChip mono>{selectedRelease.name}</StatusChip>
             ) : null}
-            {isOverview && persona ? (
+            {persona ? (
               <StatusChip mono>persona {persona}</StatusChip>
             ) : null}
           </>
@@ -198,121 +342,41 @@ export function HubPulse({
           </StatusChip>
         ) : undefined}
         actions={
-          <div className="flex flex-wrap gap-2">
-            <div
-              role="group"
-              aria-label="Home view"
-              className="flex flex-wrap items-center gap-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-0.5"
-            >
-              <button
-                type="button"
-                aria-pressed={!isOverview}
-                onClick={() => setView("home")}
-                className={`rounded px-2 py-1 font-mono text-xs uppercase tracking-wide ${
-                  !isOverview
-                    ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
-                    : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-                }`}
-              >
-                My work
-              </button>
-              <button
-                type="button"
-                aria-pressed={isOverview}
-                onClick={() => setView("overview")}
-                className={`rounded px-2 py-1 font-mono text-xs uppercase tracking-wide ${
-                  isOverview
-                    ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
-                    : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-                }`}
-              >
-                Overview
-              </button>
-            </div>
+          <Link
+            href={isOverview ? "/cases" : primaryHref}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
+          >
             {isOverview ? (
-              <div className="flex flex-col gap-1">
-                <div
-                  role="group"
-                  aria-label="Overview persona"
-                  className="flex flex-wrap items-center gap-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-0.5"
-                >
-                  <button
-                    type="button"
-                    title={PERSONA_ALL_HINT}
-                    aria-pressed={persona == null}
-                    onClick={() => setPersona(null)}
-                    className={`rounded px-2 py-1 font-mono text-xs uppercase tracking-wide ${
-                      persona == null
-                        ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
-                        : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-                    }`}
-                  >
-                    All
-                  </button>
-                  {PERSONAS.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      title={p.hint}
-                      aria-pressed={persona === p.id}
-                      onClick={() => setPersona(p.id)}
-                      className={`rounded px-2 py-1 font-mono text-xs uppercase tracking-wide ${
-                        persona === p.id
-                          ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
-                          : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-                {activePersonaHint ? (
-                  <p className="max-w-md px-0.5 text-xs text-[color:var(--topo-muted)]">
-                    {activePersonaHint}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-            {isOverview && qualityGraphEnabled && releases.length > 0 ? (
-              <label className="flex items-center gap-1.5 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-2 py-1 text-xs text-[color:var(--topo-muted)]">
-                Release
-                <select
-                  className="bg-transparent font-medium text-[color:var(--topo-ink)] outline-none"
-                  aria-label="Release switcher"
-                  value={selectedRelease?.id ?? ""}
-                  onChange={(e) => {
-                    replaceQuery({
-                      releaseId: e.target.value || null,
-                      view: "overview",
-                    });
-                  }}
-                >
-                  {releases.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <Link
-              href={isOverview ? "/cases" : primaryHref}
-              className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
-            >
-              {isOverview ? "Test cases" : primaryLabel}
-            </Link>
-
-          </div>
+              <ListChecksIcon size={14} weight="bold" aria-hidden />
+            ) : pulse.cases.total > 0 ? (
+              <PlayIcon size={14} weight="bold" aria-hidden />
+            ) : (
+              <PlusIcon size={14} weight="bold" aria-hidden />
+            )}
+            {isOverview ? "Test cases" : primaryLabel}
+          </Link>
         }
       />
 
       {isOverview ? (
-        <OverviewDashboard
-          pulse={pulse}
-          milestone={milestone}
-          persona={persona}
-          selectedRelease={selectedRelease}
-        />
+        <>
+          <OverviewToolbar
+            persona={persona}
+            onPersonaChange={setPersona}
+            qualityGraphEnabled={qualityGraphEnabled}
+            releases={releases}
+            selectedRelease={selectedRelease}
+            onReleaseChange={(releaseId) => {
+              replaceQuery({ releaseId, view: "overview" });
+            }}
+          />
+          <OverviewDashboard
+            pulse={pulse}
+            milestone={milestone}
+            persona={persona}
+            selectedRelease={selectedRelease}
+          />
+        </>
       ) : (
         <QaHome pulse={pulse} />
       )}

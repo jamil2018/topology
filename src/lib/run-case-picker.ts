@@ -53,9 +53,17 @@ export function collectCaseTags(cases: PickerCase[]): string[] {
   return [...tags].sort((a, b) => a.localeCompare(b));
 }
 
+/** Lowercased search blob; precompute once per cases array for typing lag. */
+export function caseSearchHaystack(c: PickerCase): string {
+  return [c.title, c.key, c.id, ...(c.tags ?? []), c.folder?.name ?? ""]
+    .join(" ")
+    .toLowerCase();
+}
+
 export function filterPickerCases(
   cases: PickerCase[],
   filters: CasePickerFilters,
+  haystacks?: ReadonlyMap<string, string>,
 ): PickerCase[] {
   const q = filters.search.trim().toLowerCase();
   return cases.filter((c) => {
@@ -70,15 +78,7 @@ export function filterPickerCases(
       if (!(c.tags ?? []).includes(filters.tag)) return false;
     }
     if (!q) return true;
-    const hay = [
-      c.title,
-      c.key,
-      c.id,
-      ...(c.tags ?? []),
-      c.folder?.name ?? "",
-    ]
-      .join(" ")
-      .toLowerCase();
+    const hay = haystacks?.get(c.id) ?? caseSearchHaystack(c);
     return hay.includes(q);
   });
 }
@@ -113,6 +113,7 @@ export function visiblePickerCases(
   cases: PickerCase[],
   filters: CasePickerFilters,
   sort: CasePickerSort,
+  haystacks?: ReadonlyMap<string, string>,
 ): PickerCase[] {
-  return sortPickerCases(filterPickerCases(cases, filters), sort);
+  return sortPickerCases(filterPickerCases(cases, filters, haystacks), sort);
 }

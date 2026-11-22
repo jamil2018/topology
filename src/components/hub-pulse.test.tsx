@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import { HubPulse } from "./hub-pulse";
@@ -85,8 +85,8 @@ describe("HubPulse default QA home", () => {
       "href",
       "/triage",
     );
-    expect(screen.getByRole("button", { name: "My work" })).toHaveAttribute(
-      "aria-pressed",
+    expect(screen.getByRole("tab", { name: "My work" })).toHaveAttribute(
+      "aria-selected",
       "true",
     );
     expect(screen.getByRole("link", { name: "Start run" })).toHaveAttribute(
@@ -143,15 +143,19 @@ describe("HubPulse graph containment", () => {
     const user = userEvent.setup();
     renderHub(false);
 
-    await user.click(screen.getByRole("button", { name: "Overview" }));
+    await user.click(screen.getByRole("tab", { name: "Overview" }));
     expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "EM" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "EM" })).toHaveAttribute(
-      "title",
-      expect.stringContaining("Engineering manager"),
+    expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+      "aria-selected",
+      "true",
     );
+    expect(screen.getByRole("radio", { name: "EM" })).toBeInTheDocument();
     expect(
       screen.getByText(/Show every Overview section without a persona filter/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "EM" }));
+    expect(
+      screen.getByText(/Engineering manager — quality health/),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open Impact" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /HAR-12/i })).not.toBeInTheDocument();
@@ -176,8 +180,12 @@ describe("HubPulse graph containment", () => {
     // First paint matches the server-provided cookie/URL preference.
     expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "My work" }));
+    await user.click(screen.getByRole("tab", { name: "My work" }));
     expect(screen.getByRole("heading", { name: "Home" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "My work" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(window.localStorage.getItem("topology:hub-view:test-project")).toBe(
       "home",
     );
@@ -200,5 +208,80 @@ describe("HubPulse graph containment", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Home" })).toBeInTheDocument();
+  });
+
+  it("keeps the Home view switcher right-aligned and stable across My work and Overview", async () => {
+    const user = userEvent.setup();
+    renderHub(false);
+
+    const tablist = screen.getByRole("tablist", { name: "Home view" });
+    expect(tablist).toBeInTheDocument();
+    expect(tablist.className).toMatch(/border/);
+    expect(
+      within(tablist).getByRole("tab", { name: "My work" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(tablist).getByRole("tab", { name: "Overview" }),
+    ).toBeInTheDocument();
+
+    // Switcher sits in a right-aligned top row above PageHeader.
+    const switcherRow = tablist.parentElement;
+    expect(switcherRow?.className).toMatch(/justify-end/);
+    const heading = screen.getByRole("heading", { name: "Home" });
+    expect(tablist.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(within(tablist).getByRole("tab", { name: "Overview" }));
+
+    const tablistAfter = screen.getByRole("tablist", { name: "Home view" });
+    expect(tablistAfter).toBe(tablist);
+    expect(tablistAfter.parentElement).toBe(switcherRow);
+    expect(
+      within(tablistAfter).getByRole("tab", { name: "Overview" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(tablistAfter).getByRole("tab", { name: "My work" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Overview" }),
+    ).toBeInTheDocument();
+    // Persona controls live in the Overview sub-bar, not the top switcher.
+    expect(
+      within(tablistAfter).queryByRole("radio", { name: "EM" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the release switcher in the Overview sub-bar when the graph has releases", () => {
+    render(
+      <QualityGraphProvider
+        workspaceId="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        initialEnabled={true}
+      >
+        <HubPulse
+          pulse={pulse}
+          milestone={null}
+          initialView="overview"
+          releases={[
+            { id: "rel-1", name: "1.0.0", gitTag: null, sha: null },
+            { id: "rel-2", name: "1.1.0", gitTag: null, sha: null },
+          ]}
+          selectedReleaseId="rel-1"
+        />
+      </QualityGraphProvider>,
+    );
+
+    expect(
+      screen.getByRole("radiogroup", { name: "Overview persona" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "EM" })).toBeInTheDocument();
+    // HeroUI Select accessible name includes value + aria-label + field label.
+    const release = screen.getByRole("button", { name: /Release switcher/ });
+    expect(release).toHaveAttribute("aria-label", "Release switcher");
+    expect(release).toHaveTextContent("1.0.0");
+
+    const homeTabs = screen.getByRole("tablist", { name: "Home view" });
+    expect(
+      within(homeTabs).queryByRole("button", { name: /Release switcher/ }),
+    ).not.toBeInTheDocument();
+    expect(within(homeTabs).queryByRole("radio", { name: "EM" })).not.toBeInTheDocument();
   });
 });

@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Button, Input } from "@heroui/react";
+import { TopoCheckbox } from "./ui/topo-checkbox";
 import { StatusChip } from "./status-chip";
+import { TopoSelect } from "./ui/topo-select";
 import { useMutationFeedback } from "./use-mutation-feedback";
 import { useProjectActions } from "./project-actions";
 
@@ -282,25 +284,23 @@ export function NotificationChannelsPanel() {
           </p>
           <div className="flex flex-wrap items-end gap-2">
             {!editingId ? (
-              <label className="w-36 space-y-1">
-                <span className="font-medium text-xs text-[color:var(--topo-muted)]">
-                  Kind
-                </span>
-                <select
-                  value={draft.kind}
-                  onChange={(e) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      kind: e.target.value as ChannelKind,
-                    }))
-                  }
-                  className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm accent-[color:var(--topo-accent)]"
-                >
-                  <option value="slack">Slack</option>
-                  <option value="teams">Teams</option>
-                  <option value="smtp">SMTP</option>
-                </select>
-              </label>
+              <TopoSelect
+                label="Kind"
+                className="w-36"
+                value={draft.kind}
+                onChange={(value) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    kind: value as ChannelKind,
+                  }))
+                }
+                options={[
+                  { id: "slack", label: "Slack" },
+                  { id: "teams", label: "Teams" },
+                  { id: "smtp", label: "SMTP" },
+                ]}
+                compact
+              />
             ) : null}
             <label className="min-w-[12rem] flex-1 space-y-1">
               <span className="font-medium text-xs text-[color:var(--topo-muted)]">
@@ -408,19 +408,19 @@ export function NotificationChannelsPanel() {
                   placeholder={editingId ? "leave blank to keep" : "optional"}
                 />
               </label>
-              <label className="flex items-center gap-2 text-xs sm:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={draft.secure}
-                  onChange={(e) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      secure: e.target.checked,
-                    }))
-                  }
-                />
+              <TopoCheckbox
+                className="sm:col-span-2"
+                compact
+                isSelected={draft.secure}
+                onChange={(isSelected) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    secure: isSelected,
+                  }))
+                }
+              >
                 Use TLS from connect (port 465)
-              </label>
+              </TopoCheckbox>
             </div>
           )}
 
@@ -430,17 +430,15 @@ export function NotificationChannelsPanel() {
             </legend>
             <div className="flex flex-wrap gap-3">
               {CHANNEL_EVENTS.map((event) => (
-                <label
+                <TopoCheckbox
                   key={event}
-                  className="flex items-center gap-1.5 text-xs font-mono"
+                  compact
+                  className="font-mono text-xs"
+                  isSelected={draft.events.has(event)}
+                  onChange={() => toggleDraftEvent(event)}
                 >
-                  <input
-                    type="checkbox"
-                    checked={draft.events.has(event)}
-                    onChange={() => toggleDraftEvent(event)}
-                  />
                   {event}
-                </label>
+                </TopoCheckbox>
               ))}
             </div>
           </fieldset>

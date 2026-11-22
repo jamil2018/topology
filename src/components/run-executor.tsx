@@ -4,12 +4,14 @@ import { useRunResume } from "./use-run-resume";
 import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
-import { Button, Modal, useOverlayState } from "@heroui/react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
+import { Button, Dropdown, Modal, useOverlayState } from "@heroui/react";
+import { useRouter } from "next/navigation";
 import {
   ArrowCounterClockwiseIcon,
   ArrowsClockwiseIcon,
   CheckIcon,
+  DotsThreeIcon,
   PlayIcon,
   StopIcon,
 } from "@phosphor-icons/react";
@@ -23,11 +25,13 @@ import { useLiveUpdates } from "./use-live-updates";
 import { RunCaseDetail } from "./run-case-detail";
 import { RunCaseList } from "./run-case-list";
 import { RunProgressBar } from "./run-progress-bar";
+import { TopoSelect } from "./ui/topo-select";
 import {
   applyAttachmentToRun,
   applyCommentToRun,
   applyIssueToRun,
   applyRunAction,
+  countResultStatuses,
   filterRunResults,
   initialFocusId,
   neighborId,
@@ -71,6 +75,7 @@ export function RunExecutor({
     ? availableProviders
     : [defaultProvider];
   const { can, projectId, userId } = useProjectActions();
+  const router = useRouter();
   const mutationQueue = useRef<Promise<boolean>>(Promise.resolve(true));
   const mutationVersion = useRef(0);
   const failedNoteSaves = useRef(new Set<string>());
@@ -82,6 +87,7 @@ export function RunExecutor({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [mineOnly, setMineOnly] = useState(false);
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   useRunResume(`topology:run:${userId}:${projectId}:${run.id}`, run.results.map((result) => result.id), { focusedId, statusFilter, mineOnly, query }, (saved) => {
     if (saved.focusedId !== undefined) setFocusedId(saved.focusedId);
@@ -136,15 +142,28 @@ export function RunExecutor({
   const showRetestInMore =
     Boolean(retestHref) && can("runs.create") && !showRetestInHeader;
 
+  const statusCounts = useMemo(
+    () => countResultStatuses(optimisticRun.results),
+    [optimisticRun.results],
+  );
+  const mineCount = useMemo(
+    () =>
+      currentUserId
+        ? optimisticRun.results.filter((row) => row.assigneeId === currentUserId)
+            .length
+        : 0,
+    [optimisticRun.results, currentUserId],
+  );
+
   const filtered = useMemo(
     () =>
       filterRunResults(optimisticRun.results, {
         status: statusFilter,
         mine: mineOnly,
-        query,
+        query: deferredQuery,
         currentUserId,
       }),
-    [optimisticRun.results, statusFilter, mineOnly, query, currentUserId],
+    [optimisticRun.results, statusFilter, mineOnly, deferredQuery, currentUserId],
   );
 
   const focusedResult =
@@ -164,14 +183,14 @@ export function RunExecutor({
         filterRunResults(results, {
           status: statusFilter,
           mine: mineOnly,
-          query,
+          query: deferredQuery,
           currentUserId,
         }),
         fromId,
       );
       if (nextId) setFocusedId(nextId);
     },
-    [statusFilter, mineOnly, query, currentUserId],
+    [statusFilter, mineOnly, deferredQuery, currentUserId],
   );
 
   const onLive = useCallback(
@@ -469,10 +488,19 @@ export function RunExecutor({
   useShortcut(
     "assign",
     useCallback(() => {
-      const root = document.querySelector<HTMLSelectElement>(
-        `[data-result-id="${focusedResult?.id ?? ""}"] select[data-assign]`,
+      const root = document.querySelector<HTMLElement>(
+        `[data-result-id="${focusedResult?.id ?? ""}"] [data-assign]`,
       );
       root?.focus();
+      if (root instanceof HTMLSelectElement) {
+        try {
+          root.showPicker?.();
+        } catch {
+          /* Keyboard arrows remain available. */
+        }
+      } else {
+        root?.click();
+      }
     }, [focusedResult?.id]),
   );
 
@@ -625,10 +653,188 @@ export function RunExecutor({
     }
   }
 
-  function selectCase(resultId: string) {
+  const actionsRef = useRef({
+    patch,
+    recordStatus,
+    persistResultStatus,
+    postComment,
+    uploadFile,
+    issueAction,
+    bulkUpdateResults,
+    can,
+    notesDraft,
+    frozen,
+    runStateId: runState.id,
+  });
+  useEffect(() => {
+    actionsRef.current = {
+      patch,
+      recordStatus,
+      persistResultStatus,
+      postComment,
+      uploadFile,
+      issueAction,
+      bulkUpdateResults,
+      can,
+      notesDraft,
+      frozen,
+      runStateId: runState.id,
+    };
+  });
+
+  const selectCase = useCallback((resultId: string) => {
     setFocusedId(resultId);
     setDetailOpen(true);
-  }
+  }, []);
+
+  const onToggleSelected = useCallback((resultId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(resultId)) next.delete(resultId);
+      else next.add(resultId);
+      return next;
+    });
+  }, []);
+
+  const onSelectFiltered = useCallback(() => {
+    setSelectedIds(new Set(filtered.map((row) => row.id)));
+  }, [filtered]);
+
+  const onClearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const onBulkStatus = useCallback((status: string) => {
+    void actionsRef.current.bulkUpdateResults({ status });
+  }, []);
+
+  const onBulkAssignee = useCallback((assigneeId: string | null) => {
+    void actionsRef.current.bulkUpdateResults({ assigneeId });
+  }, []);
+
+  const onDetailBack = useCallback(() => setDetailOpen(false), []);
+
+  const onRecordStatus = useCallback(
+    (status: string, durationMs?: number) => {
+      if (!focusedResult) return;
+      void actionsRef.current.recordStatus(focusedResult, status, durationMs);
+    },
+    [focusedResult],
+  );
+
+  const onStepStatus = useCallback(
+    (position: number, status: string) => {
+      if (!focusedResult || !actionsRef.current.can("runs.edit")) return;
+      const rolled = rollupStepStatuses(
+        (focusedResult.stepResults ?? []).map((step) =>
+          step.position === position ? status : step.status,
+        ),
+      );
+      void actionsRef.current.persistResultStatus(
+        focusedResult,
+        {
+          type: "result",
+          resultId: focusedResult.id,
+          step: { position, status },
+          status: rolled,
+        },
+        {
+          caseId: focusedResult.case.id,
+          resultId: focusedResult.id,
+          stepResults: [{ position, status }],
+          notes:
+            actionsRef.current.notesDraft[focusedResult.id] ??
+            focusedResult.notes,
+        },
+      );
+    },
+    [focusedResult],
+  );
+
+  const onAssign = useCallback(
+    (assigneeId: string | null) => {
+      if (!focusedResult) return;
+      void actionsRef.current.patch(
+        {
+          action: "assign_result",
+          resultId: focusedResult.id,
+          assigneeId,
+        },
+        {
+          type: "result",
+          resultId: focusedResult.id,
+          assigneeId,
+        },
+      );
+    },
+    [focusedResult],
+  );
+
+  const onNotesChange = useCallback(
+    (value: string) => {
+      if (!focusedResult) return;
+      setNotesDraft((prev) => ({ ...prev, [focusedResult.id]: value }));
+    },
+    [focusedResult],
+  );
+
+  const onNotesBlur = useCallback(() => {
+    if (!focusedResult || actionsRef.current.frozen) return;
+    const next =
+      actionsRef.current.notesDraft[focusedResult.id] ?? "";
+    if (next === focusedResult.notes) {
+      failedNoteSaves.current.delete(
+        `${actionsRef.current.runStateId}:${focusedResult.id}`,
+      );
+      return;
+    }
+    void actionsRef.current.patch(
+      {
+        caseId: focusedResult.case.id,
+        resultId: focusedResult.id,
+        status: focusedResult.status,
+        notes: next,
+      },
+      { type: "result", resultId: focusedResult.id, notes: next },
+      true,
+    );
+  }, [focusedResult]);
+
+  const onCommentDraftChange = useCallback(
+    (value: string) => {
+      if (!focusedResult) return;
+      setCommentDraft((prev) => ({
+        ...prev,
+        [focusedResult.id]: value,
+      }));
+    },
+    [focusedResult],
+  );
+
+  const onComment = useCallback(() => {
+    if (focusedResult) void actionsRef.current.postComment(focusedResult.id);
+  }, [focusedResult]);
+
+  const onUpload = useCallback(
+    (file: File | null) => {
+      if (focusedResult) void actionsRef.current.uploadFile(focusedResult.id, file);
+    },
+    [focusedResult],
+  );
+
+  const onLinkKeyChange = useCallback(
+    (value: string) => {
+      if (!focusedResult) return;
+      setLinkKey((prev) => ({ ...prev, [focusedResult.id]: value }));
+    },
+    [focusedResult],
+  );
+
+  const onIssueAction = useCallback((body: Record<string, unknown>) => {
+    void actionsRef.current.issueAction(body);
+  }, []);
+
+  const onTimerReader = useCallback((readMs: () => number) => {
+    readTimerMs.current = readMs;
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -693,47 +899,61 @@ export function RunExecutor({
               </Link>
             ) : null}
             {!frozen || canReopen || showRetestInMore ? (
-              <details className="relative self-center text-sm">
-                <summary className="cursor-pointer rounded-md border border-[color:var(--topo-line)] px-3 py-2">
+              <Dropdown.Root>
+                <Dropdown.Trigger className="button button--sm button--secondary inline-flex items-center gap-1.5 self-center">
+                  <DotsThreeIcon size={14} weight="bold" aria-hidden />
                   More actions
-                </summary>
-                <div className="absolute right-0 z-10 mt-1 flex min-w-[10rem] flex-col gap-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-1 shadow-md">
-                  {showRetestInMore && retestHref ? (
-                    <Link
-                      href={retestHref}
-                      className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-chip)]"
-                    >
-                      <ArrowsClockwiseIcon size={14} weight="bold" aria-hidden />
-                      Retest {failureResults.length}{" "}
-                      {failureResults.length === 1 ? "failure" : "failures"}
-                    </Link>
-                  ) : null}
-                  {!frozen ? (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      className="gap-1.5 justify-start"
-                      isDisabled={pending || !can("runs.delete")}
-                      onPress={() => abortModal.open()}
-                    >
-                      <StopIcon size={14} weight="bold" aria-hidden />
-                      Abort run
-                    </Button>
-                  ) : null}
-                  {canReopen ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="gap-1.5 justify-start"
-                      isDisabled={pending || !can("runs.complete")}
-                      onPress={() => reopenModal.open()}
-                    >
-                      <ArrowCounterClockwiseIcon size={14} weight="bold" aria-hidden />
-                      Reopen run
-                    </Button>
-                  ) : null}
-                </div>
-              </details>
+                </Dropdown.Trigger>
+                <Dropdown.Popover placement="bottom end" className="min-w-[12rem]">
+                  <Dropdown.Menu
+                    aria-label="More run actions"
+                    onAction={(key) => {
+                      if (key === "retest" && retestHref) {
+                        router.push(retestHref);
+                      } else if (key === "abort") {
+                        abortModal.open();
+                      } else if (key === "reopen") {
+                        reopenModal.open();
+                      }
+                    }}
+                  >
+                    {showRetestInMore && retestHref ? (
+                      <Dropdown.Item
+                        id="retest"
+                        textValue={`Retest ${failureResults.length} ${failureResults.length === 1 ? "failure" : "failures"}`}
+                        className="gap-2"
+                      >
+                        <ArrowsClockwiseIcon size={14} weight="bold" aria-hidden />
+                        Retest {failureResults.length}{" "}
+                        {failureResults.length === 1 ? "failure" : "failures"}
+                      </Dropdown.Item>
+                    ) : null}
+                    {!frozen ? (
+                      <Dropdown.Item
+                        id="abort"
+                        textValue="Abort run"
+                        variant="danger"
+                        className="gap-2"
+                        isDisabled={pending || !can("runs.delete")}
+                      >
+                        <StopIcon size={14} weight="bold" aria-hidden />
+                        Abort run
+                      </Dropdown.Item>
+                    ) : null}
+                    {canReopen ? (
+                      <Dropdown.Item
+                        id="reopen"
+                        textValue="Reopen run"
+                        className="gap-2"
+                        isDisabled={pending || !can("runs.complete")}
+                      >
+                        <ArrowCounterClockwiseIcon size={14} weight="bold" aria-hidden />
+                        Reopen run
+                      </Dropdown.Item>
+                    ) : null}
+                  </Dropdown.Menu>
+                </Dropdown.Popover>
+              </Dropdown.Root>
             ) : null}
             {optimisticRun.status === "completed" ? (
               <Link
@@ -766,32 +986,42 @@ export function RunExecutor({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 text-xs">
-        <label htmlFor="run-assignee" className="text-[color:var(--topo-muted)]">Run assignee</label>
-        <select
-          id="run-assignee"
-          className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-[color:var(--topo-ink)] accent-[color:var(--topo-accent)]"
+        <TopoSelect
+          label="Run assignee"
+          ariaLabel="Run assignee"
+          name="run-assignee"
+          className="w-48"
           value={optimisticRun.assigneeId ?? ""}
-          disabled={pending || !can("runs.edit")}
-          onChange={(e) =>
+          isDisabled={pending || !can("runs.edit")}
+          onChange={(value) =>
             void patch(
               {
                 action: "assign",
-                assigneeId: e.target.value || null,
+                assigneeId: value || null,
               },
-              { type: "run", assigneeId: e.target.value || null },
+              { type: "run", assigneeId: value || null },
             )
           }
-        >
-          <option value="">Unassigned</option>
-          {members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name ?? member.email}
-            </option>
-          ))}
-        </select>
+          options={[
+            { id: "", label: "Unassigned" },
+            ...members.map((member) => ({
+              id: member.id,
+              label: member.name ?? member.email,
+            })),
+          ]}
+          compact
+        />
       </div>
 
-      <RunProgressBar results={optimisticRun.results} />
+      <RunProgressBar
+        labeled
+        passed={statusCounts.passed}
+        failed={statusCounts.failed}
+        skipped={statusCounts.skipped}
+        blocked={statusCounts.blocked}
+        untested={statusCounts.untested}
+        total={optimisticRun.results.length}
+      />
       {liveStatus !== "live" ? <p role="status" className="text-xs text-[color:var(--topo-muted)]">{liveStatus === "reconnecting" ? "Reconnecting — results may be out of date" : "Connecting to live updates…"}</p> : null}
 
       {statusRetry ? (
@@ -800,20 +1030,20 @@ export function RunExecutor({
           className="flex flex-wrap items-center gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300"
         >
           <span>{statusRetry.message}</span>
-          <button
+          <Button
             type="button"
             className="rounded-md border border-red-500/40 px-2 py-0.5 text-xs font-medium hover:bg-red-500/10"
-            onClick={() => void retryFailedStatus()}
+            onPress={() => void retryFailedStatus()}
           >
             Retry
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             className="text-xs underline-offset-2 hover:underline"
-            onClick={() => setStatusRetry(null)}
+            onPress={() => setStatusRetry(null)}
           >
             Dismiss
-          </button>
+          </Button>
         </p>
       ) : null}
 
@@ -823,8 +1053,8 @@ export function RunExecutor({
 
       <div className="grid h-[min(44rem,calc(100dvh-13rem))] min-h-[20rem] overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] md:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]">
         <aside
-          className={`min-h-0 flex-col border-[color:var(--topo-line)] md:flex md:border-r ${
-            detailOpen ? "hidden" : "flex"
+          className={`min-h-0 overflow-hidden border-[color:var(--topo-line)] md:flex md:flex-col md:border-r ${
+            detailOpen ? "hidden" : "flex flex-col"
           }`}
         >
           <RunCaseList
@@ -836,6 +1066,8 @@ export function RunExecutor({
             mineOnly={mineOnly}
             query={query}
             currentUserId={currentUserId}
+            statusCounts={statusCounts}
+            mineCount={mineCount}
             selectedIds={selectedIds}
             selectionEnabled={!frozen && can("runs.edit")}
             bulkPending={pending}
@@ -843,28 +1075,17 @@ export function RunExecutor({
             onMineOnly={setMineOnly}
             onQueryChange={setQuery}
             onSelect={selectCase}
-            onToggleSelected={(resultId) => {
-              setSelectedIds((prev) => {
-                const next = new Set(prev);
-                if (next.has(resultId)) next.delete(resultId);
-                else next.add(resultId);
-                return next;
-              });
-            }}
-            onSelectFiltered={() => {
-              setSelectedIds(new Set(filtered.map((row) => row.id)));
-            }}
-            onClearSelection={() => setSelectedIds(new Set())}
-            onBulkStatus={(status) => {
-              void bulkUpdateResults({ status });
-            }}
-            onBulkAssignee={(assigneeId) => {
-              void bulkUpdateResults({ assigneeId });
-            }}
+            onToggleSelected={onToggleSelected}
+            onSelectFiltered={onSelectFiltered}
+            onClearSelection={onClearSelection}
+            onBulkStatus={onBulkStatus}
+            onBulkAssignee={onBulkAssignee}
           />
         </aside>
         <section
-          className={`min-h-0 flex-col md:flex ${detailOpen ? "flex" : "hidden"}`}
+          className={`min-h-0 overflow-hidden md:flex md:flex-col ${
+            detailOpen ? "flex flex-col" : "hidden"
+          }`}
         >
           <RunCaseDetail
             result={focusedResult}
@@ -887,93 +1108,18 @@ export function RunExecutor({
             runName={optimisticRun.name}
             runId={optimisticRun.id}
             environment={optimisticRun.environment}
-            onBack={() => setDetailOpen(false)}
-            onRecordStatus={(status, durationMs) => {
-              if (focusedResult) recordStatus(focusedResult, status, durationMs);
-            }}
-            onStepStatus={(position, status) => {
-              if (!focusedResult || !can("runs.edit")) return;
-              const steps = focusedResult.stepResults ?? [];
-              const nextSteps = steps.map((step) =>
-                step.position === position ? { ...step, status } : step,
-              );
-              const rolled = rollupStepStatuses(
-                nextSteps.map((step) => step.status),
-              );
-              void persistResultStatus(
-                focusedResult,
-                {
-                  type: "result",
-                  resultId: focusedResult.id,
-                  step: { position, status },
-                  status: rolled,
-                },
-                {
-                  caseId: focusedResult.case.id,
-                  resultId: focusedResult.id,
-                  stepResults: [{ position, status }],
-                  notes: notesDraft[focusedResult.id] ?? focusedResult.notes,
-                },
-              );
-            }}
-            onAssign={(assigneeId) => {
-              if (!focusedResult) return;
-              void patch(
-                {
-                  action: "assign_result",
-                  resultId: focusedResult.id,
-                  assigneeId,
-                },
-                {
-                  type: "result",
-                  resultId: focusedResult.id,
-                  assigneeId,
-                },
-              );
-            }}
-            onNotesChange={(value) => {
-              if (!focusedResult) return;
-              setNotesDraft((prev) => ({ ...prev, [focusedResult.id]: value }));
-            }}
-            onNotesBlur={() => {
-              if (!focusedResult || frozen) return;
-              const next = notesDraft[focusedResult.id] ?? "";
-              if (next === focusedResult.notes) {
-                failedNoteSaves.current.delete(`${runState.id}:${focusedResult.id}`);
-                return;
-              }
-              void patch(
-                {
-                  caseId: focusedResult.case.id,
-                  resultId: focusedResult.id,
-                  status: focusedResult.status,
-                  notes: next,
-                },
-                { type: "result", resultId: focusedResult.id, notes: next },
-                true,
-              );
-            }}
-            onCommentDraftChange={(value) => {
-              if (!focusedResult) return;
-              setCommentDraft((prev) => ({
-                ...prev,
-                [focusedResult.id]: value,
-              }));
-            }}
-            onComment={() => {
-              if (focusedResult) void postComment(focusedResult.id);
-            }}
-            onUpload={(file) => {
-              if (focusedResult) void uploadFile(focusedResult.id, file);
-            }}
-            onLinkKeyChange={(value) => {
-              if (!focusedResult) return;
-              setLinkKey((prev) => ({ ...prev, [focusedResult.id]: value }));
-            }}
-            onIssueAction={(body) => void issueAction(body)}
-            onTimerReader={(readMs) => {
-              readTimerMs.current = readMs;
-            }}
+            onBack={onDetailBack}
+            onRecordStatus={onRecordStatus}
+            onStepStatus={onStepStatus}
+            onAssign={onAssign}
+            onNotesChange={onNotesChange}
+            onNotesBlur={onNotesBlur}
+            onCommentDraftChange={onCommentDraftChange}
+            onComment={onComment}
+            onUpload={onUpload}
+            onLinkKeyChange={onLinkKeyChange}
+            onIssueAction={onIssueAction}
+            onTimerReader={onTimerReader}
           />
         </section>
       </div>

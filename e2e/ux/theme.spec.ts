@@ -11,8 +11,8 @@ async function chooseTheme(page: Page, mode: "Light" | "Dark" | "System") {
     return body.includes(`"${mode.toLowerCase()}"`);
   });
   await page
-    .getByRole("group", { name: "Color theme" })
-    .getByRole("button", { name: `${mode} theme` })
+    .getByRole("radiogroup", { name: "Color theme" })
+    .getByRole("radio", { name: `${mode} theme` })
     .click();
   expect((await saved).ok()).toBeTruthy();
 }
@@ -29,28 +29,28 @@ test("theme toggle cycles light and dark and persists", async ({ page }) => {
   await settingsLoaded;
 
   const root = page.locator("html");
-  const group = page.getByRole("group", { name: "Color theme" });
+  const group = page.getByRole("radiogroup", { name: "Color theme" });
   await expect(group).toBeVisible();
 
   await chooseTheme(page, "Light");
   await expect(root).toHaveAttribute("data-theme", "light");
   await expect(root).not.toHaveClass(/\bdark\b/);
-  await expect(group.getByRole("button", { name: "Light theme" })).toHaveAttribute(
-    "aria-pressed",
+  await expect(group.getByRole("radio", { name: "Light theme" })).toHaveAttribute(
+    "aria-checked",
     "true",
   );
 
   await chooseTheme(page, "Dark");
   await expect(root).toHaveAttribute("data-theme", "dark");
   await expect(root).toHaveClass(/\bdark\b/);
-  await expect(group.getByRole("button", { name: "Dark theme" })).toHaveAttribute(
-    "aria-pressed",
+  await expect(group.getByRole("radio", { name: "Dark theme" })).toHaveAttribute(
+    "aria-checked",
     "true",
   );
 
   await chooseTheme(page, "System");
-  await expect(group.getByRole("button", { name: "System theme" })).toHaveAttribute(
-    "aria-pressed",
+  await expect(group.getByRole("radio", { name: "System theme" })).toHaveAttribute(
+    "aria-checked",
     "true",
   );
   await expect(root).toHaveAttribute("data-theme", /^(light|dark)$/);

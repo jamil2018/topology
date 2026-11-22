@@ -52,4 +52,21 @@ describe("run context continuity", () => {
     const { result } = renderHook(() => useHarness("topology:run:other:other:run"));
     expect(result.current.context.focusedId).toBe("first");
   });
+  it("debounces query-only updates with replaceState", async () => {
+    const { result } = renderHook(() => useHarness());
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("result")).toBe("first"));
+    const replaceSpy = vi.spyOn(window.history, "replaceState");
+    const pushSpy = vi.spyOn(window.history, "pushState");
+    vi.useFakeTimers();
+    act(() => result.current.setContext((current) => ({ ...current, query: "pay" })));
+    expect(pushSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(pushSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).toHaveBeenCalled();
+    expect(new URLSearchParams(window.location.search).get("q")).toBe("pay");
+    vi.useRealTimers();
+  });
 });

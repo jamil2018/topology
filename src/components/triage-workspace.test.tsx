@@ -98,16 +98,19 @@ describe("TriageWorkspace signature clusters", () => {
     // Collapsed cluster hides member case keys until expanded
     expect(screen.queryByText("TOP-2")).not.toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", {
-        name: /2 failures · payment iframe timeout after 1000ms/i,
-      }),
-    );
+    const clusterToggle = screen.getByRole("button", {
+      name: /2 failures · payment iframe timeout after 1000ms/i,
+    });
+    // Ghost toggle — solid primary accent would wash out ink/muted body text
+    expect(clusterToggle.className).not.toMatch(/button--primary|bg-\[color:var\(--topo-accent\)\]/);
+
+    await user.click(clusterToggle);
 
     expect(screen.getByText("TOP-1")).toBeInTheDocument();
     expect(screen.getByText("TOP-2")).toBeInTheDocument();
     // Singleton remains visible without a cluster chrome row
     expect(screen.getByText("TOP-3")).toBeInTheDocument();
+    expect(clusterToggle.closest(".topo-selected-surface")).toBeTruthy();
   });
 
   it("clamps long failure text until expanded", async () => {
@@ -199,10 +202,7 @@ describe("TriageWorkspace signature clusters", () => {
 
     const resolveButtons = screen.getAllByRole("button", { name: /^Resolve$/i });
     await user.click(resolveButtons[resolveButtons.length - 1]!);
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: /Resolution outcome/i }),
-      "wont_fix",
-    );
+    // Default resolution is already "Won't fix"; confirm without re-selecting.
     await user.click(screen.getByRole("button", { name: /Confirm resolve/i }));
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -236,10 +236,10 @@ describe("TriageWorkspace signature clusters", () => {
 
     await user.click(screen.getByRole("button", { name: /^Resolve$/i }));
     expect(fetchMock).not.toHaveBeenCalled();
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: /Resolution outcome/i }),
-      "duplicate",
+    await user.click(
+      screen.getByRole("button", { name: /Resolution outcome/i }),
     );
+    await user.click(await screen.findByRole("option", { name: "Duplicate" }));
     await user.click(screen.getByRole("button", { name: /Confirm resolve/i }));
 
     expect(fetchMock).toHaveBeenCalledWith(

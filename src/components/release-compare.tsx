@@ -6,6 +6,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Button } from "@heroui/react";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
+import { TopoSelect } from "./ui/topo-select";
 
 type ReleaseOption = { id: string; name: string };
 
@@ -144,34 +145,22 @@ export function ReleaseCompare({
       ) : (
         <>
           <div className="flex flex-wrap items-end gap-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-            <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
-              Before
-              <select
-                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
-                value={beforeId}
-                onChange={(e) => setBeforeId(e.target.value)}
-              >
-                {releases.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
-              After
-              <select
-                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
-                value={afterId}
-                onChange={(e) => setAfterId(e.target.value)}
-              >
-                {releases.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <TopoSelect
+              label="Before"
+              className="min-w-[12rem]"
+              value={beforeId}
+              onChange={setBeforeId}
+              options={releases.map((r) => ({ id: r.id, label: r.name }))}
+              compact
+            />
+            <TopoSelect
+              label="After"
+              className="min-w-[12rem]"
+              value={afterId}
+              onChange={setAfterId}
+              options={releases.map((r) => ({ id: r.id, label: r.name }))}
+              compact
+            />
             <Button
               isDisabled={pending}
               onPress={() => void runCompare(beforeId, afterId)}

@@ -4,7 +4,7 @@ import { useProjectActions } from "./project-actions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
-import { Button } from "@heroui/react";
+import { Button, Input, Label, TextField } from "@heroui/react";
 import {
   ArrowLeftIcon,
   FileArrowUpIcon,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/import/types";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
+import { TopoSelect } from "./ui/topo-select";
 
 const PROVIDER_LABEL: Record<ImportProvider, string> = {
   testrail: "TestRail",
@@ -324,10 +325,10 @@ export function ImportWorkspace() {
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-xs text-[color:var(--topo-muted)]">
-              Base URL
-              <input
-                className="block w-full rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
+            <TextField name="import-base-url" className="w-full" variant="secondary">
+              <Label className="text-xs text-[color:var(--topo-muted)]">Base URL</Label>
+              <Input
+                className="w-full"
                 value={api.baseUrl}
                 onChange={(e) =>
                   setApi((prev) => ({ ...prev, baseUrl: e.target.value }))
@@ -340,42 +341,44 @@ export function ImportWorkspace() {
                       : "https://api.zephyrscale.smartbear.com/v2"
                 }
               />
-            </label>
+            </TextField>
             {provider === "testrail" ? (
-              <label className="space-y-1 text-xs text-[color:var(--topo-muted)]">
-                Email
-                <input
-                  className="block w-full rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
+              <TextField name="import-email" className="w-full" variant="secondary">
+                <Label className="text-xs text-[color:var(--topo-muted)]">Email</Label>
+                <Input
+                  className="w-full"
                   value={api.email}
                   onChange={(e) =>
                     setApi((prev) => ({ ...prev, email: e.target.value }))
                   }
                   autoComplete="off"
                 />
-              </label>
+              </TextField>
             ) : null}
-            <label className="space-y-1 text-xs text-[color:var(--topo-muted)]">
-              API token
-              <input
+            <TextField name="import-token" className="w-full" variant="secondary" type="password">
+              <Label className="text-xs text-[color:var(--topo-muted)]">API token</Label>
+              <Input
                 type="password"
-                className="block w-full rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
+                className="w-full"
                 value={api.token}
                 onChange={(e) =>
                   setApi((prev) => ({ ...prev, token: e.target.value }))
                 }
                 autoComplete="off"
               />
-            </label>
-            <label className="space-y-1 text-xs text-[color:var(--topo-muted)]">
-              {provider === "testrail" ? "Project id" : "Project key"}
-              <input
-                className="block w-full rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
+            </TextField>
+            <TextField name="import-project" className="w-full" variant="secondary">
+              <Label className="text-xs text-[color:var(--topo-muted)]">
+                {provider === "testrail" ? "Project id" : "Project key"}
+              </Label>
+              <Input
+                className="w-full"
                 value={api.project}
                 onChange={(e) =>
                   setApi((prev) => ({ ...prev, project: e.target.value }))
                 }
               />
-            </label>
+            </TextField>
             <p className="sm:col-span-2 text-xs text-[color:var(--topo-muted)]">
               Credentials are used for this request only and are not stored.
               Local and private URLs are blocked.
@@ -426,24 +429,25 @@ export function ImportWorkspace() {
                       {field === "title" ? " *" : ""}
                     </td>
                     <td className="px-3 py-1.5">
-                      <select
-                        aria-label={`Map ${FIELD_LABEL[field]}`}
-                        className="w-full rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-paper)] px-2 py-1 text-sm"
-                        value={mapping[field] ?? ""}
-                        onChange={(event) =>
+                      <TopoSelect
+                        ariaLabel={`Map ${FIELD_LABEL[field]}`}
+                        className="w-full"
+                        value={mapping[field] || "__skip__"}
+                        onChange={(value) =>
                           setMapping((prev) => ({
                             ...prev,
-                            [field]: event.target.value,
+                            [field]: value === "__skip__" ? "" : value,
                           }))
                         }
-                      >
-                        <option value="">— skip —</option>
-                        {sourceFields.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          { id: "__skip__", label: "— skip —" },
+                          ...sourceFields.map((name) => ({
+                            id: name,
+                            label: name,
+                          })),
+                        ]}
+                        compact
+                      />
                     </td>
                   </tr>
                 ))}

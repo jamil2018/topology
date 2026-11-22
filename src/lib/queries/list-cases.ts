@@ -310,3 +310,53 @@ export async function listCases(
   const page = await listCasesPage(workspaceId, query);
   return isQuery ? page : page.items;
 }
+
+/** Lean case rows for Start Run picker — no description/steps/intent payload. */
+export type PickerListedCase = {
+  id: string;
+  key: string;
+  title: string;
+  priority: ListedCase["priority"];
+  status: ListedCase["status"];
+  tags: string[];
+  folder: { id: string; name: string } | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export async function listPickerCases(
+  workspaceId: string,
+): Promise<PickerListedCase[]> {
+  const rows = await db
+    .select({
+      id: cases.id,
+      key: cases.key,
+      title: cases.title,
+      priority: cases.priority,
+      status: cases.status,
+      tags: cases.tags,
+      createdAt: cases.createdAt,
+      updatedAt: cases.updatedAt,
+      folderId: folders.id,
+      folderName: folders.name,
+    })
+    .from(cases)
+    .leftJoin(folders, eq(cases.folderId, folders.id))
+    .where(eq(cases.workspaceId, workspaceId))
+    .orderBy(asc(cases.key), asc(cases.id));
+
+  return rows.map((row) => ({
+    id: row.id,
+    key: row.key,
+    title: row.title,
+    priority: row.priority,
+    status: row.status,
+    tags: row.tags ?? [],
+    folder:
+      row.folderId && row.folderName
+        ? { id: row.folderId, name: row.folderName }
+        : null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }));
+}

@@ -3,13 +3,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Modal } from "@heroui/react";
 import { BellIcon } from "@phosphor-icons/react";
+import { abortCleanup, isAbortError } from "@/lib/abort";
 import { useProjectActions } from "./project-actions";
+import { NotificationListSkeleton } from "./skeletons";
 
 const REFRESH_MS = 45_000;
-
-function isAbortError(error: unknown) {
-  return typeof error === "object" && error !== null && "name" in error && (error as { name: string }).name === "AbortError";
-}
 
 type Item = { id: string; title: string; body: string; readAt: string | null; href: string | null; openHref?: string | null };
 export function NotificationsBell() {
@@ -42,13 +40,14 @@ export function NotificationsBell() {
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
-    void load(controller.signal).catch(() => {
+    void load(controller.signal).catch((error) => {
       // Swallow AbortError if it escapes load (race with cleanup).
-      if (cancelled || controller.signal.aborted) return;
+      if (cancelled || controller.signal.aborted || isAbortError(error)) return;
     });
     return () => {
       cancelled = true;
-      controller.abort();
+      // Empty-message AbortError DOMException — never abort("string") (Next overlays reasons).
+      abortCleanup(controller);
     };
   }, [load]);
 
@@ -156,10 +155,16 @@ export function NotificationsBell() {
             </Button>
           ) : null}
         </div>
-        {error ? <p role="alert" className="topo-feedback">{error}<button onClick={() => void load()}>Retry</button></p> : null}
-        {loading ? <p role="status">Loading notifications…</p> : null}
+        {error ? <p role="alert" className="topo-feedback">{error}<Button variant="ghost" size="sm" onPress={() => void load()}>Retry</Button></p> : null}
+        {loading ? (
+          <div role="status" aria-busy="true" aria-label="Loading notifications">
+            <NotificationListSkeleton />
+          </div>
+        ) : null}
         {!loading && !error && !visible.length ? <p className="py-6 text-sm text-[color:var(--topo-muted)]">{onlyUnread ? "You’re caught up." : "No notifications yet."}</p> : null}
+        {!loading ? (
         <ul className="divide-y divide-[color:var(--topo-line)]">{visible.map((item) => <li key={item.id} className="space-y-2 py-3"><p className="text-sm font-medium">{item.title}</p><p className="text-xs text-[color:var(--topo-muted)]">{item.body}</p><div className="flex items-center gap-3 text-xs">{item.href ? <Link className="underline" href={item.openHref || item.href} onClick={() => { if (!item.readAt) markOpenedLocally(item.id); setOpen(false); }}>Open item</Link> : <span>Item no longer available</span>}{!item.readAt ? <Button size="sm" variant="tertiary" isDisabled={Boolean(pending)} onPress={() => void markRead(item.id)}>Mark read</Button> : null}</div></li>)}</ul>
+        ) : null}
       </Modal.Body>
     </Modal.Dialog></Modal.Container></Modal.Backdrop>
   </>;

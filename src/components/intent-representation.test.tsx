@@ -81,7 +81,7 @@ describe("IntentRepresentationPanel", () => {
       expect(screen.getByLabelText("Traditional steps")).toHaveValue(steps);
     });
 
-    await user.click(screen.getByRole("button", { name: "BDD" }));
+    await user.click(screen.getByRole("radio", { name: "BDD" }));
     expect(screen.getByTestId("representation-bdd")).toHaveTextContent(
       "Scenario: Account lockout",
     );
@@ -92,12 +92,12 @@ describe("IntentRepresentationPanel", () => {
       "Then the account is locked",
     );
 
-    await user.click(screen.getByRole("button", { name: "Natural" }));
+    await user.click(screen.getByRole("radio", { name: "Natural" }));
     expect(screen.getByTestId("representation-natural")).toHaveTextContent(
       /Given the user is logged out\. When they submit a bad password 5 times\. Then the account is locked\./,
     );
 
-    await user.click(screen.getByRole("button", { name: "Structured" }));
+    await user.click(screen.getByRole("radio", { name: "Structured" }));
     expect(screen.getByTestId("representation-structured")).toHaveTextContent(
       "Given",
     );

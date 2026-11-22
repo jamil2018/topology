@@ -6,12 +6,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { Button, Input, Modal, TextArea, useOverlayState } from "@heroui/react";
+import { PlusIcon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 import { formatStatusLabel } from "@/lib/format-labels";
 import { fanOutMatrix, type PlanMatrixInput } from "@/lib/tcm/matrix";
 import { PlanMatrixFields, BROWSER_PRESETS, OS_PRESETS } from "./plan-matrix-fields";
+import { TopoSelect } from "./ui/topo-select";
 
 export type PlanListItem = {
   id: string;
@@ -158,9 +160,11 @@ export function PlansWorkspace({
           <Button
             size="sm"
             variant="primary"
+            className="gap-1.5"
             isDisabled={!can("runs.create")}
             onPress={() => dialog.open()}
           >
+            <PlusIcon size={14} weight="bold" aria-hidden />
             New plan
           </Button>
         }
@@ -324,21 +328,21 @@ export function PlansWorkspace({
                 className="min-h-14"
               />
               {milestones.length > 0 ? (
-                <label className="block space-y-1 text-sm">
-                  <span>Milestone (optional)</span>
-                  <select
-                    className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
-                    value={milestoneId}
-                    onChange={(e) => setMilestoneId(e.target.value)}
-                  >
-                    <option value="">None</option>
-                    {milestones.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <TopoSelect
+                  label="Milestone (optional)"
+                  ariaLabel="Milestone (optional)"
+                  className="w-full"
+                  value={milestoneId}
+                  onChange={setMilestoneId}
+                  options={[
+                    { id: "", label: "None" },
+                    ...milestones.map((m) => ({
+                      id: m.id,
+                      label: m.name,
+                    })),
+                  ]}
+                  compact
+                />
               ) : null}
               <PlanMatrixFields
                 browsers={browsers}

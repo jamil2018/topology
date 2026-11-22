@@ -1,6 +1,8 @@
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { isAbortError } from "@/lib/abort";
 import { render } from "@/test/render";
 import { ACTION_CATALOG } from "@/lib/permissions";
 import { ImpactPanel } from "./impact-panel";
@@ -9,6 +11,55 @@ import { ProjectActionsProvider } from "./project-actions";
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
+
+function jsonResponse(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Mirror browser fetch: reject with signal.reason (string reasons become overlay noise). */
+function rejectionForSignal(signal?: AbortSignal | null) {
+  if (signal?.reason !== undefined) return signal.reason;
+  return Object.assign(new Error("The operation was aborted."), {
+    name: "AbortError",
+  });
+}
+
+function abortAwareFetch() {
+  return vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+    const signal = init?.signal;
+    if (signal?.aborted) return Promise.reject(rejectionForSignal(signal));
+    return new Promise<Response>((resolve, reject) => {
+      const onAbort = () => {
+        signal?.removeEventListener("abort", onAbort);
+        reject(rejectionForSignal(signal));
+      };
+      signal?.addEventListener("abort", onAbort);
+      setTimeout(() => {
+        if (signal?.aborted) return;
+        signal?.removeEventListener("abort", onAbort);
+        resolve(jsonResponse({ repositories: [], pullRequests: [] }));
+      }, 0);
+    });
+  });
+}
+
+function trackUnhandledRejections() {
+  const rejections: unknown[] = [];
+  const onUnhandled = (event: PromiseRejectionEvent) => {
+    rejections.push(event.reason);
+    event.preventDefault();
+  };
+  window.addEventListener("unhandledrejection", onUnhandled);
+  return {
+    rejections,
+    stop() {
+      window.removeEventListener("unhandledrejection", onUnhandled);
+    },
+  };
+}
 
 afterEach(() => {
   cleanup();
@@ -227,5 +278,80 @@ describe("ImpactPanel", () => {
         ([, init]) => headerProjectId(init) === "project-b",
       ),
     ).toBe(true);
+  });
+});
+
+describe("ImpactPanel abort cleanup", () => {
+  it("swallows AbortError on unmount and does not set error state", async () => {
+    const fetchMock = abortAwareFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const tracker = trackUnhandledRejections();
+
+    const { unmount } = render(<ImpactPanel />);
+
+    await act(async () => {
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(tracker.rejections).toEqual([]);
+    tracker.stop();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("aborts cleanup with an AbortError DOMException reason, not a string", async () => {
+    const reasons: unknown[] = [];
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal;
+      return new Promise<Response>((_resolve, reject) => {
+        const onAbort = () => {
+          reasons.push(signal?.reason);
+          signal?.removeEventListener("abort", onAbort);
+          reject(rejectionForSignal(signal));
+        };
+        signal?.addEventListener("abort", onAbort);
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const tracker = trackUnhandledRejections();
+
+    const { unmount } = render(<ImpactPanel />);
+    await act(async () => {
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(reasons.length).toBeGreaterThan(0);
+    for (const reason of reasons) {
+      expect(typeof reason).not.toBe("string");
+      expect(isAbortError(reason)).toBe(true);
+      expect((reason as DOMException).message).toBe("");
+      expect((reason as DOMException).message).not.toMatch(/unmount/i);
+    }
+    expect(tracker.rejections).toEqual([]);
+    tracker.stop();
+  });
+
+  it("does not surface AbortError under StrictMode remount", async () => {
+    const fetchMock = abortAwareFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const tracker = trackUnhandledRejections();
+
+    render(
+      <StrictMode>
+        <ImpactPanel />
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(tracker.rejections).toEqual([]);
+    tracker.stop();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@heroui/react";
 import { useProjectActions } from "./project-actions";
 import { useMutationFeedback } from "./use-mutation-feedback";
+import { TopoSelect } from "./ui/topo-select";
 
 export function RetestCaseLink({ resultId, cases, onLinked }: { resultId: string; cases: { id: string; key: string; title: string }[]; onLinked: (id: string) => void }) {
   const router = useRouter();
@@ -12,12 +13,27 @@ export function RetestCaseLink({ resultId, cases, onLinked }: { resultId: string
   const [error, setError] = useState<string | null>(null);
   const { saving, submit } = useMutationFeedback(setError);
   return <div className="mt-2 space-y-2">
-    <div className="flex flex-wrap gap-2"><label className="min-w-0">Executable case <select className="max-w-full rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-2" value={caseId} onChange={(event) => setCaseId(event.target.value)} disabled={!can("automation.manage") || saving}><option value="">Choose a case</option>{cases.map((item) => <option key={item.id} value={item.id}>{item.key} · {item.title}</option>)}</select></label>
+    <div className="flex flex-wrap gap-2 items-end">
+      <TopoSelect
+        label="Executable case"
+        ariaLabel="Executable case"
+        className="min-w-0 max-w-full"
+        value={caseId}
+        onChange={setCaseId}
+        isDisabled={!can("automation.manage") || saving}
+        placeholder="Choose a case"
+        options={cases.map((item) => ({
+          id: item.id,
+          label: `${item.key} · ${item.title}`,
+        }))}
+        compact
+      />
       <Button size="sm" variant="secondary" isDisabled={!can("automation.manage") || saving || !caseId} onPress={() => void submit(async () => {
         const response = await fetch(`/api/results/${resultId}/case`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ caseId }) });
         if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || "Could not link case"); }
         onLinked(caseId); router.refresh();
-      })}>{saving ? "Linking…" : "Link for retest"}</Button></div>
+      })}>{saving ? "Linking…" : "Link for retest"}</Button>
+    </div>
     {error ? <p role="alert">{error}</p> : null}
   </div>;
 }

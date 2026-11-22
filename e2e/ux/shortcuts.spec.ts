@@ -37,7 +37,8 @@ test("J moves the cases list cursor", async ({ page }) => {
 
   // CasesWorkspace registers nav-next globally. The cursor is `aria-current`
   // on the row (`cases-table.tsx`), not DOM focus. Editable targets ignore J.
-  const current = page.locator('[aria-current="true"]').locator("visible=true");
+  // Folder tree also uses aria-current — scope to case rows.
+  const current = page.locator('tbody tr[aria-current="true"]').locator("visible=true");
   await expect(current).toHaveCount(1);
   const before = (await current.innerText()).trim();
 

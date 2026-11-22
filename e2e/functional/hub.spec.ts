@@ -15,7 +15,7 @@ test("QA home shows assigned work and seeded milestone gate", async ({
     page.getByRole("heading", { name: "Retest queue" }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Overview" }).click();
+  await page.getByRole("tab", { name: "Overview" }).click();
   await expect(
     page.getByRole("heading", { name: "Overview" }),
   ).toBeVisible();

@@ -5,6 +5,8 @@ import {
   MoonIcon,
   SunIcon,
 } from "@phosphor-icons/react";
+import type { Selection } from "@heroui/react";
+import { ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { useTheme, type ThemePreference } from "./theme-provider";
 
 const label: Record<ThemePreference, string> = {
@@ -23,43 +25,39 @@ const Icon = {
 
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const { preference, setPreference } = useTheme();
-  const activeIndex = Math.max(0, modes.indexOf(preference));
   const iconSize = compact ? 13 : 14;
 
   return (
-    <div
-      className={`relative grid grid-cols-3 rounded-full border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] p-0.5 ${
+    <ToggleButtonGroup
+      aria-label="Color theme"
+      selectionMode="single"
+      disallowEmptySelection
+      size="sm"
+      isDetached
+      className={`rounded-full border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] p-0.5 ${
         compact ? "h-8 w-[5.5rem]" : "h-9 w-[6.75rem]"
       }`}
-      role="group"
-      aria-label="Color theme"
+      selectedKeys={new Set([preference])}
+      onSelectionChange={(keys: Selection) => {
+        if (keys === "all") return;
+        const next = [...keys][0];
+        if (next == null) return;
+        setPreference(String(next) as ThemePreference);
+      }}
     >
-      <span
-        aria-hidden
-        className="pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 w-[calc((100%-4px)/3)] rounded-full bg-[color:var(--topo-panel)] shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
-        style={{ transform: `translateX(${activeIndex * 100}%)` }}
-      />
       {modes.map((mode) => {
         const ModeIcon = Icon[mode];
-        const active = preference === mode;
         return (
-          <button
+          <ToggleButton
             key={mode}
-            type="button"
-            onClick={() => setPreference(mode)}
-            className={`relative z-[1] flex items-center justify-center rounded-full transition-colors ${
-              active
-                ? "text-[color:var(--topo-ink)]"
-                : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-            }`}
+            id={mode}
             aria-label={`${label[mode]} theme`}
-            aria-pressed={active}
-            title={label[mode]}
+            className="flex flex-1 items-center justify-center rounded-full px-0"
           >
             <ModeIcon size={iconSize} weight="bold" />
-          </button>
+          </ToggleButton>
         );
       })}
-    </div>
+    </ToggleButtonGroup>
   );
 }
