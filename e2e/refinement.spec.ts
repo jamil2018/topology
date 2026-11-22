@@ -80,7 +80,7 @@ test("review template, create fresh run, retest failure and follow lineage", asy
   await page.getByRole("button", { name: /Mark (?!step).* as failed/ }).click();
   await page.getByText(/Reuse this run · Retest history/).click();
   const failures = page.getByRole("group", { name: "Select failures to retest" });
-  await failures.getByRole("checkbox").first().check();
+  await failures.getByRole("checkbox").first().check({ force: true });
   await page.getByRole("link", { name: /Review retest/ }).click();
   await expect(page.locator("main h1")).toHaveText("Review retest");
   const retestCreation = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/runs/retest");

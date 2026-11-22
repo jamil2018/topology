@@ -294,8 +294,9 @@ export function IntentsWorkspace({
                   <li key={intent.id}>
                     <Button
                       type="button"
+                      variant="ghost"
                       onPress={() => setSelected(intent.id)}
-                      className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[color:var(--topo-chip)]/60 ${
+                      className={`flex h-auto w-full items-start justify-between gap-3 rounded-none px-4 py-3 text-left text-sm transition-colors hover:bg-[color:var(--topo-chip)]/60 ${
                         selected === intent.id
                           ? "bg-[color:var(--topo-chip)]/80"
                           : ""

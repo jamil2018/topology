@@ -33,16 +33,20 @@ test("content-first case creation and run setup preserve data and recover from e
   await expect(page).toHaveURL(new RegExp(`case=${data.case.key}`));
   await expect(page.getByRole('button', {name:'Save case',exact:true})).not.toBeVisible();
   await page.goto(`/runs/new?cases=${data.case.id}`);
-  await expect(page.getByLabel('Environment',{exact:true})).not.toBeVisible();
+  const runOptions = page.getByRole('button', { name: /Run options/ });
+  await expect(runOptions).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByText('Enter a run name to continue.')).toBeVisible();
   await page.getByLabel('Run name',{exact:true}).fill('UX review run');
-  await page.getByRole('button', { name: /Run options/ }).click();
-  await page.getByLabel('Environment',{exact:true}).fill('');
+  await runOptions.click();
+  await expect(runOptions).toHaveAttribute('aria-expanded', 'true');
+  const environment = page.getByLabel('Environment',{exact:true}).locator('visible=true');
+  await environment.fill('');
   await expect(page.getByRole('button',{name:/Create run ·/})).toBeDisabled();
   await expect(page.getByText('Enter an environment in Run options.')).toBeVisible();
-  await page.getByLabel('Environment',{exact:true}).fill('staging');
-  await expect(page.getByLabel('Environment',{exact:true})).toBeVisible();
-  await page.getByRole('button', { name: /Run options/ }).click();
+  await environment.fill('staging');
+  await expect(environment).toBeVisible();
+  await runOptions.click();
+  await expect(runOptions).toHaveAttribute('aria-expanded', 'false');
   await page.route('**/api/runs', route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Temporary test outage. Try again.'})}));
   await page.getByRole('button',{name:/Create run ·/}).click();
   await expect(page.getByRole('alert').filter({hasText:'Temporary test outage'})).toBeVisible();
@@ -69,6 +73,7 @@ test("content-first case creation and run setup preserve data and recover from e
 
 test("integration disclosures preserve direct links and keyboard access", async ({page})=>{
   await page.goto('/settings?section=integrations');
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   const ciTrigger = page.locator('#ci').getByRole('button').first();
   await expect(ciTrigger).toHaveAttribute('aria-expanded', 'false');
   await ciTrigger.focus();
