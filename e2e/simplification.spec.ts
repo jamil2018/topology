@@ -35,7 +35,7 @@ test("content-first case creation and run setup preserve data and recover from e
   await page.goto(`/runs/new?cases=${data.case.id}`);
   const runOptions = page.getByRole('button', { name: /Run options/ });
   await expect(runOptions).toHaveAttribute('aria-expanded', 'false');
-  await expect(page.getByText('Enter a run name to continue.')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Enter a run name to continue.' }).first()).toBeVisible();
   await page.getByLabel('Run name',{exact:true}).fill('UX review run');
   await runOptions.click();
   await expect(runOptions).toHaveAttribute('aria-expanded', 'true');
@@ -112,12 +112,13 @@ test("filtering does not silently change the chosen cases", async ({page}) => {
   await page.goto('/runs/new');
   const create = page.getByRole('button',{name:/Create run ·/});
   const initial = await create.textContent();
-  // HeroUI SearchField exposes role=searchbox, not textbox.
-  await page.getByRole('searchbox',{name:'Search cases',exact:true}).fill('no-matching-ux-case');
+  // Visible Label is "Search"; SearchField role is searchbox (not textbox).
+  const caseSearch = page.getByRole('searchbox', { name: 'Search', exact: true });
+  await caseSearch.fill('no-matching-ux-case');
   await expect(page.getByText(/selected cases are outside these filters/)).toBeVisible();
   await expect(create).toHaveText(initial!);
   await page.getByRole('button',{name:'Clear filters',exact:true}).click();
-  await expect(page.getByRole('searchbox',{name:'Search cases',exact:true})).toHaveValue('');
+  await expect(caseSearch).toHaveValue('');
   await expect(create).toHaveText(initial!);
 });
 

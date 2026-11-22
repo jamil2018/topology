@@ -42,25 +42,27 @@ export async function startManualRun(
   });
   await expect(selectAll).toBeChecked();
   // Click Checkbox.Content so controlled React Aria state updates (force-clicking the input does not).
-  await page
+  const selectAllContent = page
     .locator('[data-slot="checkbox"]')
     .filter({ has: selectAll })
-    .locator('[data-slot="checkbox-content"]')
-    .click();
+    .locator('[data-slot="checkbox-content"]');
+  await selectAllContent.scrollIntoViewIfNeeded();
+  await selectAllContent.click();
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
 
   for (const title of titles) {
-    await page.getByLabel("Search", { exact: true }).fill(title);
+    await page.getByRole("searchbox", { name: "Search", exact: true }).fill(title);
     const rowCheckbox = page.getByRole("checkbox", {
       name: `Select ${title}`,
       exact: true,
     });
-    await page
+    const rowContent = page
       .locator('[data-slot="checkbox"]')
       .filter({ has: rowCheckbox })
-      .locator('[data-slot="checkbox-content"]')
-      .click();
-    await page.getByLabel("Search", { exact: true }).fill("");
+      .locator('[data-slot="checkbox-content"]');
+    await rowContent.scrollIntoViewIfNeeded();
+    await rowContent.click();
+    await page.getByRole("searchbox", { name: "Search", exact: true }).fill("");
   }
   await expect(
     page.getByText(`${titles.length} selected`, { exact: true }),
