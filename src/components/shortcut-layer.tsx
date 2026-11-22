@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useProjectActions } from "./project-actions";
-import { Modal } from "@heroui/react";
+import { Button, Modal } from "@heroui/react";
 import {
   dispatchShortcut,
   GO_CHORD_MS,
@@ -144,14 +144,16 @@ export function ShortcutLayer() {
                   typing in inputs. Press ? to close.
                 </p>
               </div>
-              <button
+              <Button
                 ref={closeRef}
                 type="button"
-                onClick={close}
-                className="rounded-md border border-[color:var(--topo-line)] px-2 py-1 text-xs text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+                size="sm"
+                variant="secondary"
+                onPress={close}
+                className="text-xs text-[color:var(--topo-muted)]"
               >
                 Close
-              </button>
+              </Button>
             </div>
             <div className="max-h-[min(24rem,55vh)] overflow-y-auto px-4 py-3">
               {groups.map((group) => (
@@ -208,16 +210,18 @@ export function ShortcutLayer() {
                 </section>
               ))}
               <p className="pt-1 text-xs text-[color:var(--topo-muted)]">
-                <button
+                <Button
                   type="button"
-                  className="underline-offset-2 hover:underline"
-                  onClick={() => {
+                  variant="ghost"
+                  size="sm"
+                  className="inline h-auto p-0 underline-offset-2 hover:underline"
+                  onPress={() => {
                     close();
                     openCommandPalette();
                   }}
                 >
                   Open the command palette
-                </button>{" "}
+                </Button>{" "}
                 for navigation, import, and search.
               </p>
             </div>

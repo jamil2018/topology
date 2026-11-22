@@ -185,12 +185,13 @@ export function RequirementsWorkspace({
           <ul className="divide-y divide-[color:var(--topo-line)]">
             {items.map((req) => (
               <li key={req.id}>
-                <button
+                <Button
                   type="button"
-                  className={`w-full px-4 py-3 text-left ${
+                  variant="ghost"
+                  className={`h-auto w-full rounded-none px-4 py-3 text-left ${
                     selected === req.id ? "bg-[color:var(--topo-chip)]/80" : ""
                   }`}
-                  onClick={() => setSelected(req.id)}
+                  onPress={() => setSelected(req.id)}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -214,7 +215,7 @@ export function RequirementsWorkspace({
                       </StatusChip>
                     </div>
                   </div>
-                </button>
+                </Button>
                 {selected === req.id ? (
                   <div className="space-y-3 border-t border-[color:var(--topo-line)] px-4 pb-4 pt-3">
                     {can("intents.edit") || can("proposals.create") ? (

@@ -3,7 +3,7 @@ import { useProjectActions } from "./project-actions";
 import { useMutationFeedback } from "./use-mutation-feedback";
 
 import { useState } from "react";
-import { Button } from "@heroui/react";
+import { Button, Input } from "@heroui/react";
 
 export function ReportExportActions({
   runId,
@@ -66,11 +66,11 @@ export function ReportExportActions({
         </>
       ) : null}
       {shareUrl ? (
-        <input
+        <Input
           readOnly
           aria-label="Shareable report URL"
           value={shareUrl}
-          className="min-w-0 flex-1 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 font-mono text-xs"
+          className="min-w-0 flex-1 font-mono text-xs"
           onFocus={(e) => e.currentTarget.select()}
         />
       ) : null}

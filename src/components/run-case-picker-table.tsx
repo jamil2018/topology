@@ -1,19 +1,18 @@
 "use client";
 
-import { useMemo } from "react";
-import type { Selection, SortDescriptor } from "@heroui/react";
-import {
-  Button,
-  Chip,
-  EmptyState,
-  Input,
-  Label,
-  ListBox,
-  Select,
-  Table,
-  TextField,
-} from "@heroui/react";
+import { memo, useCallback, useMemo } from "react";
+import type { Selection } from "@heroui/react";
+import { Button, Chip } from "@heroui/react";
+import { useLatestRef } from "@/lib/use-latest-ref";
 import { StatusChip } from "./status-chip";
+import { TopoCheckbox } from "./ui/topo-checkbox";
+import { TopoDisclosure } from "./ui/topo-disclosure";
+import { TopoSearchField } from "./ui/topo-search-field";
+import { TopoSelect } from "./ui/topo-select";
+import {
+  RUN_CASE_ROW_HEIGHT,
+  useVirtualWindow,
+} from "./run-virtual-list";
 import type { CasePickerSort, PickerCase } from "@/lib/run-case-picker";
 
 type Folder = { id: string; name: string };
@@ -28,16 +27,78 @@ const sorts: { id: CasePickerSort; label: string }[] = [
   { id: "status", label: "Status" },
 ];
 
-const SORTABLE_COLUMNS = new Set<CasePickerSort>([
-  "title",
-  "priority",
-  "status",
-]);
+const statusOptions = statuses.map((s) => ({
+  id: s,
+  label: s === "all" ? "All statuses" : s,
+}));
+const priorityOptions = priorities.map((p) => ({
+  id: p,
+  label: p === "all" ? "All priorities" : p,
+}));
+const sortOptions = sorts.map((s) => ({ id: s.id, label: s.label }));
 
-function sortDescriptorFor(sort: CasePickerSort): SortDescriptor | undefined {
-  if (!SORTABLE_COLUMNS.has(sort)) return undefined;
-  return { column: sort, direction: "ascending" };
-}
+const PICKER_ROW_HEIGHT = RUN_CASE_ROW_HEIGHT;
+
+const PickerRow = memo(function PickerRow({
+  row,
+  selected,
+  onToggle,
+}: {
+  row: PickerCase;
+  selected: boolean;
+  onToggle: (id: string, checked: boolean) => void;
+}) {
+  return (
+    <div
+      className="grid grid-cols-[2.5rem_minmax(0,1.6fr)_5.5rem_4.5rem_5rem_minmax(0,0.9fr)_minmax(0,1fr)] items-center gap-2 border-b border-[color:var(--topo-line)] px-2.5 text-sm"
+      style={{ height: PICKER_ROW_HEIGHT }}
+      role="row"
+    >
+      <div role="cell" className="flex items-center justify-center">
+        <TopoCheckbox
+          aria-label={`Select ${row.title}`}
+          isSelected={selected}
+          onChange={(checked) => onToggle(row.id, checked)}
+          compact
+        />
+      </div>
+      <div role="cell" className="min-w-0">
+        <span className="block truncate font-medium text-[color:var(--topo-ink)]">
+          {row.title}
+        </span>
+      </div>
+      <div role="cell">
+        <span className="font-mono text-xs text-[color:var(--topo-muted)]">
+          {row.key}
+        </span>
+      </div>
+      <div role="cell">
+        <StatusChip mono>{row.priority}</StatusChip>
+      </div>
+      <div role="cell">
+        <StatusChip mono>{row.status}</StatusChip>
+      </div>
+      <div role="cell" className="min-w-0">
+        <span className="block truncate text-xs text-[color:var(--topo-muted)]">
+          {row.folder?.name ?? "—"}
+        </span>
+      </div>
+      <div role="cell" className="min-w-0">
+        <div className="flex flex-wrap gap-1">
+          {(row.tags ?? []).length === 0 ? (
+            <span className="text-xs text-[color:var(--topo-muted)]">—</span>
+          ) : (
+            (row.tags ?? []).slice(0, 4).map((t) => (
+              <Chip key={t} size="sm" variant="soft">
+                {t}
+              </Chip>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 export function RunCasePickerTable({
   visible,
@@ -80,25 +141,87 @@ export function RunCasePickerTable({
 }) {
   const visibleIds = useMemo(() => visible.map((c) => c.id), [visible]);
   const selectedCount = selectedIds.size;
-  const hiddenSelected = selectedCount - visibleIds.filter((id) => selectedIds.has(id)).length;
+  const hiddenSelected =
+    selectedCount - visibleIds.filter((id) => selectedIds.has(id)).length;
+  const selectedVisibleCount = visibleIds.filter((id) =>
+    selectedIds.has(id),
+  ).length;
+  const allVisibleSelected =
+    visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+  const someVisibleSelected =
+    selectedVisibleCount > 0 && !allVisibleSelected;
 
-  const tableSelectedKeys = useMemo<Selection>(() => {
-    if (visibleIds.length === 0) return new Set();
-    const selectedVisible = visibleIds.filter((id) => selectedIds.has(id));
-    if (selectedVisible.length === visibleIds.length) return "all";
-    return new Set(selectedVisible);
-  }, [visibleIds, selectedIds]);
+  const folderOptions = useMemo(
+    () => [
+      { id: "all", label: "All folders" },
+      ...folders.map((f) => ({ id: f.id, label: f.name })),
+    ],
+    [folders],
+  );
+  const tagOptions = useMemo(
+    () => [
+      { id: "all", label: "All tags" },
+      ...tags.map((t) => ({ id: t, label: t })),
+    ],
+    [tags],
+  );
 
-  const sortDescriptor = sortDescriptorFor(sort);
+  const filterSummary = useMemo(() => {
+    const parts = [
+      status === "all" ? "All statuses" : `${status} cases`,
+      priority !== "all" ? priority : null,
+      folderId !== "all"
+        ? (folders.find((folder) => folder.id === folderId)?.name ?? "Folder")
+        : null,
+      tag !== "all" ? tag : null,
+    ].filter(Boolean);
+    return parts.join(" · ");
+  }, [status, priority, folderId, tag, folders]);
+
+  const { setParent, start, end, totalHeight, offsetY } = useVirtualWindow({
+    count: visible.length,
+    rowHeight: PICKER_ROW_HEIGHT,
+  });
+  const windowRows = visible.slice(start, end);
+
+  // rerender-functional-setstate / rerender-use-ref-transient-values:
+  // keep onToggle stable so memoized PickerRow siblings skip re-render.
+  const selectedIdsRef = useLatestRef(selectedIds);
+  const onToggleRow = useCallback(
+    (id: string, checked: boolean) => {
+      const next = new Set(selectedIdsRef.current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      onSelectionChange(next);
+    },
+    [onSelectionChange, selectedIdsRef],
+  );
+
+  const onToggleAllVisible = useCallback(
+    (checked: boolean) => {
+      onSelectionChange(checked ? "all" : new Set());
+    },
+    [onSelectionChange],
+  );
+
+  const clearFilters = useCallback(() => {
+    onSearchChange("");
+    onStatusChange("all");
+    onPriorityChange("all");
+    onFolderChange("all");
+    onTagChange("all");
+  }, [onSearchChange, onStatusChange, onPriorityChange, onFolderChange, onTagChange]);
+
+  const hasFilters =
+    search ||
+    status !== "all" ||
+    priority !== "all" ||
+    folderId !== "all" ||
+    tag !== "all";
 
   return (
-    <Table
-      aria-label="Cases for this run"
-      className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]"
-      variant="secondary"
-    >
-      {/* v3 topContent: controls compose before ScrollContainer */}
-      <div className="space-y-2 border-b border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/30 p-2.5">
+    <div className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
+      <div className="space-y-3 border-b border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/30 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs font-medium text-[color:var(--topo-ink)]">
             Cases for this run
@@ -108,306 +231,145 @@ export function RunCasePickerTable({
           </StatusChip>
         </div>
 
-        <TextField name="case-search" className="w-full">
-          <Label>Search</Label>
-          <Input
-            placeholder="Search by title, key, or tag"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full"
-          />
-        </TextField>
+        <TopoSearchField
+          label="Search"
+          name="case-search"
+          ariaLabel="Search cases"
+          placeholder="Search by title, key, or tag"
+          value={search}
+          onChange={onSearchChange}
+          onClear={() => onSearchChange("")}
+        />
 
-        {hiddenSelected > 0 ? <p role="status" className="text-sm">{hiddenSelected} selected cases are outside these filters and will still be included.</p> : null}
-        {search || status !== "all" || priority !== "all" || folderId !== "all" || tag !== "all" ? <Button size="sm" variant="tertiary" onPress={() => { onSearchChange(""); onStatusChange("all"); onPriorityChange("all"); onFolderChange("all"); onTagChange("all"); }}>Clear filters</Button> : null}
-        <details>
-          <summary className="cursor-pointer py-2 text-sm font-medium">Filter and sort cases <span className="text-[color:var(--topo-muted)]">· {status === "all" ? "All statuses" : `${status} cases`}{priority !== "all" ? ` · ${priority}` : ""}{folderId !== "all" ? ` · ${folders.find((folder) => folder.id === folderId)?.name ?? "Folder"}` : ""}{tag !== "all" ? ` · ${tag}` : ""}</span></summary>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <Select
-            className="w-full"
-            variant="secondary"
-            placeholder="Status"
-            value={status}
-            onChange={(value) => {
-              if (value == null) return;
-              onStatusChange(String(value));
-            }}
-          >
-            <Label>Status</Label>
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {statuses.map((s) => (
-                  <ListBox.Item key={s} id={s} textValue={s}>
-                    {s === "all" ? "All statuses" : s}
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
+        {hiddenSelected > 0 ? (
+          <p role="status" className="text-sm">
+            {hiddenSelected} selected cases are outside these filters and will
+            still be included.
+          </p>
+        ) : null}
+        {hasFilters ? (
+          <Button size="sm" variant="tertiary" onPress={clearFilters}>
+            Clear filters
+          </Button>
+        ) : null}
 
-          <Select
-            className="w-full"
-            variant="secondary"
-            placeholder="Priority"
-            value={priority}
-            onChange={(value) => {
-              if (value == null) return;
-              onPriorityChange(String(value));
-            }}
-          >
-            <Label>Priority</Label>
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {priorities.map((p) => (
-                  <ListBox.Item key={p} id={p} textValue={p}>
-                    {p === "all" ? "All priorities" : p}
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
+        <TopoDisclosure
+          bordered
+          title="Filter and sort cases"
+          summary={`· ${filterSummary}`}
+          bodyClassName="space-y-3 pt-2"
+        >
+          <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <TopoSelect
+              label="Status"
+              className="w-full"
+              value={status}
+              onChange={onStatusChange}
+              options={statusOptions}
+              compact
+            />
+            <TopoSelect
+              label="Priority"
+              className="w-full"
+              value={priority}
+              onChange={onPriorityChange}
+              options={priorityOptions}
+              compact
+            />
+            <TopoSelect
+              label="Folder / suite"
+              className="w-full"
+              value={folderId}
+              onChange={onFolderChange}
+              options={folderOptions}
+              compact
+            />
+            <TopoSelect
+              label="Tag"
+              className="w-full"
+              value={tag}
+              onChange={onTagChange}
+              options={tagOptions}
+              compact
+            />
+          </div>
 
-          <Select
-            className="w-full"
-            variant="secondary"
-            placeholder="Folder"
-            value={folderId}
-            onChange={(value) => {
-              if (value == null) return;
-              onFolderChange(String(value));
-            }}
-          >
-            <Label>Folder / suite</Label>
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                <ListBox.Item id="all" textValue="All folders">
-                  All folders
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-                {folders.map((f) => (
-                  <ListBox.Item key={f.id} id={f.id} textValue={f.name}>
-                    {f.name}
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
-
-          <Select
-            className="w-full"
-            variant="secondary"
-            placeholder="Tag"
-            value={tag}
-            onChange={(value) => {
-              if (value == null) return;
-              onTagChange(String(value));
-            }}
-          >
-            <Label>Tag</Label>
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                <ListBox.Item id="all" textValue="All tags">
-                  All tags
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-                {tags.map((t) => (
-                  <ListBox.Item key={t} id={t} textValue={t}>
-                    {t}
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
-        </div>
-
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span
-              id="case-picker-sort-label"
-              className="shrink-0 text-xs text-[color:var(--topo-muted)]"
-            >
-              Sort
-            </span>
-            <Select
-              aria-labelledby="case-picker-sort-label"
-              className="w-[9.5rem] shrink-0"
-              variant="secondary"
-              placeholder="Updated"
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--topo-line)] pt-3">
+            <TopoSelect
+              label="Sort"
+              className="w-[9.5rem]"
               value={sort}
-              onChange={(value) => {
-                if (value == null) return;
-                onSortChange(String(value) as CasePickerSort);
-              }}
-            >
-              <Select.Trigger className="h-9 min-h-9 py-0 md:h-8 md:min-h-8">
-                <Select.Value className="text-center" />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {sorts.map((s) => (
-                    <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
-                      {s.label}
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
+              onChange={(value) => onSortChange(value as CasePickerSort)}
+              options={sortOptions}
+              compact
+            />
+            <div role="group" aria-label="Case selection">
+              <Button size="sm" variant="tertiary" onPress={onResetToReady}>
+                Reset to all ready
+              </Button>
+            </div>
           </div>
-
-          <div
-            className="ml-auto flex flex-wrap items-center justify-end gap-1.5"
-            role="group"
-            aria-label="Case selection"
-          >
-            <Button size="sm" variant="tertiary" onPress={onResetToReady}>
-              Reset to all ready
-            </Button>
-          </div>
-        </div>
-        </details>
+        </TopoDisclosure>
       </div>
 
-      <Table.ScrollContainer className="max-h-64">
-        <Table.Content
-          aria-label="Case picker"
-          className="min-w-[720px] text-sm"
-          sortDescriptor={sortDescriptor}
-          onSortChange={(descriptor) => {
-            const col = String(descriptor.column);
-            if (
-              col === "title" ||
-              col === "priority" ||
-              col === "status" ||
-              col === "key"
-            ) {
-              onSortChange(col === "key" ? "title" : (col as CasePickerSort));
-            }
-          }}
+      <div
+        className="min-w-0 overflow-x-auto"
+        role="table"
+        aria-label="Cases for this run"
+      >
+        <div
+          className="grid min-w-[720px] grid-cols-[2.5rem_minmax(0,1.6fr)_5.5rem_4.5rem_5rem_minmax(0,0.9fr)_minmax(0,1fr)] items-center gap-2 border-b border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/20 px-2.5 py-2 text-xs font-medium text-[color:var(--topo-muted)]"
+          role="row"
         >
-          <Table.Header>
-            <Table.Column className="w-10 pe-0">
-              <input type="checkbox" aria-label="Select all visible cases"
-                className="h-5 w-5 cursor-pointer accent-[var(--topo-accent)]"
-                checked={tableSelectedKeys === "all"}
-                ref={(element) => { if (element) element.indeterminate = tableSelectedKeys !== "all" && tableSelectedKeys.size > 0; }}
-                onClick={(event) => event.stopPropagation()}
-                onChange={(event) => onSelectionChange(event.target.checked ? "all" : new Set())} />
-            </Table.Column>
-            <Table.Column id="title" isRowHeader allowsSorting>
-              {({ sortDirection }) => (
-                <Table.SortableColumnHeader sortDirection={sortDirection}>
-                  Title
-                </Table.SortableColumnHeader>
-              )}
-            </Table.Column>
-            <Table.Column id="key">Key</Table.Column>
-            <Table.Column id="priority" allowsSorting>
-              {({ sortDirection }) => (
-                <Table.SortableColumnHeader sortDirection={sortDirection}>
-                  Priority
-                </Table.SortableColumnHeader>
-              )}
-            </Table.Column>
-            <Table.Column id="status" allowsSorting>
-              {({ sortDirection }) => (
-                <Table.SortableColumnHeader sortDirection={sortDirection}>
-                  Status
-                </Table.SortableColumnHeader>
-              )}
-            </Table.Column>
-            <Table.Column id="folder">Folder</Table.Column>
-            <Table.Column id="tags">Tags</Table.Column>
-          </Table.Header>
-          <Table.Body
-            renderEmptyState={() => (
-              <EmptyState className="flex min-h-32 w-full flex-col items-center justify-center px-3 py-8 text-center">
-                <span className="text-sm text-[color:var(--topo-muted)]">
-                  No cases match these filters.
-                </span>
-              </EmptyState>
-            )}
-          >
-            {visible.map((c) => (
-              <Table.Row key={c.id} id={c.id}>
-                <Table.Cell className="pe-0">
-                  <input type="checkbox" aria-label={`Select ${c.title}`}
-                    className="h-5 w-5 cursor-pointer accent-[var(--topo-accent)]"
-                    checked={selectedIds.has(c.id)}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={(event) => { const next = new Set(selectedIds); if (event.target.checked) next.add(c.id); else next.delete(c.id); onSelectionChange(next); }} />
-                </Table.Cell>
-                <Table.Cell>
-                  <span className="font-medium text-[color:var(--topo-ink)]">
-                    {c.title}
-                  </span>
-                </Table.Cell>
-                <Table.Cell>
-                  <span className="font-mono text-xs text-[color:var(--topo-muted)]">
-                    {c.key}
-                  </span>
-                </Table.Cell>
-                <Table.Cell>
-                  <StatusChip mono>{c.priority}</StatusChip>
-                </Table.Cell>
-                <Table.Cell>
-                  <StatusChip mono>{c.status}</StatusChip>
-                </Table.Cell>
-                <Table.Cell>
-                  <span className="text-xs text-[color:var(--topo-muted)]">
-                    {c.folder?.name ?? "—"}
-                  </span>
-                </Table.Cell>
-                <Table.Cell>
-                  <div className="flex flex-wrap gap-1">
-                    {(c.tags ?? []).length === 0 ? (
-                      <span className="text-xs text-[color:var(--topo-muted)]">
-                        —
-                      </span>
-                    ) : (
-                      (c.tags ?? []).slice(0, 4).map((t) => (
-                        <Chip key={t} size="sm" variant="soft">
-                          {t}
-                        </Chip>
-                      ))
-                    )}
-                  </div>
-                </Table.Cell>
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table.Content>
-      </Table.ScrollContainer>
+          <div role="columnheader" className="flex items-center justify-center">
+            <TopoCheckbox
+              aria-label="Select all visible cases"
+              isSelected={allVisibleSelected}
+              isIndeterminate={someVisibleSelected}
+              onChange={onToggleAllVisible}
+              compact
+            />
+          </div>
+          <div role="columnheader">Title</div>
+          <div role="columnheader">Key</div>
+          <div role="columnheader">Priority</div>
+          <div role="columnheader">Status</div>
+          <div role="columnheader">Folder</div>
+          <div role="columnheader">Tags</div>
+        </div>
 
-      <Table.Footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/20 px-2.5 py-2 text-xs text-[color:var(--topo-muted)]">
+        <div
+          ref={setParent}
+          className="max-h-64 min-w-[720px] overflow-y-auto"
+          role="rowgroup"
+        >
+          {visible.length === 0 ? (
+            <div className="flex min-h-32 items-center justify-center px-3 py-8 text-center text-sm text-[color:var(--topo-muted)]">
+              No cases match these filters.
+            </div>
+          ) : (
+            <div style={{ height: totalHeight, position: "relative" }}>
+              <div style={{ transform: `translateY(${offsetY}px)` }}>
+                {windowRows.map((row) => (
+                  <PickerRow
+                    key={row.id}
+                    row={row}
+                    selected={selectedIds.has(row.id)}
+                    onToggle={onToggleRow}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--topo-line)] bg-[color:var(--topo-chip)]/20 px-2.5 py-2 text-xs text-[color:var(--topo-muted)]">
         <span>
           {selectedCount} selected · {visible.length} visible
         </span>
-        <span className="font-medium">
-          Select at least one case
-        </span>
-      </Table.Footer>
-    </Table>
+        <span className="font-medium">Select at least one case</span>
+      </div>
+    </div>
   );
 }

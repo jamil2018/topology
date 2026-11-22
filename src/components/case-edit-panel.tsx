@@ -2,7 +2,7 @@
 import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Input,
@@ -22,6 +22,7 @@ import {
   CaseStepsEditor,
   stepsFromFallback,
 } from "./case-steps-editor";
+import { TopoCheckbox } from "./ui/topo-checkbox";
 import {
   CaseTcmPanel,
   CaseVersionsList,
@@ -32,7 +33,8 @@ import {
 import { CASE_STATUSES, emptyStructuredStep } from "./cases-model";
 import { formatStatusLabel } from "@/lib/format-labels";
 import { useQualityGraph } from "./quality-graph-provider";
-import { Bone } from "./skeletons";
+import { FormFieldsSkeleton } from "./skeletons";
+import { TopoSelect } from "./ui/topo-select";
 
 const priorities = ["P0", "P1", "P2", "P3"] as const;
 const statuses = CASE_STATUSES;
@@ -131,7 +133,7 @@ function reviewerLabel(
   return member.user.email;
 }
 
-export function CaseEditPanel({
+export const CaseEditPanel = memo(function CaseEditPanel({
   caseId,
   caseKey,
   caseTitle,
@@ -640,7 +642,7 @@ export function CaseEditPanel({
   }, [reviewGateActive, statusValue]);
 
   return (
-    <aside className="flex h-full max-h-[calc(100vh-6rem)] flex-col overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
       <div className="flex items-start justify-between gap-2 border-b border-[color:var(--topo-line)] px-3 py-2.5">
         <div className="min-w-0">
           <p className="text-xs font-medium text-[color:var(--topo-muted)]">
@@ -679,13 +681,10 @@ export function CaseEditPanel({
         </Button>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
         {loading ? (
-          <div className="space-y-3" aria-busy="true" aria-label="Loading case">
-            <Bone className="h-8 w-full" />
-            <Bone className="h-8 w-full" />
-            <Bone className="h-20 w-full" />
-            <Bone className="h-8 w-2/3" />
+          <div role="status" aria-busy="true" aria-label="Loading case">
+            <FormFieldsSkeleton fields={4} />
           </div>
         ) : loadError ? (
           <p className="text-sm text-red-600 dark:text-red-300">{loadError}</p>
@@ -993,34 +992,35 @@ export function CaseEditPanel({
                         {def.required ? " *" : ""}
                       </span>
                       {def.type === "select" ? (
-                        <select
-                          className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
+                        <TopoSelect
+                          ariaLabel={def.label}
+                          className="w-full"
                           value={String(customFields[def.key] ?? "")}
-                          disabled={readOnly || saving}
-                          onChange={(e) =>
+                          isDisabled={readOnly || saving}
+                          onChange={(value) =>
                             setCustomFields({
                               ...customFields,
-                              [def.key]: e.target.value,
+                              [def.key]: value,
                             })
                           }
-                        >
-                          <option value="">Select…</option>
-                          {(def.options ?? []).map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
+                          options={[
+                            { id: "", label: "Select…" },
+                            ...(def.options ?? []).map((opt) => ({
+                              id: opt,
+                              label: opt,
+                            })),
+                          ]}
+                          compact
+                        />
                       ) : def.type === "boolean" ? (
-                        <input
-                          type="checkbox"
-                          className="accent-[color:var(--topo-accent)]"
-                          checked={Boolean(customFields[def.key])}
-                          disabled={readOnly || saving}
-                          onChange={(e) =>
+                        <TopoCheckbox
+                          compact
+                          isSelected={Boolean(customFields[def.key])}
+                          isDisabled={readOnly || saving}
+                          onChange={(isSelected) =>
                             setCustomFields({
                               ...customFields,
-                              [def.key]: e.target.checked,
+                              [def.key]: isSelected,
                             })
                           }
                         />
@@ -1210,20 +1210,20 @@ export function CaseEditPanel({
                         ["versions", "Versions"],
                       ] as const
                     ).map(([id, label]) => (
-                      <button
+                      <Button
                         key={id}
                         type="button"
-                        role="tab"
+                        variant="ghost"
                         aria-selected={historyTab === id}
                         className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
                           historyTab === id
-                            ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                            ? "topo-selected-surface"
                             : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
                         }`}
-                        onClick={() => setHistoryTab(id)}
+                        onPress={() => setHistoryTab(id)}
                       >
                         {label}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                   {historyTab === "activity" ? (
@@ -1361,4 +1361,4 @@ export function CaseEditPanel({
       </Modal.Backdrop>
     </aside>
   );
-}
+});

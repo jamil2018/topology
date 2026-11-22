@@ -169,13 +169,14 @@ export function LoginForm({
         ) : null}
 
         {!setup && oauthAvailable && !showEmail ? (
-          <button
+          <Button
             type="button"
-            onClick={() => setShowEmail(true)}
+            variant="ghost"
+            onPress={() => setShowEmail(true)}
             className="w-full text-center text-sm text-[color:var(--topo-muted)] underline-offset-2 hover:text-[color:var(--topo-ink)] hover:underline"
           >
             Use email instead
-          </button>
+          </Button>
         ) : null}
 
         <AnimatePresence initial={false}>
@@ -265,13 +266,14 @@ export function LoginForm({
                     : "Sign in with email"}
               </Button>
               {!setup && oauthAvailable ? (
-                <button
+                <Button
                   type="button"
-                  onClick={() => setShowEmail(false)}
+                  variant="ghost"
+                  onPress={() => setShowEmail(false)}
                   className="w-full text-center text-xs text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
                 >
                   Hide email form
-                </button>
+                </Button>
               ) : null}
             </motion.div>
           ) : null}

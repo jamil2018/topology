@@ -20,7 +20,9 @@ import { PlayIcon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { PageHeader } from "./page-header";
 import { SavedViewsBar, type SavedViewRow } from "./saved-views-bar";
+import { RunsListBodySkeleton } from "./skeletons";
 import { StatusChip, statusToneForRun } from "./status-chip";
+import { TopoSelect } from "./ui/topo-select";
 import {
   filterAndSortRuns,
   paginateRuns,
@@ -60,7 +62,10 @@ export function RunsWorkspace({
 }) {
   const { can, userId } = useProjectActions();
   const router = useRouter();
-  const [runSearch, setRunSearch] = useQueryState("q", "", String);
+  const [runSearch, setRunSearch] = useQueryState("q", "", String, {
+    debounceMs: 200,
+    replace: true,
+  });
   const [runSort, setRunSort] = useQueryState<RunListSort>("sort", "updated", (value) => ["updated", "created", "name", "status"].includes(value) ? value as RunListSort : "updated");
   const [runPage, setRunPage] = useQueryState("page", 1, (value) => Math.max(1, Number(value) || 1), false);
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
@@ -153,13 +158,50 @@ export function RunsWorkspace({
         }
       />
 
-      {remote.error ? <div role="alert" className="topo-feedback">{remote.error} <button onClick={remote.retry}>Retry</button></div> : null}
-      {remote.loading ? <p role="status" className="text-xs text-[color:var(--topo-muted)]">Updating runs…</p> : null}
+      {remote.error ? <div role="alert" className="topo-feedback">{remote.error} <Button type="button" size="sm" variant="ghost" className="h-auto min-h-0 px-1 py-0 underline" onPress={remote.retry}>Retry</Button></div> : null}
       <div className="topo-toolbar">
-        <label>Status <select value={status} onChange={(e) => setStatus(e.target.value)}>{["all", "planned", "in_progress", "completed", "aborted"].map((value) => <option key={value} value={value}>{formatStatusLabel(value)}</option>)}</select></label>
-        <label>Assignee <select value={assignee} onChange={(e) => setAssignee(e.target.value)}><option value="all">Everyone</option><option value={userId ?? ""}>Assigned to me</option><option value="unassigned">Unassigned</option></select></label>
-        <label>Kind <select value={kind} onChange={(e) => setKind(e.target.value)}><option value="all">All runs</option><option value="manual">Manual</option><option value="automation">Automation</option></select></label>
-        <label>Environment <input value={environment} placeholder="Any environment" onChange={(e) => setEnvironment(e.target.value)} /></label>
+        <TopoSelect
+          label="Status"
+          ariaLabel="Status"
+          className="w-36"
+          value={status}
+          onChange={setStatus}
+          options={["all", "planned", "in_progress", "completed", "aborted"].map((value) => ({
+            id: value,
+            label: formatStatusLabel(value),
+          }))}
+          compact
+        />
+        <TopoSelect
+          label="Assignee"
+          ariaLabel="Assignee"
+          className="w-40"
+          value={assignee}
+          onChange={setAssignee}
+          options={[
+            { id: "all", label: "Everyone" },
+            { id: userId ?? "", label: "Assigned to me" },
+            { id: "unassigned", label: "Unassigned" },
+          ]}
+          compact
+        />
+        <TopoSelect
+          label="Kind"
+          ariaLabel="Kind"
+          className="w-36"
+          value={kind}
+          onChange={setKind}
+          options={[
+            { id: "all", label: "All runs" },
+            { id: "manual", label: "Manual" },
+            { id: "automation", label: "Automation" },
+          ]}
+          compact
+        />
+        <TextField name="environment" className="w-40" variant="secondary">
+          <Label className="text-xs text-[color:var(--topo-muted)]">Environment</Label>
+          <Input value={environment} placeholder="Any environment" onChange={(e) => setEnvironment(e.target.value)} />
+        </TextField>
       </div>
       <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
         {true ? (
@@ -228,7 +270,11 @@ export function RunsWorkspace({
           </div>
         ) : null}
 
-        {runPageData.total === 0 ? (
+        {remote.loading ? (
+          <div role="status" aria-busy="true" aria-label="Updating runs">
+            <RunsListBodySkeleton />
+          </div>
+        ) : runPageData.total === 0 ? (
           <div className="space-y-3 border-dashed px-3 py-10 text-center">
             <p className="text-sm text-[color:var(--topo-muted)]">{hasFilters ? "No runs match these filters." : "No runs yet."}</p>
             {hasFilters ? <Button variant="secondary" onPress={clearFilters}>Clear filters</Button> : can("runs.create") ? (
@@ -254,9 +300,7 @@ export function RunsWorkspace({
                 transition={{ delay: Math.min(i, 10) * 0.02 }}
                 aria-current={cursorIndex === i ? "true" : undefined}
                 className={
-                  cursorIndex === i
-                    ? "bg-[color:var(--topo-accent-soft)]"
-                    : undefined
+                  cursorIndex === i ? "topo-selected-surface" : undefined
                 }
               >
                 <Link
@@ -298,7 +342,7 @@ export function RunsWorkspace({
           </ul>
         )}
 
-        {showRunListPagination ? (
+        {!remote.loading && showRunListPagination ? (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--topo-line)] px-2.5 py-2">
             <p className="text-xs text-[color:var(--topo-muted)]">
               {runRangeStart}–{runRangeEnd} of {runPageData.total}

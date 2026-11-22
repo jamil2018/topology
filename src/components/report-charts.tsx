@@ -9,6 +9,7 @@ import {
   type TimelinePoint,
 } from "@/lib/report-stats";
 import type { ReportsTrendPoint } from "@/lib/report-dashboard";
+import { TopoDisclosure } from "./ui/topo-disclosure";
 
 export function StatusDonut({ kpis }: { kpis: ReportKpis }) {
   const segments = donutSegments(kpis);
@@ -369,7 +370,22 @@ export function PassRateTrend({ points }: { points: ReportsTrendPoint[] }) {
           </circle>
         ))}
       </svg>
-      <details className="mt-2 text-xs text-[color:var(--topo-muted)]"><summary className="cursor-pointer">View daily values</summary><ul className="mt-2 space-y-1">{points.map((point) => <li key={point.date}>{point.date}: {point.passRate == null ? "No executed results" : `${point.passRate}% passed`}</li>)}</ul></details>
+      <TopoDisclosure
+        className="mt-3 text-xs text-[color:var(--topo-muted)]"
+        title="View daily values"
+        bodyClassName="mt-2 space-y-1"
+      >
+        <ul className="space-y-1">
+          {points.map((point) => (
+            <li key={point.date}>
+              {point.date}:{" "}
+              {point.passRate == null
+                ? "No executed results"
+                : `${point.passRate}% passed`}
+            </li>
+          ))}
+        </ul>
+      </TopoDisclosure>
       <div className="mt-1 flex justify-between font-mono text-xs text-[color:var(--topo-muted)]">
         <span>{points[0]?.date}</span>
         <span>{points[points.length - 1]?.date}</span>

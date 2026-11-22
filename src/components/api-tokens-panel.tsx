@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button, Input } from "@heroui/react";
 import { StatusChip } from "./status-chip";
+import { TopoSelect } from "./ui/topo-select";
 import { API_TOKEN_SCOPES, type ApiTokenScope } from "@/lib/api-token-scopes";
 
 type TokenRow = {
@@ -184,20 +185,17 @@ export function ApiTokensPanel() {
             onChange={(e) => setName(e.target.value)}
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
-          Scope
-          <select
-            className="rounded border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
-            value={scope}
-            onChange={(e) => setScope(e.target.value as ApiTokenScope)}
-          >
-            {API_TOKEN_SCOPES.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
+        <TopoSelect
+          label="Scope"
+          className="w-full"
+          value={scope}
+          onChange={(value) => setScope(value as ApiTokenScope)}
+          options={API_TOKEN_SCOPES.map((value) => ({
+            id: value,
+            label: value,
+          }))}
+          compact
+        />
         <label className="space-y-1 sm:col-span-2">
           <span className="font-medium text-xs text-[color:var(--topo-muted)]">
             Expires (optional)
@@ -219,7 +217,7 @@ export function ApiTokensPanel() {
       </Button>
 
       {error ? (
-        <p className="text-xs text-red-600" role="alert">
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
           {error}
         </p>
       ) : null}

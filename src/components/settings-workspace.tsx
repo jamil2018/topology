@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@heroui/react";
+import { Button, Input, Label, TextField } from "@heroui/react";
 import { PageHeader } from "./page-header";
 import { ConnectAgentPanel } from "./connect-agent-panel";
 import { CiSetupPanel } from "./ci-setup-panel";
@@ -22,6 +22,7 @@ import { ApiTokensPanel } from "./api-tokens-panel";
 import { AuditLogPanel } from "./audit-log-panel";
 import { CustomFieldsPanel } from "./custom-fields-panel";
 import { SharedStepsPanel } from "./shared-steps-panel";
+import { TopoDisclosure } from "./ui/topo-disclosure";
 import {
   SETTINGS_NAV,
   isLegacySettingsSection,
@@ -195,7 +196,7 @@ export function SettingsWorkspace({
       />
 
       {loadError ? (
-        <p className="text-sm text-red-500">{loadError}</p>
+        <p className="text-sm text-red-500 dark:text-red-400">{loadError}</p>
       ) : null}
 
       <div className="space-y-4">
@@ -244,24 +245,23 @@ export function SettingsWorkspace({
                   </p>
                 </div>
 
-                <label className="block space-y-1 text-sm">
-                  <span className="text-[color:var(--topo-muted)]">Name</span>
-                  <input
+                <TextField name="profile-name" className="w-full" variant="secondary">
+                  <Label className="text-[color:var(--topo-muted)]">Name</Label>
+                  <Input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-3 py-2 text-sm"
+                    className="w-full"
                     autoComplete="name"
                   />
-                </label>
+                </TextField>
 
-                <label className="block space-y-1 text-sm">
-                  <span className="text-[color:var(--topo-muted)]">Email</span>
-                  <input
+                <TextField name="profile-email" className="w-full" variant="secondary" isReadOnly>
+                  <Label className="text-[color:var(--topo-muted)]">Email</Label>
+                  <Input
                     value={profile?.email ?? ""}
-                    readOnly
-                    className="w-full cursor-default rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)] px-3 py-2 font-mono text-sm text-[color:var(--topo-muted)]"
+                    className="w-full cursor-default font-mono text-[color:var(--topo-muted)]"
                   />
-                </label>
+                </TextField>
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -290,42 +290,42 @@ export function SettingsWorkspace({
                         12 characters.
                       </p>
                     </div>
-                    <label className="block space-y-1 text-sm">
-                      <span className="text-[color:var(--topo-muted)]">
+                    <TextField name="current-password" className="w-full" variant="secondary" type="password">
+                      <Label className="text-[color:var(--topo-muted)]">
                         Current password
-                      </span>
-                      <input
+                      </Label>
+                      <Input
                         type="password"
                         value={currentPassword}
                         onChange={(e) => setCurrentPassword(e.target.value)}
-                        className="w-full rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-3 py-2 text-sm"
+                        className="w-full"
                         autoComplete="current-password"
                       />
-                    </label>
-                    <label className="block space-y-1 text-sm">
-                      <span className="text-[color:var(--topo-muted)]">
+                    </TextField>
+                    <TextField name="new-password" className="w-full" variant="secondary" type="password">
+                      <Label className="text-[color:var(--topo-muted)]">
                         New password
-                      </span>
-                      <input
+                      </Label>
+                      <Input
                         type="password"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        className="w-full rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-3 py-2 text-sm"
+                        className="w-full"
                         autoComplete="new-password"
                       />
-                    </label>
-                    <label className="block space-y-1 text-sm">
-                      <span className="text-[color:var(--topo-muted)]">
+                    </TextField>
+                    <TextField name="confirm-password" className="w-full" variant="secondary" type="password">
+                      <Label className="text-[color:var(--topo-muted)]">
                         Confirm new password
-                      </span>
-                      <input
+                      </Label>
+                      <Input
                         type="password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-3 py-2 text-sm"
+                        className="w-full"
                         autoComplete="new-password"
                       />
-                    </label>
+                    </TextField>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
                         size="sm"
@@ -372,11 +372,13 @@ export function SettingsWorkspace({
                   {(["system", "light", "dark"] as const).map((mode) => {
                     const active = preference === mode;
                     return (
-                      <button
+                      <Button
                         key={mode}
                         type="button"
-                        onClick={() => void saveTheme(mode)}
-                        className={`rounded-[5px] px-2 py-2 text-xs font-medium capitalize transition-colors ${
+                        size="sm"
+                        variant={active ? "secondary" : "ghost"}
+                        onPress={() => void saveTheme(mode)}
+                        className={`rounded-[5px] px-2 py-2 text-xs font-medium capitalize ${
                           active
                             ? "bg-[color:var(--topo-panel)] text-[color:var(--topo-ink)] shadow-sm"
                             : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
@@ -384,7 +386,7 @@ export function SettingsWorkspace({
                         aria-pressed={active}
                       >
                         {mode}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
@@ -418,10 +420,12 @@ export function SettingsWorkspace({
                       either way.
                     </p>
                   </div>
-                  <button
+                  <Button
                     type="button"
+                    size="sm"
+                    variant={qualityGraphEnabled ? "secondary" : "tertiary"}
                     aria-pressed={qualityGraphEnabled}
-                    onClick={() => {
+                    onPress={() => {
                       setQualityGraphEnabled(!qualityGraphEnabled);
                       setPrefsMsg(
                         qualityGraphEnabled
@@ -431,14 +435,14 @@ export function SettingsWorkspace({
                     }}
                     className={`rounded-md px-3 py-1.5 text-xs font-medium ${
                       qualityGraphEnabled
-                        ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                        ? "topo-selected-surface"
                         : "border border-[color:var(--topo-line)] text-[color:var(--topo-muted)]"
                     }`}
                   >
                     {qualityGraphEnabled
                       ? "Quality graph on"
                       : "Quality graph off"}
-                  </button>
+                  </Button>
                   {prefsMsg ? (
                     <p className="text-xs text-[color:var(--topo-muted)]">
                       {prefsMsg}
@@ -484,15 +488,33 @@ export function SettingsWorkspace({
 
           {page === "integrations" ? (
             <>
-              <details id="agent" className="scroll-mt-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-                <summary className="cursor-pointer text-sm font-semibold">Connect an agent<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Set up an AI assistant to work with your tests.</span></summary>
-                <div className="mt-4">
+              <TopoDisclosure
+                id="agent"
+                bordered
+                className="scroll-mt-4 space-y-3 p-4"
+                title="Connect an agent"
+                summary={
+                  <span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">
+                    Set up an AI assistant to work with your tests.
+                  </span>
+                }
+                bodyClassName="mt-4 space-y-3"
+              >
                 <ConnectAgentPanel defaultUrl={defaultUrl} compact />
-              </div></details>
+              </TopoDisclosure>
 
-              <details id="ci" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-                <summary className="cursor-pointer text-sm font-semibold">Import automated results<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Send test results from your CI pipeline.</span></summary>
-                <div className="mt-4">
+              <TopoDisclosure
+                id="ci"
+                bordered
+                className="scroll-mt-4 space-y-3 p-4"
+                title="Import automated results"
+                summary={
+                  <span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">
+                    Send test results from your CI pipeline.
+                  </span>
+                }
+                bodyClassName="mt-4 space-y-3"
+              >
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
                     CI ingest
@@ -502,11 +524,20 @@ export function SettingsWorkspace({
                   </p>
                 </div>
                 <CiSetupPanel />
-              </div></details>
+              </TopoDisclosure>
 
-              <details id="repositories" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-                <summary className="cursor-pointer text-sm font-semibold">Repositories<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Connect source code for change impact analysis.</span></summary>
-                <div className="mt-4">
+              <TopoDisclosure
+                id="repositories"
+                bordered
+                className="scroll-mt-4 space-y-3 p-4"
+                title="Repositories"
+                summary={
+                  <span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">
+                    Connect source code for change impact analysis.
+                  </span>
+                }
+                bodyClassName="mt-4 space-y-3"
+              >
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
                     Repositories
@@ -516,11 +547,20 @@ export function SettingsWorkspace({
                   </p>
                 </div>
                 <RepositoriesPanel defaultUrl={defaultUrl} />
-              </div></details>
+              </TopoDisclosure>
 
-              <details id="ai" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-                <summary className="cursor-pointer text-sm font-semibold">AI drafting<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Optional assistance with writing test proposals.</span></summary>
-                <div className="mt-4">
+              <TopoDisclosure
+                id="ai"
+                bordered
+                className="scroll-mt-4 space-y-3 p-4"
+                title="AI drafting"
+                summary={
+                  <span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">
+                    Optional assistance with writing test proposals.
+                  </span>
+                }
+                bodyClassName="mt-4 space-y-3"
+              >
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
                     AI (optional)
@@ -531,17 +571,35 @@ export function SettingsWorkspace({
                   </p>
                 </div>
                 <AiSettingsPanel />
-              </div></details>
+              </TopoDisclosure>
 
-              <details id="webhooks" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-                <summary className="cursor-pointer text-sm font-semibold">Webhooks<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Notify other tools when testing activity changes.</span></summary>
-                <div className="mt-4">
+              <TopoDisclosure
+                id="webhooks"
+                bordered
+                className="scroll-mt-4 space-y-3 p-4"
+                title="Webhooks"
+                summary={
+                  <span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">
+                    Notify other tools when testing activity changes.
+                  </span>
+                }
+                bodyClassName="mt-4 space-y-3"
+              >
                 <WebhooksPanel />
-              </div></details>
+              </TopoDisclosure>
 
-              <details id="inbound" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-                <summary className="cursor-pointer text-sm font-semibold">Inbound issue sync<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Receive close / reopen events from Jira, Linear, GitHub, and GitLab.</span></summary>
-                <div className="mt-4">
+              <TopoDisclosure
+                id="inbound"
+                bordered
+                className="scroll-mt-4 space-y-3 p-4"
+                title="Inbound issue sync"
+                summary={
+                  <span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">
+                    Receive close / reopen events from Jira, Linear, GitHub, and GitLab.
+                  </span>
+                }
+                bodyClassName="mt-4 space-y-3"
+              >
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
                     Inbound issue sync
@@ -551,13 +609,22 @@ export function SettingsWorkspace({
                   </p>
                 </div>
                 <InboundIssueSyncPanel defaultUrl={defaultUrl} />
-              </div></details>
+              </TopoDisclosure>
 
-              <details id="notifications" className="scroll-mt-4 space-y-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
-                <summary className="cursor-pointer text-sm font-semibold">Notification channels<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Slack, Teams, or email alerts for assignments and run events.</span></summary>
-                <div className="mt-4">
+              <TopoDisclosure
+                id="notifications"
+                bordered
+                className="scroll-mt-4 space-y-3 p-4"
+                title="Notification channels"
+                summary={
+                  <span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">
+                    Slack, Teams, or email alerts for assignments and run events.
+                  </span>
+                }
+                bodyClassName="mt-4 space-y-3"
+              >
                 <NotificationChannelsPanel />
-              </div></details>
+              </TopoDisclosure>
             </>
           ) : null}
 

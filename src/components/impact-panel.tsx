@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { Button, Input } from "@heroui/react";
+import { abortCleanup, isAbortError } from "@/lib/abort";
 import { gapHref, gapLabel } from "./hub-widgets";
 import { useProjectActions } from "./project-actions";
 import { StatusChip } from "./status-chip";
@@ -121,34 +122,45 @@ export function ImpactPanel() {
       : {};
     void (async () => {
       try {
-        const [prRes, repoRes] = await Promise.all([
+        // allSettled so dual-fetch abort rejects never escape as unhandled.
+        const [prSettled, repoSettled] = await Promise.allSettled([
           fetch("/api/pull-requests", { signal: controller.signal, headers }),
           fetch("/api/repositories", { signal: controller.signal, headers }),
         ]);
-        if (cancelled) return;
-        if (repoRes.ok) {
-          const repoData = (await repoRes.json()) as {
+        if (cancelled || controller.signal.aborted) return;
+
+        if (repoSettled.status === "rejected") {
+          if (isAbortError(repoSettled.reason)) return;
+          setReposConnected(false);
+        } else if (repoSettled.value.ok) {
+          const repoData = (await repoSettled.value.json()) as {
             repositories?: unknown[];
           };
+          if (cancelled || controller.signal.aborted) return;
           setReposConnected((repoData.repositories?.length ?? 0) > 0);
         } else {
           setReposConnected(false);
         }
-        if (prRes.ok) {
-          const prData = (await prRes.json()) as {
+
+        if (prSettled.status === "rejected") {
+          if (isAbortError(prSettled.reason)) return;
+        } else if (prSettled.value.ok) {
+          const prData = (await prSettled.value.json()) as {
             pullRequests?: PullRequestRow[];
           };
+          if (cancelled || controller.signal.aborted) return;
           setRecentPrs((prData.pullRequests ?? []).slice(0, 8));
         }
-      } catch {
-        if (!cancelled && !controller.signal.aborted) {
-          setReposConnected(false);
-        }
+      } catch (error) {
+        if (cancelled || controller.signal.aborted || isAbortError(error)) return;
+        setReposConnected(false);
       }
-    })();
+    })().catch((error) => {
+      if (cancelled || controller.signal.aborted || isAbortError(error)) return;
+    });
     return () => {
       cancelled = true;
-      controller.abort();
+      abortCleanup(controller);
     };
   }, [projectId]);
 
@@ -318,10 +330,12 @@ export function ImpactPanel() {
               const selected = prNumber.trim() === String(pr.number);
               return (
                 <li key={pr.id}>
-                  <button
+                  <Button
                     type="button"
-                    onClick={() => selectPullRequest(pr)}
-                    className={`rounded-md border px-2.5 py-1 text-left text-xs transition ${
+                    size="sm"
+                    variant={selected ? "secondary" : "tertiary"}
+                    onPress={() => selectPullRequest(pr)}
+                    className={`h-auto rounded-md border px-2.5 py-1 text-left text-xs transition ${
                       selected
                         ? "border-[color:var(--topo-accent)] bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
                         : "border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-chip)]/60"
@@ -335,7 +349,7 @@ export function ImpactPanel() {
                           : pr.title}
                       </span>
                     ) : null}
-                  </button>
+                  </Button>
                 </li>
               );
             })}
@@ -357,7 +371,7 @@ export function ImpactPanel() {
       </Button>
 
       {error ? (
-        <p className="text-sm text-red-600" role="alert">
+        <p className="text-sm text-red-600 dark:text-red-400" role="alert">
           {error}
         </p>
       ) : null}

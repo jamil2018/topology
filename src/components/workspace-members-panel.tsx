@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@heroui/react";
-import { Bone } from "./skeletons";
+import { Button, Input, Label, TextField } from "@heroui/react";
+import { Bone, PanelListSkeleton } from "./skeletons";
+import { TopoSelect } from "./ui/topo-select";
 
 type RoleOption = {
   id: string;
@@ -136,25 +137,17 @@ export function WorkspaceMembersPanel() {
 
   if (loading) {
     return (
-      <div className="space-y-4" aria-busy="true" aria-label="Loading members">
+      <div
+        className="space-y-4"
+        role="status"
+        aria-busy="true"
+        aria-label="Loading members"
+      >
         <div className="space-y-1.5">
           <Bone className="h-4 w-40" />
           <Bone className="h-3 w-72 max-w-full" />
         </div>
-        <ul className="divide-y divide-[color:var(--topo-line)] overflow-hidden rounded-md border border-[color:var(--topo-line)]">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <li
-              key={i}
-              className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
-            >
-              <div className="space-y-1.5">
-                <Bone className="h-4 w-36" />
-                <Bone className="h-3 w-44" />
-              </div>
-              <Bone className="h-8 w-24" />
-            </li>
-          ))}
-        </ul>
+        <PanelListSkeleton rows={3} />
       </div>
     );
   }
@@ -171,7 +164,7 @@ export function WorkspaceMembersPanel() {
         </p>
       </div>
 
-      {error ? <p className="text-sm text-red-500">{error}</p> : null}
+      {error ? <p className="text-sm text-red-500 dark:text-red-400">{error}</p> : null}
       {msg ? (
         <p className="text-xs text-[color:var(--topo-muted)]">{msg}</p>
       ) : null}
@@ -206,17 +199,17 @@ export function WorkspaceMembersPanel() {
                 </div>
               </div>
               {canAdmin ? (
-                <select
+                <TopoSelect
+                  ariaLabel={`Role for ${m.user.name ?? m.user.email}`}
+                  className="w-40"
                   value={selected}
-                  onChange={(e) => void changeRole(m.user.id, e.target.value)}
-                  className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs accent-[color:var(--topo-accent)]"
-                >
-                  {activeRoles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => void changeRole(m.user.id, value)}
+                  options={activeRoles.map((r) => ({
+                    id: r.id,
+                    label: r.name,
+                  }))}
+                  compact
+                />
               ) : (
                 <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                   {m.customRole?.name ?? m.role}
@@ -233,24 +226,27 @@ export function WorkspaceMembersPanel() {
             Invite by email
           </h3>
           <div className="flex flex-wrap gap-2">
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="teammate@company.com"
-              className="min-w-[14rem] flex-1 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
-            />
-            <select
+            <TextField name="invite-email" className="min-w-[14rem] flex-1" variant="secondary" type="email">
+              <Label className="sr-only">Invite email</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="teammate@company.com"
+                className="w-full"
+              />
+            </TextField>
+            <TopoSelect
+              ariaLabel="Invite role"
+              className="w-40"
               value={roleId}
-              onChange={(e) => setRoleId(e.target.value)}
-              className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm accent-[color:var(--topo-accent)]"
-            >
-              {activeRoles.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
+              onChange={setRoleId}
+              options={activeRoles.map((r) => ({
+                id: r.id,
+                label: r.name,
+              }))}
+              compact
+            />
             <Button
               size="sm"
               variant="primary"

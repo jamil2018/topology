@@ -41,14 +41,15 @@ export async function startManualRun(
     name: "Select all visible cases",
   });
   await expect(selectAll).toBeChecked();
-  await selectAll.click();
+  // HeroUI Checkbox.Control overlays the native input hit target.
+  await selectAll.click({ force: true });
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
 
   for (const title of titles) {
     await page.getByLabel("Search", { exact: true }).fill(title);
     await page
       .getByRole("checkbox", { name: `Select ${title}`, exact: true })
-      .check();
+      .check({ force: true });
     await page.getByLabel("Search", { exact: true }).fill("");
   }
   await expect(

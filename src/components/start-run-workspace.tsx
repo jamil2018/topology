@@ -5,16 +5,27 @@ import { RetestCaseLink } from "./retest-case-link";
 import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
-import { useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Selection } from "@heroui/react";
-import { Button, Input, Label, TextArea, TextField } from "@heroui/react";
-import { CaretLeftIcon } from "@phosphor-icons/react";
+import { Button, Description, Input, Label, TextArea, TextField } from "@heroui/react";
+import { CaretLeftIcon, FloppyDiskIcon, PlayIcon } from "@phosphor-icons/react";
 import { PageHeader } from "./page-header";
 import { GuidedFirstRun } from "./guided-first-run";
 import { RunCasePickerTable } from "./run-case-picker-table";
 import { StatusChip } from "./status-chip";
+import { TopoDisclosure } from "./ui/topo-disclosure";
+import { TopoSelect } from "./ui/topo-select";
 import {
+  caseSearchHaystack,
   collectCaseTags,
   defaultReadySelection,
   visiblePickerCases,
@@ -64,6 +75,7 @@ export function StartRunWorkspace({
       .filter((id) => cases.some((row) => row.id === id));
   })();
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [status, setStatus] = useState<string>(
     initialTemplate || retest || casesFromQuery.length > 0 ? "all" : "ready",
   );
@@ -83,31 +95,47 @@ export function StartRunWorkspace({
   const invalidSelection = missingIds.length > 0 || unavailableAssignee;
   const [optionsOpen, setOptionsOpen] = useState(unavailableAssignee || !environment.trim());
   const tags = useMemo(() => collectCaseTags(cases), [cases]);
+  const caseHaystacks = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of cases) map.set(row.id, caseSearchHaystack(row));
+    return map;
+  }, [cases]);
   const visible = useMemo(
     () =>
       visiblePickerCases(
         cases,
-        { search, status, priority, folderId, tag },
+        { search: deferredSearch, status, priority, folderId, tag },
         sort,
+        caseHaystacks,
       ),
-    [cases, search, status, priority, folderId, tag, sort],
+    [cases, deferredSearch, status, priority, folderId, tag, sort, caseHaystacks],
   );
 
-  const visibleIds = visible.filter((row) => !retest || retest.caseIds.includes(row.id)).map((c) => c.id);
+  const pickerVisible = useMemo(
+    () => (retest ? visible.filter((row) => retest.caseIds.includes(row.id)) : visible),
+    [visible, retest],
+  );
+  const visibleIds = useMemo(
+    () => pickerVisible.map((c) => c.id),
+    [pickerVisible],
+  );
   const selectedCount = selectedIds.size;
-  const readyCount = cases.filter((c) => c.status === "ready").length;
+  const readyCount = useMemo(
+    () => cases.filter((c) => c.status === "ready").length,
+    [cases],
+  );
 
-  function resetToReady() {
+  const resetToReady = useCallback(() => {
     setStatus("ready");
     setPriority("all");
     setFolderId("all");
     setTag("all");
     setSearch("");
     setSelectedIds(new Set(defaultReadySelection(retest ? cases.filter((row) => retest.caseIds.includes(row.id)) : cases)));
-  }
+  }, [cases, retest]);
 
   /** Preserve selections outside the current filter while Table manages visible rows. */
-  function handlePickerSelectionChange(keys: Selection) {
+  const handlePickerSelectionChange = useCallback((keys: Selection) => {
     const visibleSet = new Set(visibleIds);
     setSelectedIds((prev) => {
       const next = new Set([...prev].filter((id) => !visibleSet.has(id)));
@@ -118,7 +146,7 @@ export function StartRunWorkspace({
       for (const key of keys) next.add(String(key));
       return next;
     });
-  }
+  }, [visibleIds]);
 
   async function createRun() {
     if (!can("runs.create") || creating.current || invalidSelection) return;
@@ -207,7 +235,7 @@ export function StartRunWorkspace({
         <div className="space-y-3">
           <TextField name="run-name" className="w-full">
             <Label>Run name</Label>
-            <p className="text-xs text-[color:var(--topo-muted)]">Required</p>
+            <Description>Required</Description>
             <Input
               disabled={!hydrated}
               placeholder="Release 1.0 smoke"
@@ -217,9 +245,14 @@ export function StartRunWorkspace({
             />
           </TextField>
         </div>
-        <details open={optionsOpen} onToggle={(event) => setOptionsOpen(event.currentTarget.open)} className="rounded-md border border-[color:var(--topo-line)] p-3">
-          <summary className="cursor-pointer text-sm font-medium text-[color:var(--topo-ink)]">Run options · {environment || "Environment required"} · {members.find((member) => member.id === assigneeId)?.label ?? (unavailableAssignee ? "Unavailable assignee" : "Unassigned")}</summary>
-          <div className="mt-3 space-y-3">
+        <TopoDisclosure
+          bordered
+          title="Run options"
+          summary={`· ${environment || "Environment required"} · ${members.find((member) => member.id === assigneeId)?.label ?? (unavailableAssignee ? "Unavailable assignee" : "Unassigned")}`}
+          isExpanded={optionsOpen}
+          onExpandedChange={setOptionsOpen}
+          bodyClassName="space-y-3 pt-2"
+        >
           <TextField name="run-notes" className="w-full">
             <Label>Notes</Label>
             <TextArea
@@ -228,16 +261,46 @@ export function StartRunWorkspace({
               className="w-full"
             />
           </TextField>
-        <div className="topo-toolbar">
-          <label>Environment <input value={environment} onChange={(event) => setEnvironment(event.target.value)} /></label>
-          {!retest ? <label>Assignee <select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}><option value="">Unassigned</option>{unavailableAssignee ? <option value={assigneeId}>Unavailable member — choose another</option> : null}{members.map((member) => <option value={member.id} key={member.id}>{member.label}</option>)}</select></label> : null}
-        </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
+              Environment
+              <Input
+                value={environment}
+                onChange={(event) => setEnvironment(event.target.value)}
+                className="h-8"
+              />
+            </label>
+            {!retest ? (
+              <TopoSelect
+                label="Assignee"
+                ariaLabel="Assignee"
+                className="w-full"
+                value={assigneeId}
+                onChange={setAssigneeId}
+                options={[
+                  { id: "", label: "Unassigned" },
+                  ...(unavailableAssignee
+                    ? [
+                        {
+                          id: assigneeId,
+                          label: "Unavailable member — choose another",
+                        },
+                      ]
+                    : []),
+                  ...members.map((member) => ({
+                    id: member.id,
+                    label: member.label,
+                  })),
+                ]}
+                compact
+              />
+            ) : null}
           </div>
-        </details>
-        {missingIds.length ? <p role="alert" className="topo-feedback">{missingIds.length} selected cases are unavailable. <button onClick={() => setSelectedIds(new Set([...selectedIds].filter((id) => !missingIds.includes(id))))}>Remove unavailable cases</button></p> : null}
+        </TopoDisclosure>
+        {missingIds.length ? <p role="alert" className="topo-feedback">{missingIds.length} selected cases are unavailable. <Button type="button" size="sm" variant="ghost" className="h-auto min-h-0 px-1 py-0 underline" onPress={() => setSelectedIds(new Set([...selectedIds].filter((id) => !missingIds.includes(id))))}>Remove unavailable cases</Button></p> : null}
         {retest?.excluded.length ? <section className="topo-feedback"><h2 className="font-medium">Excluded from retest</h2><ul>{retest.excluded.map((item) => <li key={item.id}>{item.caseTitle || item.title || "Automation result"}: {item.reason}. <Link className="underline" href={`/runs/${item.runId}?result=${item.id}`}>Open source result</Link>{!item.caseId ? <RetestCaseLink resultId={item.id} cases={cases} onLinked={(id) => setSelectedIds((previous) => new Set([...previous, id]))} /> : null}</li>)}</ul></section> : null}
         <RunCasePickerTable
-          visible={retest ? visible.filter((row) => retest.caseIds.includes(row.id)) : visible}
+          visible={pickerVisible}
           folders={folders}
           tags={tags}
           search={search}
@@ -264,12 +327,24 @@ export function StartRunWorkspace({
         {savedMessage ? <p role="status" className="text-sm">{savedMessage} <Link href="/runs" className="underline">View templates</Link></p> : null}
         <div className="sticky bottom-2 z-10 flex flex-wrap items-center gap-3 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3">
           <p className="mr-auto text-sm" role="status">{!can("runs.create") ? "Your role cannot create runs." : !name.trim() ? "Enter a run name to continue." : !environment.trim() ? "Enter an environment in Run options." : unavailableAssignee ? "Choose an available assignee in Run options." : missingIds.length ? "Remove unavailable cases to continue." : !selectedCount ? "Select at least one case to continue." : `${selectedCount} cases selected. Ready to create.`}</p>
-        {!retest ? <Button variant="secondary" isDisabled={saving || invalidSelection || !name.trim() || !selectedCount || !canSaveTemplate} onPress={() => void saveTemplate()}>{editTemplate ? "Save template changes" : "Save as template"}</Button> : null}
+        {!retest ? (
+          <Button
+            variant="secondary"
+            className="gap-1.5"
+            isDisabled={saving || invalidSelection || !name.trim() || !selectedCount || !canSaveTemplate}
+            onPress={() => void saveTemplate()}
+          >
+            <FloppyDiskIcon size={14} weight="bold" aria-hidden />
+            {editTemplate ? "Save template changes" : "Save as template"}
+          </Button>
+        ) : null}
         <Button
           variant="primary"
+          className="gap-1.5"
           isDisabled={!can("runs.create") || invalidSelection || saving || pending || !environment.trim() || !name.trim() || selectedCount === 0}
           onPress={() => void createRun()}
         >
+          <PlayIcon size={14} weight="bold" aria-hidden />
           {saving || pending ? "Saving…" : `Create run · ${selectedCount}`}
         </Button>
         </div>

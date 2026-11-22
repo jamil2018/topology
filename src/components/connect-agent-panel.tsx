@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@heroui/react";
+import {
+  Button,
+  Input,
+  Label,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+} from "@heroui/react";
+import type { Selection } from "@heroui/react";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 
@@ -260,48 +268,47 @@ export function ConnectAgentPanel({
         />
       )}
 
-      <div
-        className="flex flex-wrap gap-2"
-        role="tablist"
+      <ToggleButtonGroup
         aria-label="MCP client"
+        selectionMode="single"
+        disallowEmptySelection
+        size="sm"
+        isDetached
+        className="flex flex-wrap gap-2"
+        selectedKeys={new Set([client])}
+        onSelectionChange={(keys: Selection) => {
+          if (keys === "all") return;
+          const next = [...keys][0];
+          if (next == null) return;
+          setClient(String(next) as AgentClient);
+        }}
       >
         {CLIENT_TABS.map(({ id, label }) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={client === id}
-            onClick={() => setClient(id)}
-            className={`rounded-md px-3 py-1.5 text-sm ${
-              client === id
-                ? "bg-[color:var(--topo-accent)] text-[color:var(--accent-foreground)]"
-                : "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-muted)]"
-            }`}
-          >
+          <ToggleButton key={id} id={id}>
             {label}
-          </button>
+          </ToggleButton>
         ))}
-      </div>
+      </ToggleButtonGroup>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="space-y-1 text-sm">
-          <span className="text-[color:var(--topo-muted)]">Topology URL</span>
-          <input
+        <TextField name="topology-url" className="w-full" variant="secondary">
+          <Label className="text-[color:var(--topo-muted)]">Topology URL</Label>
+          <Input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            className="w-full rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 font-mono text-sm"
+            className="w-full font-mono text-sm"
           />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-[color:var(--topo-muted)]">API token</span>
-          <input
+        </TextField>
+        <TextField name="api-token" className="w-full" variant="secondary">
+          <Label className="text-[color:var(--topo-muted)]">API token</Label>
+          <Input
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            className="w-full rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 font-mono text-sm"
+            className="w-full font-mono text-sm"
             autoComplete="off"
             spellCheck={false}
           />
-        </label>
+        </TextField>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -336,7 +343,7 @@ export function ConnectAgentPanel({
                 className={
                   probe.ok
                     ? "font-medium text-emerald-700 dark:text-emerald-400"
-                    : "font-medium text-red-600"
+                    : "font-medium text-red-600 dark:text-red-400"
                 }
               >
                 {probe.ok ? "ok" : "failed"}
@@ -352,7 +359,7 @@ export function ConnectAgentPanel({
           className={`text-xs ${
             probe.ok
               ? "text-[color:var(--topo-muted)]"
-              : "text-red-600"
+              : "text-red-600 dark:text-red-400"
           }`}
           role="status"
         >
@@ -360,7 +367,7 @@ export function ConnectAgentPanel({
         </p>
       ) : null}
       {tokenError ? (
-        <p className="text-xs text-red-600" role="alert">
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
           {tokenError}
         </p>
       ) : null}

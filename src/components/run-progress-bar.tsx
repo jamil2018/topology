@@ -24,6 +24,7 @@ export function RunProgressBar({
   untested,
   total,
   className = "",
+  labeled,
 }: {
   results?: { status: string }[];
   passed?: number;
@@ -33,6 +34,8 @@ export function RunProgressBar({
   untested?: number;
   total?: number;
   className?: string;
+  /** When true (or when `results` is provided), render Progress label + meter role. */
+  labeled?: boolean;
 }) {
   const counts = results
     ? countResultStatuses(results)
@@ -56,7 +59,7 @@ export function RunProgressBar({
     counts.passed + counts.failed + counts.skipped + counts.blocked;
   const pct =
     resolvedTotal === 0 ? 0 : Math.round((done / resolvedTotal) * 100);
-  const showLabel = Boolean(results);
+  const showLabel = labeled ?? Boolean(results);
 
   return (
     <div className={showLabel ? `space-y-1.5 ${className}` : className}>

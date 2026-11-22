@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { Button, Input } from "@heroui/react";
 import { StatusChip } from "./status-chip";
+import { TopoSelect } from "./ui/topo-select";
 
 type RepositoryRow = {
   id: string;
@@ -192,10 +193,10 @@ export function RepositoriesPanel({ defaultUrl }: { defaultUrl: string }) {
                 {r.hasWebhookSecret ? (
                   <StatusChip>webhook secret</StatusChip>
                 ) : (
-                  <button
+                  <Button
                     type="button"
                     className="text-xs text-[color:var(--topo-muted)] underline-offset-2 hover:underline"
-                    onClick={() => {
+                    onPress={() => {
                       const secret = window.prompt(
                         "GitHub webhook secret for this repository",
                       );
@@ -210,21 +211,21 @@ export function RepositoriesPanel({ defaultUrl }: { defaultUrl: string }) {
                     }}
                   >
                     Set webhook secret
-                  </button>
+                  </Button>
                 )}
               </div>
               {r.provider === "github" || r.provider === "gitlab" ? (
                 <div className="flex flex-wrap gap-2">
-                  <button
+                  <Button
                     type="button"
                     aria-pressed={Boolean(r.postPrStatusChecks)}
-                    disabled={pending}
+                    isDisabled={pending}
                     className={`rounded-md px-2 py-1 text-xs font-medium ${
                       r.postPrStatusChecks
-                        ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                        ? "topo-selected-surface"
                         : "border border-[color:var(--topo-line)] text-[color:var(--topo-muted)]"
                     }`}
-                    onClick={() => {
+                    onPress={() => {
                       const next = !r.postPrStatusChecks;
                       setRepos((prev) =>
                         prev.map((row) =>
@@ -257,17 +258,17 @@ export function RepositoriesPanel({ defaultUrl }: { defaultUrl: string }) {
                     }}
                   >
                     Post PR status checks
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     aria-pressed={Boolean(r.postPrSummaryComment)}
-                    disabled={pending}
+                    isDisabled={pending}
                     className={`rounded-md px-2 py-1 text-xs font-medium ${
                       r.postPrSummaryComment
-                        ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                        ? "topo-selected-surface"
                         : "border border-[color:var(--topo-line)] text-[color:var(--topo-muted)]"
                     }`}
-                    onClick={() => {
+                    onPress={() => {
                       const next = !r.postPrSummaryComment;
                       setRepos((prev) =>
                         prev.map((row) =>
@@ -300,7 +301,7 @@ export function RepositoriesPanel({ defaultUrl }: { defaultUrl: string }) {
                     }}
                   >
                     Post PR summary comment
-                  </button>
+                  </Button>
                 </div>
               ) : null}
             </li>
@@ -345,20 +346,20 @@ export function RepositoriesPanel({ defaultUrl }: { defaultUrl: string }) {
         </label>
       </div>
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
-          Provider
-          <select
-            className="rounded border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
-            value={provider}
-            onChange={(e) =>
-              setProvider(e.target.value as "github" | "gitlab" | "other")
-            }
-          >
-            <option value="github">GitHub</option>
-            <option value="gitlab">GitLab</option>
-            <option value="other">Other</option>
-          </select>
-        </label>
+        <TopoSelect
+          label="Provider"
+          className="w-36"
+          value={provider}
+          onChange={(value) =>
+            setProvider(value as "github" | "gitlab" | "other")
+          }
+          options={[
+            { id: "github", label: "GitHub" },
+            { id: "gitlab", label: "GitLab" },
+            { id: "other", label: "Other" },
+          ]}
+          compact
+        />
         <Button
           size="sm"
           variant="primary"
@@ -435,7 +436,7 @@ export function RepositoriesPanel({ defaultUrl }: { defaultUrl: string }) {
       </div>
 
       {error ? (
-        <p className="text-xs text-red-600" role="alert">
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
           {error}
         </p>
       ) : null}

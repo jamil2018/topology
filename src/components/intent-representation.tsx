@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, TextArea } from "@heroui/react";
+import { Button, TextArea, ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import type { Selection } from "@heroui/react";
+import { FormFieldsSkeleton } from "./skeletons";
+import { TopoDisclosure } from "./ui/topo-disclosure";
 import {
   emptyRepresentation,
   fromTraditionalSteps,
@@ -274,36 +277,38 @@ export function IntentRepresentationPanel({
         <div className="text-xs font-medium text-[color:var(--topo-muted)]">
           Representation
         </div>
-        <div
-          className="flex flex-wrap gap-1"
-          role="group"
+        <ToggleButtonGroup
           aria-label="Representation view"
+          selectionMode="single"
+          disallowEmptySelection
+          size="sm"
+          isDetached
+          className="flex flex-wrap gap-1"
+          selectedKeys={new Set([view])}
+          onSelectionChange={(keys: Selection) => {
+            if (keys === "all") return;
+            const next = [...keys][0];
+            if (next == null) return;
+            setView(String(next) as (typeof REPRESENTATION_VIEWS)[number]);
+          }}
         >
-          {REPRESENTATION_VIEWS.map((id) => {
-            const active = view === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setView(id)}
-                className={`rounded-md px-2 py-1 text-xs transition active:scale-[0.98] ${
-                  active
-                    ? "bg-[color:var(--topo-accent)] text-[color:var(--accent-foreground)]"
-                    : "bg-[color:var(--topo-chip)] text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-                }`}
-              >
-                {VIEW_LABELS[id]}
-              </button>
-            );
-          })}
-        </div>
+          {REPRESENTATION_VIEWS.map((id) => (
+            <ToggleButton key={id} id={id}>
+              {VIEW_LABELS[id]}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
       </div>
 
       {loading ? (
-        <p className="mt-3 text-sm text-[color:var(--topo-muted)]">
-          Loading linked case…
-        </p>
+        <div
+          className="mt-3"
+          role="status"
+          aria-busy="true"
+          aria-label="Loading linked case"
+        >
+          <FormFieldsSkeleton fields={2} />
+        </div>
       ) : null}
 
       {loadError ? (
@@ -444,11 +449,13 @@ export function IntentRepresentationPanel({
           <StructuredClauseList kind="Given" items={liveStructured.given} />
           <StructuredClauseList kind="When" items={liveStructured.when} />
           <StructuredClauseList kind="Then" items={liveStructured.then} />
-          <details className="text-xs text-[color:var(--topo-muted)]">
-            <summary className="cursor-pointer font-medium tracking-[0.12em]">
-              Steps table
-            </summary>
-            <ol className="mt-2 list-decimal space-y-1 pl-5 font-mono text-xs text-[color:var(--topo-ink)]">
+          <TopoDisclosure
+            className="mt-3 text-xs text-[color:var(--topo-muted)]"
+            title="Steps table"
+            triggerClassName="flex w-full cursor-pointer items-center gap-2 py-1 text-left text-xs font-medium tracking-[0.12em] text-[color:var(--topo-muted)]"
+            bodyClassName="mt-2"
+          >
+            <ol className="list-decimal space-y-1 pl-5 font-mono text-xs text-[color:var(--topo-ink)]">
               {toStepTable(liveStructured).map((row) => (
                 <li key={`${row.order}-${row.kind}`}>
                   <span className="uppercase text-[color:var(--topo-muted)]">
@@ -458,7 +465,7 @@ export function IntentRepresentationPanel({
                 </li>
               ))}
             </ol>
-          </details>
+          </TopoDisclosure>
           <Button
             size="sm"
             variant="secondary"

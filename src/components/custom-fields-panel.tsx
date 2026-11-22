@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Button, Input } from "@heroui/react";
+import { TopoCheckbox } from "./ui/topo-checkbox";
 import { useMutationFeedback } from "./use-mutation-feedback";
 import { useProjectActions } from "./project-actions";
+import { TopoSelect } from "./ui/topo-select";
 
 type FieldRow = {
   id: string;
@@ -172,33 +174,39 @@ export function CustomFieldsPanel() {
                 setDraft((d) => ({ ...d, label: e.target.value }))
               }
             />
-            <select
-              className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
+            <TopoSelect
+              ariaLabel="Field entity"
+              className="w-full"
               value={draft.entity}
-              disabled={Boolean(editingId)}
-              onChange={(e) =>
+              isDisabled={Boolean(editingId)}
+              onChange={(value) =>
                 setDraft((d) => ({
                   ...d,
-                  entity: e.target.value as "case" | "result",
+                  entity: value as "case" | "result",
                 }))
               }
-            >
-              <option value="case">On cases</option>
-              <option value="result">On results</option>
-            </select>
-            <select
-              className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
+              options={[
+                { id: "case", label: "On cases" },
+                { id: "result", label: "On results" },
+              ]}
+              compact
+            />
+            <TopoSelect
+              ariaLabel="Field type"
+              className="w-full"
               value={draft.type}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, type: e.target.value }))
+              onChange={(value) =>
+                setDraft((d) => ({ ...d, type: value }))
               }
-            >
-              <option value="text">Text</option>
-              <option value="number">Number</option>
-              <option value="boolean">Boolean</option>
-              <option value="select">Select</option>
-              <option value="date">Date</option>
-            </select>
+              options={[
+                { id: "text", label: "Text" },
+                { id: "number", label: "Number" },
+                { id: "boolean", label: "Boolean" },
+                { id: "select", label: "Select" },
+                { id: "date", label: "Date" },
+              ]}
+              compact
+            />
             {draft.type === "select" ? (
               <Input
                 className="sm:col-span-2"
@@ -210,16 +218,15 @@ export function CustomFieldsPanel() {
               />
             ) : null}
           </div>
-          <label className="flex items-center gap-2 text-xs text-[color:var(--topo-muted)]">
-            <input
-              type="checkbox"
-              checked={draft.required}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, required: e.target.checked }))
-              }
-            />
+          <TopoCheckbox
+            compact
+            isSelected={draft.required}
+            onChange={(isSelected) =>
+              setDraft((d) => ({ ...d, required: isSelected }))
+            }
+          >
             Required
-          </label>
+          </TopoCheckbox>
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"

@@ -62,11 +62,12 @@ test("search, filter, create, edit, folder, saved view, and bulk tag", async ({
   ).toBeVisible({ timeout: 15_000 });
 
   await page.getByLabel("Search cases").filter({visible:true}).fill(edited);
+  // HeroUI Checkbox.Control overlays the input; force reaches the real control.
   await page
     .getByRole("row")
     .filter({ hasText: edited })
     .getByRole("checkbox")
-    .check();
+    .check({ force: true });
   await expect(page.getByText("1 selected")).toBeVisible();
   await page.getByLabel("Add tags").filter({visible:true}).fill(tag);
   await page.getByRole("button", { name: "Add tags" }).click();

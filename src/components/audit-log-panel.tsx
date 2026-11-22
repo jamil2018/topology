@@ -59,7 +59,7 @@ export function AuditLogPanel() {
       </div>
 
       {error ? (
-        <p className="text-xs text-red-600" role="alert">
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
           {error}
         </p>
       ) : events.length === 0 ? (

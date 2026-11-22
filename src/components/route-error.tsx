@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Button } from "@heroui/react";
 
 export function RouteError({
   title,
@@ -25,13 +26,9 @@ export function RouteError({
       </h2>
       <p className="text-xs text-[color:var(--topo-muted)]">{description}</p>
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={retry}
-          className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)]"
-        >
+        <Button type="button" size="sm" variant="primary" onPress={retry}>
           Try again
-        </button>
+        </Button>
         {backHref ? (
           <Link
             href={backHref}

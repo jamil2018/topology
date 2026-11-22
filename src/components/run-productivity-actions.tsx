@@ -1,18 +1,13 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Button, Input } from "@heroui/react";
+import { Button, Input, Label, TextField } from "@heroui/react";
+import { abortCleanup, isAbortError } from "@/lib/abort";
 import { useProjectActions } from "./project-actions";
 import type { RunDetail } from "./run-executor-model";
-
-function isAbortError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    (error as { name: string }).name === "AbortError"
-  );
-}
+import { InlineRowsSkeleton } from "./skeletons";
+import { TopoCheckbox } from "./ui/topo-checkbox";
+import { TopoDisclosure } from "./ui/topo-disclosure";
 
 type Lineage = {
   sourceId: string;
@@ -30,6 +25,7 @@ export function RunProductivityActions({ run }: { run: RunDetail }) {
   const [loading, setLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   const unavailableCases = run.results.filter((result) => result.caseId === null);
   const { can } = useProjectActions();
   const failures = run.results.filter((result) =>
@@ -59,13 +55,16 @@ export function RunProductivityActions({ run }: { run: RunDetail }) {
       } catch (error) {
         if (cancelled || controller.signal.aborted || isAbortError(error)) return;
         setHistoryError("Retest history could not be loaded.");
+        setExpanded(true);
       } finally {
         if (!cancelled && !controller.signal.aborted) setLoading(false);
       }
-    })().catch(() => {});
+    })().catch((error) => {
+      if (cancelled || controller.signal.aborted || isAbortError(error)) return;
+    });
     return () => {
       cancelled = true;
-      controller.abort();
+      abortCleanup(controller);
     };
   }, [run.id, retry]);
 
@@ -102,26 +101,30 @@ export function RunProductivityActions({ run }: { run: RunDetail }) {
     : "";
 
   return (
-    <details className="rounded-lg border border-[color:var(--topo-line)] p-3">
-      <summary className="cursor-pointer text-sm font-medium text-[color:var(--topo-ink)]">
-        Reuse this run · Retest history{failureSummary}
-      </summary>
-
+    <TopoDisclosure
+      bordered
+      isExpanded={expanded}
+      onExpandedChange={setExpanded}
+      title={`Reuse this run · Retest history${failureSummary}`}
+      bodyClassName="mt-3 space-y-3"
+    >
       {can("runs.create") ? (
-        <div className="mt-3 space-y-4">
+        <div className="space-y-3">
           <div className="space-y-2">
             <p className="text-xs font-medium text-[color:var(--topo-muted)]">
               Save as template
             </p>
-            <div className="topo-toolbar flex flex-wrap items-end gap-2">
-              <label className="topo-field min-w-[12rem] flex-1">
-                <span>Template name</span>
+            <div className="flex flex-wrap items-end gap-2">
+              <TextField className="min-w-[12rem] flex-1" name="template-name">
+                <Label className="text-xs text-[color:var(--topo-muted)]">
+                  Template name
+                </Label>
                 <Input
                   aria-label="Template name"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                 />
-              </label>
+              </TextField>
               <Button
                 size="sm"
                 variant="secondary"
@@ -151,24 +154,20 @@ export function RunProductivityActions({ run }: { run: RunDetail }) {
                 Select failures to retest
               </legend>
               {failures.map((result) => (
-                <label
+                <TopoCheckbox
                   key={result.id}
-                  className="flex items-center gap-2 text-sm text-[color:var(--topo-ink)]"
+                  compact
+                  isSelected={selected.includes(result.id)}
+                  onChange={(checked) =>
+                    setSelected((ids) =>
+                      checked
+                        ? [...ids, result.id]
+                        : ids.filter((id) => id !== result.id),
+                    )
+                  }
                 >
-                  <input
-                    type="checkbox"
-                    className="accent-[color:var(--topo-accent)]"
-                    checked={selected.includes(result.id)}
-                    onChange={(event) =>
-                      setSelected((ids) =>
-                        event.target.checked
-                          ? [...ids, result.id]
-                          : ids.filter((id) => id !== result.id),
-                      )
-                    }
-                  />
                   {result.case.key} · {result.case.title}
-                </label>
+                </TopoCheckbox>
               ))}
               {selected.length ? (
                 <Link
@@ -186,29 +185,31 @@ export function RunProductivityActions({ run }: { run: RunDetail }) {
       ) : null}
 
       {message ? (
-        <p role="status" className="mt-2 text-sm">
+        <p role="status" className="text-sm">
           {message}
         </p>
       ) : null}
 
-      <div className="mt-3 border-t border-[color:var(--topo-line)] pt-3">
+      <div className="border-t border-[color:var(--topo-line)] pt-3">
         <p className="text-xs font-medium text-[color:var(--topo-muted)]">
           Retest lineage
         </p>
         {loading ? (
-          <p role="status" className="mt-2 text-sm">
-            Loading retest history…
-          </p>
+          <div role="status" aria-busy="true" aria-label="Loading retest history">
+            <InlineRowsSkeleton rows={3} dense />
+          </div>
         ) : historyError ? (
           <p role="alert" className="mt-2 text-sm">
             {historyError}{" "}
-            <button
+            <Button
               type="button"
+              size="sm"
+              variant="ghost"
               className="underline"
-              onClick={() => setRetry((value) => value + 1)}
+              onPress={() => setRetry((value) => value + 1)}
             >
               Retry
-            </button>
+            </Button>
           </p>
         ) : lineage.length ? (
           <ul className="mt-2 space-y-2 text-sm">
@@ -236,6 +237,6 @@ export function RunProductivityActions({ run }: { run: RunDetail }) {
           </p>
         )}
       </div>
-    </details>
+    </TopoDisclosure>
   );
 }

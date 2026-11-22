@@ -9,6 +9,7 @@ import {
   selectionRangeIds,
 } from "./cases-model";
 import { dispatchShortcut } from "@/lib/shortcuts";
+import { selectTopoOption } from "@/test/select-option";
 
 const refresh = vi.hoisted(() => vi.fn());
 const push = vi.hoisted(() => vi.fn());
@@ -239,8 +240,12 @@ describe("CasesWorkspace authoring", () => {
     );
 
     const table = screen.getAllByRole("table")[0];
-    const trigger = within(table).getByRole("combobox", { name: `Status for ${sampleCase.key}` });
-    await user.selectOptions(trigger, "ready");
+    await selectTopoOption(
+      user,
+      new RegExp(`Status for ${sampleCase.key}`),
+      "Ready",
+      table,
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(`/api/cases/${caseId}`, {
@@ -460,9 +465,20 @@ describe("CasesWorkspace permissions and recovery", () => {
     const user = userEvent.setup();
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network unavailable")));
     render(<CasesWorkspace initialCases={[sampleCase]} folders={[]} />);
-    const status = screen.getAllByRole("combobox", { name: `Status for ${sampleCase.key}` })[0];
-    await user.selectOptions(status, "ready");
+    const table = screen.getAllByRole("table")[0];
+    await selectTopoOption(
+      user,
+      new RegExp(`Status for ${sampleCase.key}`),
+      "Ready",
+      table,
+    );
     await waitFor(() => expect(screen.getByText("Network unavailable")).toBeInTheDocument());
-    await waitFor(() => expect(status).toHaveValue("draft"));
+    await waitFor(() => {
+      expect(
+        within(table).getByRole("button", {
+          name: new RegExp(`Draft.*Status for ${sampleCase.key}`),
+        }),
+      ).toBeInTheDocument();
+    });
   });
 });

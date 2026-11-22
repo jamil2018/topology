@@ -8,6 +8,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
 } from "react";
+import { Button, TextArea } from "@heroui/react";
 
 export type MentionMember = {
   id: string;
@@ -158,7 +159,7 @@ export function MentionComposer({
 
   return (
     <div className="relative min-w-[12rem] flex-1">
-      <textarea
+      <TextArea
         ref={textareaRef}
         value={value}
         rows={rows}
@@ -193,27 +194,25 @@ export function MentionComposer({
           id="mention-suggestions"
           role="listbox"
           aria-label="Mention suggestions"
-          className="absolute z-20 mt-1 max-h-48 w-full min-w-[14rem] overflow-auto rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] py-1 shadow-sm"
+          className="absolute z-50 mt-1 max-h-48 w-full min-w-[14rem] overflow-auto rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] py-1 shadow-md"
         >
           {suggestions.map((member, index) => (
             <li key={member.id} role="option" aria-selected={index === activeIndex}>
-              <button
+              <Button
                 type="button"
-                className={`flex w-full flex-col items-start px-2.5 py-1.5 text-left text-xs ${
+                variant="ghost"
+                className={`flex h-auto min-h-0 w-full flex-col items-start px-2.5 py-1.5 text-left text-xs ${
                   index === activeIndex
                     ? "bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
                     : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-chip)]/60"
                 }`}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  applyMember(member);
-                }}
+                onPress={() => applyMember(member)}
               >
                 <span className="font-medium">{memberLabel(member)}</span>
                 <span className="font-mono text-[color:var(--topo-muted)]">
                   @{member.email}
                 </span>
-              </button>
+              </Button>
             </li>
           ))}
         </ul>

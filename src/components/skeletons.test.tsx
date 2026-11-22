@@ -12,9 +12,14 @@ import StartRunLoading from "@/app/(app)/runs/new/loading";
 import RunsLoading from "@/app/(app)/runs/loading";
 import SettingsLoading from "@/app/(app)/settings/loading";
 import TriageLoading from "@/app/(app)/triage/loading";
+import PlansLoading from "@/app/(app)/plans/loading";
 import {
+  CasesTableBodySkeleton,
+  NotificationListSkeleton,
   PageHeaderSkeleton,
+  PlansPageSkeleton,
   ReportsPageSkeleton,
+  RunsListBodySkeleton,
   ShellLoadingFrame,
 } from "./skeletons";
 
@@ -45,6 +50,7 @@ describe("skeletons", () => {
       ReportDetailLoading,
       TriageLoading,
       SettingsLoading,
+      PlansLoading,
     ];
 
     for (const Loading of loadings) {
@@ -54,6 +60,17 @@ describe("skeletons", () => {
       expect(screen.queryByText("Sign out")).toBeNull();
       unmount();
     }
+  });
+
+  it("cases and runs list loading expose busy status regions", () => {
+    const { unmount: unmountCases } = render(<CasesLoading />);
+    const casesStatus = screen.getByRole("status", { name: "Loading cases" });
+    expect(casesStatus).toHaveAttribute("aria-busy", "true");
+    unmountCases();
+
+    render(<RunsLoading />);
+    const runsStatus = screen.getByRole("status", { name: "Loading runs" });
+    expect(runsStatus).toHaveAttribute("aria-busy", "true");
   });
 
   it("page header skeleton mirrors eyebrow/title/badge/action slots", () => {
@@ -66,5 +83,19 @@ describe("skeletons", () => {
     expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(
       4,
     );
+  });
+
+  it("content-region skeletons expose pulse bones without chrome jump", () => {
+    const { container: cases } = render(<CasesTableBodySkeleton rows={3} />);
+    expect(cases.querySelectorAll(".animate-pulse").length).toBeGreaterThan(3);
+
+    const { container: runs } = render(<RunsListBodySkeleton rows={3} />);
+    expect(runs.querySelectorAll(".animate-pulse").length).toBeGreaterThan(3);
+
+    const { container: notes } = render(<NotificationListSkeleton rows={2} />);
+    expect(notes.querySelectorAll(".animate-pulse").length).toBeGreaterThan(2);
+
+    const { container: plans } = render(<PlansPageSkeleton />);
+    expect(plans.querySelector(".border-b")).toBeTruthy();
   });
 });

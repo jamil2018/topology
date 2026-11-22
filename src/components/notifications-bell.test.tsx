@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { isAbortError } from "@/lib/abort";
 import { render } from "@/test/render";
 import { NotificationsBell } from "./notifications-bell";
 
@@ -11,18 +12,20 @@ function jsonResponse(payload: unknown, status = 200) {
   });
 }
 
-function abortError() {
+/** Mirror browser fetch: reject with signal.reason (string reasons become overlay noise). */
+function rejectionForSignal(signal?: AbortSignal) {
+  if (signal?.reason !== undefined) return signal.reason;
   return Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
 }
 
 function abortAwareFetch(payload: unknown = { notifications: [], unreadCount: 0 }) {
   return vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
     const signal = init?.signal;
-    if (signal?.aborted) return Promise.reject(abortError());
+    if (signal?.aborted) return Promise.reject(rejectionForSignal(signal));
     return new Promise<Response>((resolve, reject) => {
       const onAbort = () => {
         signal?.removeEventListener("abort", onAbort);
-        reject(abortError());
+        reject(rejectionForSignal(signal));
       };
       signal?.addEventListener("abort", onAbort);
       setTimeout(() => {
@@ -68,6 +71,39 @@ describe("NotificationsBell abort cleanup", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
 
+    expect(tracker.rejections).toEqual([]);
+    tracker.stop();
+  });
+
+  it("aborts cleanup with an AbortError DOMException reason, not a string", async () => {
+    const reasons: unknown[] = [];
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal;
+      return new Promise<Response>((_resolve, reject) => {
+        const onAbort = () => {
+          reasons.push(signal?.reason);
+          signal?.removeEventListener("abort", onAbort);
+          reject(rejectionForSignal(signal));
+        };
+        signal?.addEventListener("abort", onAbort);
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const tracker = trackUnhandledRejections();
+
+    const { unmount } = render(<NotificationsBell />);
+    await act(async () => {
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(reasons.length).toBeGreaterThan(0);
+    for (const reason of reasons) {
+      expect(typeof reason).not.toBe("string");
+      expect(isAbortError(reason)).toBe(true);
+      expect((reason as DOMException).message).toBe("");
+      expect((reason as DOMException).message).not.toMatch(/unmount/i);
+    }
     expect(tracker.rejections).toEqual([]);
     tracker.stop();
   });

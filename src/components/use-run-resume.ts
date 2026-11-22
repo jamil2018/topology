@@ -6,6 +6,42 @@ import { STATUS_FILTERS, type StatusFilter } from "./run-executor-model";
 type Context = { focusedId: string | null; statusFilter: StatusFilter; mineOnly: boolean; query: string };
 const fingerprint = (value: Context) => JSON.stringify([value.focusedId, value.statusFilter, value.mineOnly, value.query]);
 
+function parseFingerprint(value: string): [string | null, StatusFilter, boolean, string] | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed) || parsed.length !== 4) return null;
+    return parsed as [string | null, StatusFilter, boolean, string];
+  } catch {
+    return null;
+  }
+}
+
+function isQueryOnlyChange(previous: string, context: Context): boolean {
+  const parsed = parseFingerprint(previous);
+  if (!parsed) return false;
+  const [focusedId, statusFilter, mineOnly, query] = parsed;
+  return (
+    focusedId === context.focusedId &&
+    statusFilter === context.statusFilter &&
+    mineOnly === context.mineOnly &&
+    query !== context.query
+  );
+}
+
+function writeContextUrl(context: Context, mode: "push" | "replace") {
+  const url = new URL(window.location.href);
+  if (context.focusedId) url.searchParams.set("result", context.focusedId);
+  else url.searchParams.delete("result");
+  url.searchParams.set("status", context.statusFilter);
+  if (context.query) url.searchParams.set("q", context.query);
+  else url.searchParams.delete("q");
+  if (context.mineOnly) url.searchParams.set("mine", "1");
+  else url.searchParams.delete("mine");
+  const href = url.pathname + url.search + url.hash;
+  if (mode === "replace") window.history.replaceState(window.history.state, "", href);
+  else window.history.pushState(null, "", href);
+}
+
 /** URL history wins over browser persistence; storage is isolated by user/project/run. */
 export function useRunResume(key: string, resultIds: string[], context: Context, restore: (context: Partial<Context>) => void) {
   const latest = useRef({ context, restore, resultIds });
@@ -53,14 +89,24 @@ export function useRunResume(key: string, resultIds: string[], context: Context,
       if (restoring.current !== current) return;
       restoring.current = null;
     }
+
+    const queryOnly =
+      previous.current !== null &&
+      previous.current !== current &&
+      isQueryOnlyChange(previous.current, context);
+
+    if (queryOnly) {
+      const timer = window.setTimeout(() => {
+        try { localStorage.setItem(key, JSON.stringify(context)); } catch { /* Persistence is optional. */ }
+        writeContextUrl(context, "replace");
+        previous.current = current;
+      }, 200);
+      return () => window.clearTimeout(timer);
+    }
+
     try { localStorage.setItem(key, JSON.stringify(context)); } catch { /* Persistence is optional. */ }
     if (previous.current !== null && previous.current !== current) {
-      const url = new URL(window.location.href);
-      if (context.focusedId) url.searchParams.set("result", context.focusedId); else url.searchParams.delete("result");
-      url.searchParams.set("status", context.statusFilter);
-      if (context.query) url.searchParams.set("q", context.query); else url.searchParams.delete("q");
-      if (context.mineOnly) url.searchParams.set("mine", "1"); else url.searchParams.delete("mine");
-      window.history.pushState(null, "", url.pathname + url.search + url.hash);
+      writeContextUrl(context, "push");
     }
     previous.current = current;
   }, [key, context.focusedId, context.statusFilter, context.mineOnly, context.query]);

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Button, Input } from "@heroui/react";
+import { TopoCheckbox } from "./ui/topo-checkbox";
 
 export const BROWSER_PRESETS = ["Chrome", "Firefox", "Safari", "Edge"];
 export const OS_PRESETS = ["macOS", "Windows", "Linux", "iOS", "Android"];
@@ -49,23 +51,20 @@ export function PlanMatrixFields({
           </legend>
           <div className="flex flex-wrap gap-3">
             {environments.map((env) => (
-              <label
+              <TopoCheckbox
                 key={env.id}
-                className="flex items-center gap-1.5 text-xs"
+                compact
+                isSelected={envIds.includes(env.id)}
+                onChange={(checked) =>
+                  onEnvIds(
+                    checked
+                      ? [...envIds, env.id]
+                      : envIds.filter((id) => id !== env.id),
+                  )
+                }
               >
-                <input
-                  type="checkbox"
-                  checked={envIds.includes(env.id)}
-                  onChange={(e) =>
-                    onEnvIds(
-                      e.target.checked
-                        ? [...envIds, env.id]
-                        : envIds.filter((id) => id !== env.id),
-                    )
-                  }
-                />
                 {env.name}
-              </label>
+              </TopoCheckbox>
             ))}
           </div>
         </fieldset>
@@ -111,20 +110,22 @@ function TagInput({
       <p className="text-xs text-[color:var(--topo-muted)]">{label}</p>
       <div className="flex flex-wrap gap-1.5">
         {value.map((tag) => (
-          <button
+          <Button
             key={tag}
             type="button"
-            className="inline-flex items-center gap-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-chip)] px-2 py-0.5 text-xs text-[color:var(--topo-ink)]"
-            onClick={() => onChange(value.filter((item) => item !== tag))}
+            size="sm"
+            variant="secondary"
+            className="h-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs"
+            onPress={() => onChange(value.filter((item) => item !== tag))}
             aria-label={`Remove ${tag}`}
           >
             {tag}
             <span aria-hidden className="text-[color:var(--topo-muted)]">
               ×
             </span>
-          </button>
+          </Button>
         ))}
-        <input
+        <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -135,7 +136,7 @@ function TagInput({
           }}
           placeholder={placeholder}
           aria-label={label}
-          className="min-w-[8rem] flex-1 bg-transparent text-sm text-[color:var(--topo-ink)] outline-none placeholder:text-[color:var(--topo-muted)]"
+          className="min-w-[8rem] flex-1 border-0 bg-transparent px-0 shadow-none"
         />
       </div>
       <div className="flex flex-wrap gap-1">
@@ -144,19 +145,17 @@ function TagInput({
             (item) => item.toLowerCase() === preset.toLowerCase(),
           );
           return (
-            <button
+            <Button
               key={preset}
               type="button"
-              disabled={selected}
-              onClick={() => add(preset)}
-              className={`rounded-md px-2 py-0.5 text-xs ${
-                selected
-                  ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
-                  : "border border-[color:var(--topo-line)] text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-              }`}
+              size="sm"
+              variant={selected ? "secondary" : "tertiary"}
+              isDisabled={selected}
+              onPress={() => add(preset)}
+              className="h-auto rounded-md px-2 py-0.5 text-xs"
             >
               {preset}
-            </button>
+            </Button>
           );
         })}
       </div>

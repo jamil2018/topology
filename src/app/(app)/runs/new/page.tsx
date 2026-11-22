@@ -11,7 +11,7 @@ import { NoProjectEmpty } from "@/components/no-project-empty-state";
 import { StartRunWorkspace } from "@/components/start-run-workspace";
 import { assigneeDecision } from "@/lib/assignee";
 import { membershipActions, resolveActiveProject } from "@/lib/project";
-import { listCases, listFolders } from "@/lib/queries";
+import { listFolders, listPickerCases } from "@/lib/queries";
 import { ensureMembership } from "@/lib/workspace";
 
 export const metadata: Metadata = {
@@ -36,7 +36,7 @@ export default async function StartRunPage({ searchParams }: { searchParams: Pro
   const memberships = await db.query.workspaceMembers.findMany({ where: eq(workspaceMembers.workspaceId, workspaceId), with: { user: true, customRole: true } });
 
   const [cases, folders] = await Promise.all([
-    listCases(workspaceId),
+    listPickerCases(workspaceId),
     listFolders(workspaceId),
   ]);
 
@@ -53,9 +53,7 @@ export default async function StartRunPage({ searchParams }: { searchParams: Pro
           priority: c.priority,
           status: c.status,
           tags: c.tags ?? [],
-          folder: c.folder
-            ? { id: c.folder.id, name: c.folder.name }
-            : null,
+          folder: c.folder,
           createdAt: c.createdAt,
           updatedAt: c.updatedAt,
         }))}

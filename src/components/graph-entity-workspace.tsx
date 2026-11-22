@@ -153,12 +153,13 @@ export function GraphEntityWorkspace({
         ) : (
           items.map((item) => (
             <li key={item.id}>
-              <button
+              <Button
                 type="button"
-                className={`w-full px-4 py-3 text-left ${
+                variant="ghost"
+                className={`h-auto w-full rounded-none px-4 py-3 text-left ${
                   selected === item.id ? "bg-[color:var(--topo-chip)]/80" : ""
                 }`}
-                onClick={() => setSelected(item.id)}
+                onPress={() => setSelected(item.id)}
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xs text-[color:var(--topo-accent)]">
@@ -174,7 +175,7 @@ export function GraphEntityWorkspace({
                     {item.description}
                   </p>
                 ) : null}
-              </button>
+              </Button>
               {selected === item.id && kind === "components" ? (
                 <div className="border-t border-[color:var(--topo-line)] px-4 pb-4">
                   <EntityCollabPanel

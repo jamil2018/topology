@@ -18,7 +18,7 @@ export default async function ImpactPage() {
   if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 sm:p-6">
+    <div className="space-y-5">
       <PageHeader
         eyebrow="Change analysis"
         title="Commit & PR impact"

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@heroui/react";
-import { Bone } from "./skeletons";
+import { Button, Input, Label, TextField } from "@heroui/react";
+import { Bone, PanelListSkeleton } from "./skeletons";
 import type { Action, ActionGroup } from "@/lib/permissions";
+import { TopoCheckbox } from "./ui/topo-checkbox";
 
 type RoleRow = {
   id: string;
@@ -161,9 +162,17 @@ export function CustomRolesPanel() {
 
   if (loading) {
     return (
-      <div className="space-y-3" aria-busy="true" aria-label="Loading roles">
-        <Bone className="h-4 w-48" />
-        <Bone className="h-20 w-full" />
+      <div
+        className="space-y-3"
+        role="status"
+        aria-busy="true"
+        aria-label="Loading roles"
+      >
+        <div className="space-y-1.5">
+          <Bone className="h-4 w-36" />
+          <Bone className="h-3 w-64 max-w-full" />
+        </div>
+        <PanelListSkeleton rows={3} withActions={false} />
       </div>
     );
   }
@@ -193,7 +202,7 @@ export function CustomRolesPanel() {
         ) : null}
       </div>
 
-      {error ? <p className="text-sm text-red-500">{error}</p> : null}
+      {error ? <p className="text-sm text-red-500 dark:text-red-400">{error}</p> : null}
       {msg ? (
         <p className="text-xs text-[color:var(--topo-muted)]">{msg}</p>
       ) : null}
@@ -300,30 +309,30 @@ export function CustomRolesPanel() {
           </div>
 
           {!formLockedName ? (
-            <label className="block space-y-1 text-sm">
-              <span className="text-[color:var(--topo-muted)]">Name</span>
-              <input
+            <TextField name="role-name" className="w-full" variant="secondary">
+              <Label className="text-[color:var(--topo-muted)]">Name</Label>
+              <Input
                 value={form.name}
                 onChange={(e) =>
                   setForm((prev) => ({ ...prev, name: e.target.value }))
                 }
-                className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
+                className="w-full"
                 placeholder="Release captain"
               />
-            </label>
+            </TextField>
           ) : null}
 
-          <label className="block space-y-1 text-sm">
-            <span className="text-[color:var(--topo-muted)]">Description</span>
-            <input
+          <TextField name="role-description" className="w-full" variant="secondary">
+            <Label className="text-[color:var(--topo-muted)]">Description</Label>
+            <Input
               value={form.description}
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, description: e.target.value }))
               }
-              className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
+              className="w-full"
               placeholder="What this role is for"
             />
-          </label>
+          </TextField>
 
           <div className="space-y-3">
             {catalog.groups.map((group) => (
@@ -335,16 +344,13 @@ export function CustomRolesPanel() {
                   {group.actions.map((action) => {
                     const checked = form.actions.includes(action);
                     return (
-                      <label
+                      <TopoCheckbox
                         key={action}
-                        className="flex cursor-pointer items-start gap-2 rounded-md border border-[color:var(--topo-line)] px-2 py-1.5 text-sm"
+                        compact
+                        className="items-start rounded-md border border-[color:var(--topo-line)] px-2 py-1.5 text-sm"
+                        isSelected={checked}
+                        onChange={() => toggleAction(action)}
                       >
-                        <input
-                          type="checkbox"
-                          className="mt-0.5 accent-[color:var(--topo-accent)]"
-                          checked={checked}
-                          onChange={() => toggleAction(action)}
-                        />
                         <span>
                           <span className="block text-[color:var(--topo-ink)]">
                             {catalog.labels[action] ?? action}
@@ -353,7 +359,7 @@ export function CustomRolesPanel() {
                             {action}
                           </span>
                         </span>
-                      </label>
+                      </TopoCheckbox>
                     );
                   })}
                 </div>

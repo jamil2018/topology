@@ -27,7 +27,7 @@ const toneClass = {
   neutral:
     "bg-[color:var(--topo-chip)] text-[color:var(--topo-muted)] border-[color:var(--topo-line)]",
   accent:
-    "bg-[color-mix(in_srgb,var(--topo-accent)_78%,black)] text-white border-[color-mix(in_srgb,var(--topo-accent)_55%,black)] dark:bg-[color:var(--topo-accent)] dark:text-[color:var(--topo-paper)] dark:border-[color-mix(in_srgb,var(--topo-accent)_40%,white)]",
+    "bg-[color-mix(in_srgb,var(--topo-accent)_78%,black)] text-[color:var(--accent-foreground)] border-[color-mix(in_srgb,var(--topo-accent)_55%,black)] dark:bg-[color:var(--topo-accent)] dark:text-[color:var(--accent-foreground)] dark:border-[color-mix(in_srgb,var(--topo-accent)_40%,white)]",
   success:
     "bg-[color:var(--topo-success)] text-[color:var(--topo-success-fg)] border-[color:var(--topo-success-border)]",
   warning:

@@ -4,6 +4,7 @@ import { formatDateTime } from "@/lib/format-date";
 import { useEffect, useState, useTransition } from "react";
 import { Button } from "@heroui/react";
 import { MentionComposer } from "./mention-composer";
+import { TopoSelect } from "./ui/topo-select";
 
 type Comment = {
   id: string;
@@ -126,24 +127,25 @@ export function EntityCollabPanel({
         <div className="text-xs font-medium text-[color:var(--topo-muted)]">
           Owner
         </div>
-        <select
-          aria-label="Entity owner"
-          className="mt-2 w-full rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
-          value={owner?.userId ?? ""}
-          disabled={pending}
-          onChange={(e) => {
+        <TopoSelect
+          ariaLabel="Entity owner"
+          className="mt-2 w-full"
+          value={owner?.userId || "__unassigned__"}
+          isDisabled={pending}
+          onChange={(value) => {
             startTransition(() => {
-              void changeOwner(e.target.value);
+              void changeOwner(value === "__unassigned__" ? "" : value);
             });
           }}
-        >
-          <option value="">Unassigned</option>
-          {members.map((m) => (
-            <option key={m.user.id} value={m.user.id}>
-              {displayName(m.user)}
-            </option>
-          ))}
-        </select>
+          options={[
+            { id: "__unassigned__", label: "Unassigned" },
+            ...members.map((m) => ({
+              id: m.user.id,
+              label: displayName(m.user),
+            })),
+          ]}
+          compact
+        />
       </div>
 
       <div>

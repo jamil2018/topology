@@ -15,6 +15,7 @@ import { motion } from "motion/react";
 import { folderPathLabel } from "@/lib/folder-tree";
 import type { OrderedStep } from "@/lib/tcm/steps";
 import { CaseStepsEditor } from "./case-steps-editor";
+import { TopoDisclosure } from "./ui/topo-disclosure";
 import {
   CASE_PRIORITIES,
   CASE_STATUSES,
@@ -292,9 +293,13 @@ export function CaseCreateDialog({
           <p className="text-sm text-red-600 dark:text-red-300">{draftError}</p>
         ) : null}
       </div>
-      <details className="rounded-md border border-[color:var(--topo-line)] p-3">
-        <summary className="cursor-pointer text-sm font-medium text-[color:var(--topo-ink)]">Case details <span className="text-[color:var(--topo-muted)]">· {form.key || "Key required"} · {formatStatusLabel(form.status)} · {form.priority}</span></summary>
-        <p className="my-2 text-sm text-[color:var(--topo-muted)]">A key is suggested for you. Adjust priority, status, folder, and tags here.</p>
+      <TopoDisclosure
+        bordered
+        title="Case details"
+        summary={`· ${form.key || "Key required"} · ${formatStatusLabel(form.status)} · ${form.priority}`}
+        bodyClassName="mt-3 space-y-3"
+      >
+        <p className="text-sm text-[color:var(--topo-muted)]">A key is suggested for you. Adjust priority, status, folder, and tags here.</p>
         <TextField name="key" className="w-full">
           <Label>Key</Label>
           <Input
@@ -418,7 +423,7 @@ export function CaseCreateDialog({
           className="w-full"
         />
       </TextField>
-      </details>
+      </TopoDisclosure>
       {!form.key.trim() ? <p role="alert">Enter a key in Case details to save.</p> : null}
       <p role="status" className="text-sm text-[color:var(--topo-muted)]">{!form.title.trim() ? "Enter a title to save this case." : form.status === "draft" ? "This case will be saved as Draft. When it is ready for testing, change Status to Ready in Case details." : `This case will be saved as ${formatStatusLabel(form.status)}.`}</p>
       <div className="flex gap-2">

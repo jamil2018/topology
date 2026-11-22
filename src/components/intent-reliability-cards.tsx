@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Bone, CardGridSkeleton } from "./skeletons";
 import { StatusChip } from "./status-chip";
 
 type ImplCard = {
@@ -63,9 +64,15 @@ export function IntentReliabilityCards({ intentId }: { intentId: string }) {
 
   if (loading) {
     return (
-      <p className="mt-4 text-xs text-[color:var(--topo-muted)]">
-        Loading reliability…
-      </p>
+      <div
+        className="mt-4"
+        role="status"
+        aria-busy="true"
+        aria-label="Loading reliability"
+      >
+        <Bone className="mb-2 h-3 w-28" />
+        <CardGridSkeleton cards={2} />
+      </div>
     );
   }
 

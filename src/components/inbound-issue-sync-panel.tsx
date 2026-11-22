@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@heroui/react";
+import { PanelListSkeleton } from "./skeletons";
 import { StatusChip } from "./status-chip";
 import { useProjectActions } from "./project-actions";
 
@@ -25,22 +26,28 @@ export function InboundIssueSyncPanel({ defaultUrl }: { defaultUrl: string }) {
   const [workspaceId, setWorkspaceId] = useState<string | null>(projectId);
   const [error, setError] = useState<string | null>(null);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const base = defaultUrl.replace(/\/$/, "");
 
   const load = useCallback(async () => {
     setError(null);
-    const res = await fetch("/api/webhooks/issues");
-    if (!res.ok) {
-      setError("Could not load inbound issue webhook status.");
-      return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/webhooks/issues");
+      if (!res.ok) {
+        setError("Could not load inbound issue webhook status.");
+        return;
+      }
+      const data = (await res.json()) as {
+        workspaceId: string;
+        providers: ProviderRow[];
+      };
+      setWorkspaceId(data.workspaceId);
+      setProviders(data.providers);
+    } finally {
+      setLoading(false);
     }
-    const data = (await res.json()) as {
-      workspaceId: string;
-      providers: ProviderRow[];
-    };
-    setWorkspaceId(data.workspaceId);
-    setProviders(data.providers);
   }, []);
 
   useEffect(() => {
@@ -77,8 +84,14 @@ export function InboundIssueSyncPanel({ defaultUrl }: { defaultUrl: string }) {
         </p>
       ) : null}
 
-      {providers.length === 0 ? (
-        <p className="text-sm text-[color:var(--topo-muted)]">Loading…</p>
+      {loading ? (
+        <div role="status" aria-busy="true" aria-label="Loading inbound sync">
+          <PanelListSkeleton rows={3} withActions={false} />
+        </div>
+      ) : providers.length === 0 ? (
+        <p className="text-sm text-[color:var(--topo-muted)]">
+          No inbound providers configured.
+        </p>
       ) : (
         <ul className="divide-y divide-[color:var(--topo-line)] overflow-hidden rounded-md border border-[color:var(--topo-line)]">
           {providers.map((row) => {

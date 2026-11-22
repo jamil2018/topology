@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@heroui/react";
 import "./globals.css";
 
 export default function GlobalError({
@@ -24,13 +25,9 @@ export default function GlobalError({
               home if the problem continues.
             </p>
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={retry}
-                className="rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)]"
-              >
+              <Button type="button" size="sm" variant="primary" onPress={retry}>
                 Try again
-              </button>
+              </Button>
               {/* Hard navigation: global-error replaces the root layout. */}
               {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
               <a

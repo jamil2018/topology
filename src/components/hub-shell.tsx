@@ -177,7 +177,7 @@ function NavLinks({
                   collapsed ? "justify-center px-2 py-2" : "px-2.5 py-1.5"
                 } ${
                   active
-                    ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                    ? "topo-selected-surface"
                     : "text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)]"
                 }`}
               >
@@ -281,13 +281,15 @@ function SidebarChrome({
               risks, and components — the model behind coverage analysis.
               Milestones, impact, and proposals stay in the main nav.
             </p>
-            <button
+            <Button
               type="button"
+              size="sm"
+              variant="ghost"
               className="mt-1.5 text-xs font-medium text-[color:var(--topo-accent)] hover:underline"
-              onClick={dismissExplainer}
+              onPress={dismissExplainer}
             >
               Got it
-            </button>
+            </Button>
           </div>
         ) : null}
         {!collapsed ? <ThemeToggle /> : <ThemeToggle compact />}
@@ -413,11 +415,11 @@ function HubShellInner({
   const breadcrumb = resolveBreadcrumb(pathname, nav, groups);
 
   return (
-    <div className="topology-shell flex min-h-[100dvh] bg-[color:var(--topo-paper)]">
+    <div className="topology-shell flex h-[100dvh] overflow-hidden bg-[color:var(--topo-paper)]">
       <a href="#main-content" className="topo-skip-link">Skip to content</a>
       {/* Desktop sidebar — inset canvas companion */}
       <aside
-        className={`sticky top-0 z-30 hidden h-[100dvh] shrink-0 transition-[width] duration-200 ease-out lg:block ${
+        className={`sticky top-0 z-30 hidden h-full shrink-0 transition-[width] duration-200 ease-out lg:block ${
           desktopCollapsed ? "w-[4.25rem]" : "w-56 xl:w-60"
         }`}
       >
@@ -442,7 +444,7 @@ function HubShellInner({
       </Modal.Backdrop>
 
       {/* Inset core-control panel — sits flush beside sidebar (gutter ≤ px-10) */}
-      <div className="flex min-w-0 flex-1 p-2 pl-1 sm:p-2.5 sm:pl-1.5 lg:p-3 lg:pl-1">
+      <div className="flex min-h-0 min-w-0 flex-1 p-2 pl-1 sm:p-2.5 sm:pl-1.5 lg:p-3 lg:pl-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-[color:var(--topo-line)] px-2.5 sm:gap-3 sm:px-3">
             <Button
@@ -513,7 +515,7 @@ function HubShellInner({
           <main
             id="main-content" tabIndex={-1}
             key={activeProjectId ?? "none"}
-            className="w-full max-w-none flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-5"
+            className="flex w-full max-w-none min-h-0 flex-1 flex-col overflow-y-auto px-3 py-4 sm:px-4 sm:py-5"
           >
             {children}
           </main>

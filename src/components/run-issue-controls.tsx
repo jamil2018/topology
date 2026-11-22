@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, Drawer, useOverlayState } from "@heroui/react";
+import { Button, Drawer, Input, Label, TextArea, TextField, useOverlayState } from "@heroui/react";
 import type { AttachmentRow, LinkedIssue } from "./run-executor-model";
+import { TopoSelect } from "./ui/topo-select";
 
 const FALLBACK_PROVIDERS = ["mock"];
 
@@ -59,34 +60,37 @@ function IssueChip({
       <span className="capitalize text-[color:var(--topo-muted)]">
         {issue.remoteStatus.replace("_", " ")}
       </span>
-      <button
+      <Button
         type="button"
-        disabled={pending}
-        onClick={onRefresh}
+        variant="ghost"
+        isDisabled={pending}
+        onPress={onRefresh}
         className="text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
       >
         Sync
-      </button>
+      </Button>
       {issue.remoteStatus !== "done" ? (
-        <button
+        <Button
           type="button"
-          disabled={pending}
-          onClick={onMarkClosed}
-          title="Mark closed locally when provider sync is unavailable"
+          variant="ghost"
+          isDisabled={pending}
+          onPress={onMarkClosed}
+          aria-label="Mark closed locally when provider sync is unavailable"
           className="text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
         >
           Mark closed
-        </button>
+        </Button>
       ) : null}
       {issue.needsRetest === 1 && issue.remoteStatus === "done" ? (
-        <button
+        <Button
           type="button"
-          disabled={pending}
-          onClick={onAckRetest}
+          variant="ghost"
+          isDisabled={pending}
+          onPress={onAckRetest}
           className="rounded bg-[color:var(--topo-signal)]/15 px-1.5 py-0.5 font-medium text-[color:var(--topo-signal)]"
         >
           Retest ready
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -206,38 +210,39 @@ export function RunIssueControls({
       {(status === "failed" || status === "blocked") && !frozen ? (
         <>
           {providers.length > 1 ? (
-            <label className="flex items-center gap-1 text-xs text-[color:var(--topo-muted)]">
-              Provider
-              <select
-                aria-label="Issue provider"
-                value={provider}
-                disabled={issueBusy}
-                onChange={(e) => setProviderOverride(e.target.value)}
-                className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs capitalize text-[color:var(--topo-ink)] accent-[color:var(--topo-accent)]"
-              >
-                {providers.map((id) => (
-                  <option key={id} value={id}>
-                    {id}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <TopoSelect
+              label="Provider"
+              ariaLabel="Issue provider"
+              className="w-32"
+              value={provider}
+              isDisabled={issueBusy}
+              onChange={setProviderOverride}
+              valueClassName="capitalize"
+              options={providers.map((id) => ({
+                id,
+                label: id,
+              }))}
+              compact
+            />
           ) : null}
-          <button
+          <Button
             type="button"
-            disabled={issueBusy}
-            onClick={openPreview}
-            className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-2 py-1 text-xs font-medium text-[color:var(--topo-ink)] disabled:opacity-50"
+            variant="secondary"
+            size="sm"
+            isDisabled={issueBusy}
+            onPress={openPreview}
           >
             Create issue
-          </button>
+          </Button>
           <div className="flex items-center gap-1">
-            <input
-              value={linkKey}
-              onChange={(e) => onLinkKeyChange(e.target.value)}
-              placeholder="Link key (MOCK-1)"
-              className="w-36 rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 font-mono text-xs"
-            />
+            <TextField name="link-key" className="w-36" variant="secondary" aria-label="Link key">
+              <Input
+                value={linkKey}
+                onChange={(e) => onLinkKeyChange(e.target.value)}
+                placeholder="Link key (MOCK-1)"
+                className="font-mono text-xs"
+              />
+            </TextField>
             <Button
               size="sm"
               variant="secondary"
@@ -276,23 +281,23 @@ export function RunIssueControls({
               </p>
             </Drawer.Header>
             <Drawer.Body className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
-              <label className="block space-y-1 text-xs">
-                <span className="text-[color:var(--topo-muted)]">Title</span>
-                <input
+              <TextField name="issue-title" className="w-full" variant="secondary">
+                <Label className="text-xs text-[color:var(--topo-muted)]">Title</Label>
+                <Input
                   value={draftTitle}
                   onChange={(e) => setDraftTitle(e.target.value)}
-                  className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
+                  className="w-full"
                 />
-              </label>
-              <label className="block space-y-1 text-xs">
-                <span className="text-[color:var(--topo-muted)]">Description</span>
-                <textarea
+              </TextField>
+              <TextField name="issue-description" className="w-full" variant="secondary">
+                <Label className="text-xs text-[color:var(--topo-muted)]">Description</Label>
+                <TextArea
                   value={draftDescription}
                   onChange={(e) => setDraftDescription(e.target.value)}
                   rows={14}
-                  className="w-full resize-y rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 font-mono text-xs"
+                  className="w-full resize-y font-mono text-xs"
                 />
-              </label>
+              </TextField>
               {attachments.length > 0 ? (
                 <div className="space-y-1">
                   <p className="text-xs text-[color:var(--topo-muted)]">

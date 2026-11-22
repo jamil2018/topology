@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Button } from "@heroui/react";
 import { useProjectActions } from "./project-actions";
 
 const STEPS = [
@@ -101,13 +102,15 @@ export function GuidedFirstRun({
           </p>
         </div>
         {dismissible ? (
-          <button
+          <Button
             type="button"
-            onClick={dismiss}
+            size="sm"
+            variant="ghost"
+            onPress={dismiss}
             className="shrink-0 text-xs font-medium text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
           >
             {allDone ? "Dismiss" : "Dismiss checklist"}
-          </button>
+          </Button>
         ) : null}
       </div>
       <ol className="mt-4 grid gap-2 sm:grid-cols-2">

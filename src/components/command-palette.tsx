@@ -1,4 +1,5 @@
 "use client";
+import { Button, Input } from "@heroui/react";
 import { useProjectActions } from "./project-actions";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +36,7 @@ import {
   CASE_STATUSES,
 } from "./cases-model";
 import { useQualityGraph } from "./quality-graph-provider";
+import { CommandPaletteResultsSkeleton } from "./skeletons";
 
 type SearchHit = {
   cases: Array<{
@@ -785,7 +787,7 @@ export function CommandPalette() {
                 size={16}
                 className="shrink-0 text-[color:var(--topo-muted)]"
               />
-              <input
+              <Input
                 ref={inputRef}
                 value={query}
                 onChange={(e) => {
@@ -794,50 +796,51 @@ export function CommandPalette() {
                 }}
                 onKeyDown={onKeyDown}
                 placeholder="Create, start a run, file issue, or jump…"
-                className="min-w-0 flex-1 bg-transparent text-sm text-[color:var(--topo-ink)] outline-none placeholder:text-[color:var(--topo-muted)]"
+                className="min-w-0 flex-1 border-0 bg-transparent shadow-none outline-none"
                 aria-label="Command search"
               />
               <kbd className="hidden rounded border border-[color:var(--topo-line)] px-1.5 py-0.5 font-mono text-xs text-[color:var(--topo-muted)] sm:inline">
                 esc
               </kbd>
             </div>
-            {searching || searchError ? (
+            {searchError && !searching ? (
               <div className="flex items-center justify-between gap-2 border-b border-[color:var(--topo-line)] px-3 py-1.5 text-xs text-[color:var(--topo-muted)]">
-                {searching ? (
-                  <span role="status" aria-live="polite">
-                    Searching…
-                  </span>
-                ) : (
-                  <span role="alert" className="min-w-0 truncate">
-                    {searchError}
-                  </span>
-                )}
-                {searchError && !searching ? (
-                  <button
-                    type="button"
-                    className="shrink-0 font-medium text-[color:var(--topo-accent)]"
-                    onClick={() => setSearchRetryKey((n) => n + 1)}
-                  >
-                    Retry
-                  </button>
-                ) : null}
+                <span role="alert" className="min-w-0 truncate">
+                  {searchError}
+                </span>
+                <Button
+                  type="button"
+                  className="shrink-0 font-medium text-[color:var(--topo-accent)]"
+                  onPress={() => setSearchRetryKey((n) => n + 1)}
+                >
+                  Retry
+                </Button>
               </div>
             ) : null}
+            {searching && items.length === 0 ? (
+              <div
+                role="status"
+                aria-busy="true"
+                aria-live="polite"
+                aria-label="Searching"
+              >
+                <CommandPaletteResultsSkeleton />
+              </div>
+            ) : (
             <ul
               className="max-h-[min(22rem,50vh)] overflow-y-auto py-1.5"
               role="listbox"
               aria-label="Commands"
+              aria-busy={searching || undefined}
               aria-activedescendant={
                 items[safeActive] ? `cmd-${items[safeActive].id}` : undefined
               }
             >
               {items.length === 0 ? (
                 <li className="px-3 py-8 text-center text-sm text-[color:var(--topo-muted)]">
-                  {searching
-                    ? "Searching…"
-                    : searchError
-                      ? "Search unavailable"
-                      : "No matching commands"}
+                  {searchError
+                    ? "Search unavailable"
+                    : "No matching commands"}
                 </li>
               ) : (
                 items.map((item, index) => {
@@ -852,14 +855,18 @@ export function CommandPalette() {
                           {item.group}
                         </p>
                       ) : null}
-                      <button
-                        type="button"
+                      {/*
+                        Listbox options must use role="option". HeroUI Button forces
+                        role="button", so keep a pressable option element here.
+                      */}
+                      <div
                         id={`cmd-${item.id}`}
                         role="option"
+                        tabIndex={-1}
                         aria-selected={selected}
-                        className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                        className={`flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
                           selected
-                            ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                            ? "topo-selected-surface"
                             : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-chip)]"
                         }`}
                         onMouseEnter={() => setActive(index)}
@@ -892,12 +899,13 @@ export function CommandPalette() {
                             {item.hint}
                           </span>
                         ) : null}
-                      </button>
+                      </div>
                     </li>
                   );
                 })
               )}
             </ul>
+            )}
           </motion.div>
           </FocusScope>
         </motion.div>

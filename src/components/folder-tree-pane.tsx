@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type DragEvent,
+} from "react";
 import { Button, Modal } from "@heroui/react";
 import { useProjectActions } from "./project-actions";
 import {
@@ -76,6 +83,213 @@ function acceptFolderDrag(event: DragEvent) {
   return Array.from(event.dataTransfer.types).includes(FOLDER_DRAG_MIME);
 }
 
+type FolderTreeRowProps = {
+  node: FolderTreeNode;
+  depth: number;
+  isOpen: boolean;
+  isSelected: boolean;
+  isDrop: boolean;
+  count: number;
+  toggleExpanded: (id: string) => void;
+  selected: FolderTreeSelection;
+  onSelect: (id: FolderTreeSelection) => void;
+  folderCounts: Map<string, number>;
+  onCreateSubfolder: (parentId: string) => void;
+  onRename: (folderId: string) => void;
+  onDelete: (folderId: string) => void;
+  onDropCases?: (folderId: string | null, caseIds: string[]) => void;
+  onReparentFolder?: (folderId: string, parentId: string | null) => void;
+  dropTarget: string | null;
+  setDropTarget: (id: string | null) => void;
+  expanded: Set<string>;
+};
+
+/** Single folder node — memoized so sibling selection does not re-render the tree. */
+const FolderTreeRow = memo(function FolderTreeRow({
+  node,
+  depth,
+  isOpen,
+  isSelected,
+  isDrop,
+  count,
+  toggleExpanded,
+  selected,
+  onSelect,
+  folderCounts,
+  onCreateSubfolder,
+  onRename,
+  onDelete,
+  onDropCases,
+  onReparentFolder,
+  dropTarget,
+  setDropTarget,
+  expanded,
+}: FolderTreeRowProps) {
+  const { can } = useProjectActions();
+  const hasChildren = node.children.length > 0;
+  const canDragFolder = Boolean(onReparentFolder) && can("folders.manage");
+
+  return (
+    <div>
+      <div
+        className={`group flex items-start gap-0.5 rounded-md pr-1 ${
+          isDrop
+            ? "topo-selected-surface ring-1 ring-[color:var(--topo-accent)]"
+            : isSelected
+              ? "topo-selected-surface"
+              : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
+        }`}
+        style={{ paddingLeft: 4 + depth * 12 }}
+        draggable={canDragFolder}
+        onDragStart={(event) => {
+          if (!canDragFolder) return;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData(FOLDER_DRAG_MIME, node.id);
+          event.dataTransfer.setData("text/plain", node.id);
+        }}
+        onDragOver={(event) => {
+          const folderDrag = acceptFolderDrag(event);
+          const caseDrag = acceptCaseDrag(event);
+          if (folderDrag && onReparentFolder && can("folders.manage")) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            if (dropTarget !== node.id) setDropTarget(node.id);
+            return;
+          }
+          if (!onDropCases || !can("cases.edit") || !caseDrag) {
+            return;
+          }
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          if (dropTarget !== node.id) setDropTarget(node.id);
+        }}
+        onDragLeave={() => {
+          if (dropTarget === node.id) setDropTarget(null);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDropTarget(null);
+          const folderId = parseFolderDragId(event);
+          if (
+            folderId &&
+            onReparentFolder &&
+            can("folders.manage") &&
+            folderId !== node.id
+          ) {
+            onReparentFolder(folderId, node.id);
+            return;
+          }
+          if (!onDropCases || !can("cases.edit")) return;
+          const ids = parseCaseDragIds(event);
+          if (ids.length > 0) onDropCases(node.id, ids);
+        }}
+      >
+        {hasChildren ? (
+          <Button
+            type="button"
+            variant="ghost"
+            isIconOnly
+            aria-label={
+              isOpen ? `Collapse ${node.name}` : `Expand ${node.name}`
+            }
+            aria-expanded={isOpen}
+            onPress={() => toggleExpanded(node.id)}
+            className="mt-0.5 h-6 w-5 min-h-6 min-w-5 shrink-0 rounded text-[color:var(--topo-muted)] hover:bg-transparent hover:text-[color:var(--topo-ink)]"
+          >
+            {isOpen ? (
+              <CaretDownIcon size={12} weight="bold" />
+            ) : (
+              <CaretRightIcon size={12} weight="bold" />
+            )}
+          </Button>
+        ) : (
+          <span aria-hidden="true" className="mt-0.5 h-6 w-5 shrink-0" />
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          aria-current={isSelected ? "true" : undefined}
+          onPress={() => onSelect(node.id)}
+          className="flex h-auto min-h-0 min-w-0 flex-1 items-start justify-start gap-1.5 whitespace-normal rounded-md bg-transparent px-1 py-1 text-left text-sm text-inherit hover:bg-transparent"
+        >
+          {isOpen || isSelected ? (
+            <FolderOpenIcon
+              size={14}
+              weight="duotone"
+              className="mt-0.5 shrink-0 text-[color:var(--topo-accent)]"
+            />
+          ) : (
+            <FolderIcon
+              size={14}
+              weight="duotone"
+              className="mt-0.5 shrink-0 text-[color:var(--topo-muted)]"
+            />
+          )}
+          <span className="min-w-0 flex-1 break-words whitespace-normal font-medium text-wrap">
+            {node.name}
+          </span>
+          <span className="mt-0.5 shrink-0 font-mono text-xs text-[color:var(--topo-muted)]">
+            {count}
+          </span>
+        </Button>
+        <div className="mt-0.5 flex shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+          <Button
+            type="button"
+            variant="ghost"
+            isIconOnly
+            aria-label={`New subfolder in ${node.name}`}
+            isDisabled={!can("folders.manage")}
+            className="size-6 min-h-6 min-w-6 rounded text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-panel)] hover:text-[color:var(--topo-ink)]"
+            onPress={() => onCreateSubfolder(node.id)}
+          >
+            <FolderPlusIcon size={12} weight="bold" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            isIconOnly
+            aria-label={`Rename ${node.name}`}
+            isDisabled={!can("folders.manage")}
+            className="size-6 min-h-6 min-w-6 rounded text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-panel)] hover:text-[color:var(--topo-ink)]"
+            onPress={() => onRename(node.id)}
+          >
+            <PencilSimpleIcon size={12} weight="bold" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            isIconOnly
+            aria-label={`Delete ${node.name}`}
+            isDisabled={!can("folders.manage")}
+            className="size-6 min-h-6 min-w-6 rounded text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-panel)] hover:text-red-600 dark:hover:text-red-400"
+            onPress={() => onDelete(node.id)}
+          >
+            <TrashIcon size={12} weight="bold" />
+          </Button>
+        </div>
+      </div>
+      {hasChildren && isOpen ? (
+        <TreeRows
+          nodes={node.children}
+          depth={depth + 1}
+          expanded={expanded}
+          toggleExpanded={toggleExpanded}
+          selected={selected}
+          onSelect={onSelect}
+          folderCounts={folderCounts}
+          onCreateSubfolder={onCreateSubfolder}
+          onRename={onRename}
+          onDelete={onDelete}
+          onDropCases={onDropCases}
+          onReparentFolder={onReparentFolder}
+          dropTarget={dropTarget}
+          setDropTarget={setDropTarget}
+        />
+      ) : null}
+    </div>
+  );
+});
+
 function TreeRows({
   nodes,
   depth,
@@ -107,180 +321,36 @@ function TreeRows({
   dropTarget: string | null;
   setDropTarget: (id: string | null) => void;
 }) {
-  const { can } = useProjectActions();
   return (
     <>
-      {nodes.map((node) => {
-        const hasChildren = node.children.length > 0;
-        const isOpen = expanded.has(node.id);
-        const isSelected = selected === node.id;
-        const count = folderCounts.get(node.id) ?? 0;
-        const isDrop = dropTarget === node.id;
-        const canDragFolder = Boolean(onReparentFolder) && can("folders.manage");
-        return (
-          <div key={node.id}>
-            <div
-              className={`group flex items-center gap-0.5 rounded-md pr-1 ${
-                isDrop
-                  ? "bg-[color:var(--topo-accent-soft)] ring-1 ring-[color:var(--topo-accent)]"
-                  : isSelected
-                    ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
-                    : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
-              }`}
-              style={{ paddingLeft: 4 + depth * 12 }}
-              draggable={canDragFolder}
-              onDragStart={(event) => {
-                if (!canDragFolder) return;
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData(FOLDER_DRAG_MIME, node.id);
-                event.dataTransfer.setData("text/plain", node.id);
-              }}
-              onDragOver={(event) => {
-                const folderDrag = acceptFolderDrag(event);
-                const caseDrag = acceptCaseDrag(event);
-                if (folderDrag && onReparentFolder && can("folders.manage")) {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                  if (dropTarget !== node.id) setDropTarget(node.id);
-                  return;
-                }
-                if (!onDropCases || !can("cases.edit") || !caseDrag) {
-                  return;
-                }
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-                if (dropTarget !== node.id) setDropTarget(node.id);
-              }}
-              onDragLeave={() => {
-                if (dropTarget === node.id) setDropTarget(null);
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                setDropTarget(null);
-                const folderId = parseFolderDragId(event);
-                if (
-                  folderId &&
-                  onReparentFolder &&
-                  can("folders.manage") &&
-                  folderId !== node.id
-                ) {
-                  onReparentFolder(folderId, node.id);
-                  return;
-                }
-                if (!onDropCases || !can("cases.edit")) return;
-                const ids = parseCaseDragIds(event);
-                if (ids.length > 0) onDropCases(node.id, ids);
-              }}
-            >
-              {hasChildren ? (
-              <button
-                type="button"
-                aria-label={
-                  hasChildren
-                    ? isOpen
-                      ? `Collapse ${node.name}`
-                      : `Expand ${node.name}`
-                    : undefined
-                }
-                aria-expanded={hasChildren ? isOpen : undefined}
-                disabled={!hasChildren}
-                onClick={() => hasChildren && toggleExpanded(node.id)}
-                className={`flex h-6 w-5 shrink-0 items-center justify-center rounded ${
-                  hasChildren
-                    ? "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
-                    : "text-transparent"
-                }`}
-              >
-                {hasChildren ? (
-                  isOpen ? (
-                    <CaretDownIcon size={12} weight="bold" />
-                  ) : (
-                    <CaretRightIcon size={12} weight="bold" />
-                  )
-                ) : (
-                  <span className="h-2 w-2" />
-                )}
-              </button>
-              ) : <span aria-hidden="true" className="h-6 w-5 shrink-0" />}
-              <button
-                type="button"
-                onClick={() => onSelect(node.id)}
-                className="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-sm"
-              >
-                {isOpen || isSelected ? (
-                  <FolderOpenIcon
-                    size={14}
-                    weight="duotone"
-                    className="shrink-0 text-[color:var(--topo-accent)]"
-                  />
-                ) : (
-                  <FolderIcon
-                    size={14}
-                    weight="duotone"
-                    className="shrink-0 text-[color:var(--topo-muted)]"
-                  />
-                )}
-                <span className="truncate font-medium">{node.name}</span>
-                <span className="ml-auto shrink-0 font-mono text-xs text-[color:var(--topo-muted)]">
-                  {count}
-                </span>
-              </button>
-              <div className="flex shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                <button
-                  type="button"
-                  aria-label={`New subfolder in ${node.name}`}
-                  disabled={!can("folders.manage")}
-                  className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-panel)] hover:text-[color:var(--topo-ink)]"
-                  onClick={() => onCreateSubfolder(node.id)}
-                >
-                  <FolderPlusIcon size={12} weight="bold" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Rename ${node.name}`}
-                  disabled={!can("folders.manage")}
-                  className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-panel)] hover:text-[color:var(--topo-ink)]"
-                  onClick={() => onRename(node.id)}
-                >
-                  <PencilSimpleIcon size={12} weight="bold" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Delete ${node.name}`}
-                  disabled={!can("folders.manage")}
-                  className="rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-panel)] hover:text-red-600 dark:hover:text-red-400"
-                  onClick={() => onDelete(node.id)}
-                >
-                  <TrashIcon size={12} weight="bold" />
-                </button>
-              </div>
-            </div>
-            {hasChildren && isOpen ? (
-              <TreeRows
-                nodes={node.children}
-                depth={depth + 1}
-                expanded={expanded}
-                toggleExpanded={toggleExpanded}
-                selected={selected}
-                onSelect={onSelect}
-                folderCounts={folderCounts}
-                onCreateSubfolder={onCreateSubfolder}
-                onRename={onRename}
-                onDelete={onDelete}
-                onDropCases={onDropCases}
-                onReparentFolder={onReparentFolder}
-                dropTarget={dropTarget}
-                setDropTarget={setDropTarget}
-              />
-            ) : null}
-          </div>
-        );
-      })}
+      {nodes.map((node) => (
+        <FolderTreeRow
+          key={node.id}
+          node={node}
+          depth={depth}
+          isOpen={expanded.has(node.id)}
+          isSelected={selected === node.id}
+          isDrop={dropTarget === node.id}
+          count={folderCounts.get(node.id) ?? 0}
+          toggleExpanded={toggleExpanded}
+          selected={selected}
+          onSelect={onSelect}
+          folderCounts={folderCounts}
+          onCreateSubfolder={onCreateSubfolder}
+          onRename={onRename}
+          onDelete={onDelete}
+          onDropCases={onDropCases}
+          onReparentFolder={onReparentFolder}
+          dropTarget={dropTarget}
+          setDropTarget={setDropTarget}
+          expanded={expanded}
+        />
+      ))}
     </>
   );
 }
 
-export function FolderTreePane({
+export const FolderTreePane = memo(function FolderTreePane({
   folders,
   folderCounts,
   unfiledCount,
@@ -303,7 +373,8 @@ export function FolderTreePane({
   useEffect(() => {
     const media = window.matchMedia("(max-width: 1023px)");
     const sync = () => setCompact(media.matches);
-    sync(); media.addEventListener("change", sync);
+    sync();
+    media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
   }, []);
   const tree = useMemo(() => buildFolderTree(folders), [folders]);
@@ -347,30 +418,22 @@ export function FolderTreePane({
     }
   }
 
-  function toggleExpanded(id: string) {
+  // rerender-functional-setstate: stable expand toggle
+  const toggleExpanded = useCallback((id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  }
+  }, []);
 
   const navClass =
     "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors";
 
   const treeBody = (
     <nav aria-label="Folders" className="space-y-0.5 p-1.5">
-      <button
-        type="button"
-        onClick={() => onSelect("all")}
-        className={`${navClass} ${
-          dropTarget === "root"
-            ? "bg-[color:var(--topo-accent-soft)] ring-1 ring-[color:var(--topo-accent)]"
-            : selected === "all"
-              ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
-              : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
-        }`}
+      <div
         onDragOver={(event) => {
           if (
             !onReparentFolder ||
@@ -394,26 +457,31 @@ export function FolderTreePane({
           if (folderId) onReparentFolder(folderId, null);
         }}
       >
-        <FoldersIcon
-          size={14}
-          weight="duotone"
-          className="shrink-0 text-[color:var(--topo-accent)]"
-        />
-        <span className="font-medium">All cases</span>
-        <span className="ml-auto font-mono text-xs text-[color:var(--topo-muted)]">
-          {totalCount}
-        </span>
-      </button>
-      <button
-        type="button"
-        onClick={() => onSelect("unfiled")}
-        className={`${navClass} ${
-          dropTarget === "unfiled"
-            ? "bg-[color:var(--topo-accent-soft)] ring-1 ring-[color:var(--topo-accent)]"
-            : selected === "unfiled"
-              ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
-              : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
-        }`}
+        <Button
+          type="button"
+          variant="ghost"
+          aria-current={selected === "all" ? "true" : undefined}
+          onPress={() => onSelect("all")}
+          className={`${navClass} h-auto min-h-0 ${
+            dropTarget === "root"
+              ? "topo-selected-surface ring-1 ring-[color:var(--topo-accent)]"
+              : selected === "all"
+                ? "topo-selected-surface"
+                : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
+          }`}
+        >
+          <FoldersIcon
+            size={14}
+            weight="duotone"
+            className="shrink-0 text-[color:var(--topo-accent)]"
+          />
+          <span className="font-medium">All cases</span>
+          <span className="ml-auto font-mono text-xs text-[color:var(--topo-muted)]">
+            {totalCount}
+          </span>
+        </Button>
+      </div>
+      <div
         onDragOver={(event) => {
           if (acceptFolderDrag(event)) return;
           if (!onDropCases || !can("cases.edit") || !acceptCaseDrag(event)) {
@@ -435,16 +503,30 @@ export function FolderTreePane({
           if (ids.length > 0) onDropCases(null, ids);
         }}
       >
-        <FolderIcon
-          size={14}
-          weight="duotone"
-          className="shrink-0 text-[color:var(--topo-muted)]"
-        />
-        <span className="font-medium">Unfiled</span>
-        <span className="ml-auto font-mono text-xs text-[color:var(--topo-muted)]">
-          {unfiledCount}
-        </span>
-      </button>
+        <Button
+          type="button"
+          variant="ghost"
+          aria-current={selected === "unfiled" ? "true" : undefined}
+          onPress={() => onSelect("unfiled")}
+          className={`${navClass} h-auto min-h-0 ${
+            dropTarget === "unfiled"
+              ? "topo-selected-surface ring-1 ring-[color:var(--topo-accent)]"
+              : selected === "unfiled"
+                ? "topo-selected-surface"
+                : "text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
+          }`}
+        >
+          <FolderIcon
+            size={14}
+            weight="duotone"
+            className="shrink-0 text-[color:var(--topo-muted)]"
+          />
+          <span className="font-medium">Unfiled</span>
+          <span className="ml-auto font-mono text-xs text-[color:var(--topo-muted)]">
+            {unfiledCount}
+          </span>
+        </Button>
+      </div>
 
       <div className="my-1.5 border-t border-[color:var(--topo-line)]" />
 
@@ -474,35 +556,46 @@ export function FolderTreePane({
   );
 
   return (
-    <aside className="overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
-      <div className="flex items-center gap-2 border-b border-[color:var(--topo-line)] px-2.5 py-2">
-        <button
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
+      <div className="flex shrink-0 items-center gap-2 border-b border-[color:var(--topo-line)] px-2.5 py-2">
+        <Button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 text-left lg:pointer-events-none"
-          onClick={inline ? undefined : onToggleCollapsed}
-          disabled={inline}
+          variant="ghost"
+          className="flex h-auto min-h-0 min-w-0 flex-1 items-center justify-start gap-2 rounded-md bg-transparent px-1 py-0.5 text-left hover:bg-transparent lg:pointer-events-none"
+          onPress={inline ? undefined : onToggleCollapsed}
+          isDisabled={inline}
           aria-expanded={inline ? undefined : !collapsed}
           aria-controls={inline ? undefined : "cases-folder-tree-mobile"}
         >
           <span className="font-medium text-xs tracking-[0.12em] text-[color:var(--topo-muted)]">
             Folders
           </span>
-          <span className={inline ? "hidden" : "truncate text-xs text-[color:var(--topo-muted)] lg:hidden"}>
+          <span
+            className={
+              inline
+                ? "hidden"
+                : "truncate text-xs text-[color:var(--topo-muted)] lg:hidden"
+            }
+          >
             {selectionLabel}
           </span>
-          <span className={inline ? "hidden" : "ml-auto text-[color:var(--topo-muted)] lg:hidden"}>
+          <span
+            className={
+              inline ? "hidden" : "ml-auto text-[color:var(--topo-muted)] lg:hidden"
+            }
+          >
             {collapsed ? (
               <CaretRightIcon size={12} weight="bold" />
             ) : (
               <CaretDownIcon size={12} weight="bold" />
             )}
           </span>
-        </button>
+        </Button>
         <Button
           size="sm"
-          variant="tertiary"
+          variant="ghost"
           isIconOnly
-          className="size-6 min-w-6 shrink-0 text-[color:var(--topo-ink)]"
+          className="size-6 min-h-6 min-w-6 shrink-0 text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-surface)]"
           aria-label="New folder"
           isDisabled={!can("folders.manage")}
           onPress={onCreateRoot}
@@ -511,17 +604,32 @@ export function FolderTreePane({
         </Button>
       </div>
 
-      <div className={inline ? "max-h-[min(70vh,32rem)] overflow-y-auto" : "hidden max-h-[min(70vh,32rem)] overflow-y-auto lg:block"}>
+      {/* Inline/popup: parent popup owns scroll. Desktop rail: this pane scrolls. */}
+      <div
+        className={
+          inline
+            ? undefined
+            : "hidden min-h-0 flex-1 overflow-y-auto lg:block"
+        }
+      >
         {treeBody}
       </div>
-      <Modal.Backdrop isOpen={!inline && compact && !collapsed} onOpenChange={(open) => { if (!open && !collapsed) onToggleCollapsed(); }}>
+      <Modal.Backdrop
+        isOpen={!inline && compact && !collapsed}
+        onOpenChange={(open) => {
+          if (!open && !collapsed) onToggleCollapsed();
+        }}
+      >
         <Modal.Container placement="center" size="sm" className="justify-start p-0">
           <Modal.Dialog aria-label="Case folders">
-            <Modal.Header><Modal.Heading>Case folders</Modal.Heading><Modal.CloseTrigger /></Modal.Header>
+            <Modal.Header>
+              <Modal.Heading>Case folders</Modal.Heading>
+              <Modal.CloseTrigger />
+            </Modal.Header>
             <Modal.Body id="cases-folder-tree-mobile">{treeBody}</Modal.Body>
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
     </aside>
   );
-}
+});

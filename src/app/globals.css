@@ -33,10 +33,12 @@
 
   /*
    * HeroUI control tokens (unlayered, so they beat @heroui/styles @layer theme).
-   * Primary/focus follow --topo-accent. Light accent is too dark for white
-   * text (3.7:1); ink on the accent passes. Neutrals follow the chrome tokens
-   * so secondary, tertiary, overlays, and fields match chip/panel/surface
-   * instead of the default blue/zinc theme. Danger, success, and warning stay semantic.
+   * Primary/focus follow --topo-accent. Light accent (#0d7068) keeps white
+   * label text (~5.5:1). Dark accent is bright teal — use paper/near-black
+   * as --accent-foreground on solid accent controls only; never put muted
+   * body copy on solid accent. Neutrals follow the chrome tokens so secondary,
+   * tertiary, overlays, and fields match chip/panel/surface instead of the
+   * default blue/zinc theme. Danger, success, and warning stay semantic.
    * Repeated under .dark because custom properties inherit computed values.
    */
   --accent: var(--topo-accent);
@@ -134,20 +136,6 @@ body {
   color: var(--topo-ink);
   background: var(--topo-paper);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-}
-
-/*
- * HeroUI Select value sits high in fixed-height triggers (e.g. Sort with py-0)
- * because .select__trigger is inline-flex without cross-axis centering and
- * .select__value stretches, leaving text at the top of the span.
- * Center trigger children and tighten value line-box without changing sizes.
- */
-.select__trigger {
-  @apply items-center;
-}
-
-.select__value {
-  @apply leading-none;
 }
 
 /*
@@ -289,48 +277,78 @@ body {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 
-.topo-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; padding: .75rem; border: 1px solid var(--topo-line); border-radius: .5rem; background: var(--topo-panel); }
-.topo-toolbar label { display: flex; align-items: center; gap: .5rem; font-size: .75rem; color: var(--topo-muted); }
-.topo-toolbar :is(input, select) { min-width: 0; max-width: 100%; min-height: 2.25rem; padding: .375rem .5rem; border: 1px solid var(--topo-line); border-radius: .375rem; color: var(--topo-ink); background: var(--topo-panel); }
 .topo-feedback { padding: .75rem 1rem; border: 1px solid var(--topo-line); border-radius: .5rem; font-size: .875rem; }
 .topo-feedback button { margin-left: .75rem; text-decoration: underline; }
 /* Opening a case gives its details the workspace; browsers become a rail. */
 .topo-case-browser { min-width: 0; }
-.topo-case-browser--folders { align-self: start; }
-@media (min-width: 1024px) { .topo-cases-grid { grid-template-columns: 13rem minmax(0, 1fr); } }
-.topo-cases-grid--inspecting { position: relative; grid-template-columns: 4.5rem minmax(0, 1fr); grid-template-rows: auto 1fr; align-items: start; }
-.topo-cases-grid--inspecting > .topo-case-browser--folders { grid-column: 1; grid-row: 1; }
-.topo-cases-grid--inspecting > .topo-case-browser--cases { grid-column: 1; grid-row: 2; }
+@media (min-width: 1024px) {
+  .topo-cases-grid {
+    grid-template-columns: 18rem minmax(0, 1fr);
+    align-items: stretch;
+  }
+}
+/* rendering-content-visibility: skip layout/paint for off-screen case rows */
+.topo-case-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 3.25rem;
+}
+.topo-cases-grid--inspecting {
+  position: relative;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-items: stretch;
+  overflow-x: clip;
+  min-width: 0;
+  min-height: 0;
+}
+.topo-cases-grid--inspecting > .topo-case-browser--folders { grid-column: 1; grid-row: 1; align-self: start; }
+.topo-cases-grid--inspecting > .topo-case-browser--cases { grid-column: 1; grid-row: 2; align-self: start; }
 .topo-case-browser-trigger { display: flex; width: 100%; min-height: 4rem; flex-direction: column; align-items: center; justify-content: center; gap: .375rem; padding: .5rem .25rem; border: 1px solid var(--topo-line); border-radius: .5rem; background: var(--topo-panel); color: var(--topo-ink); font-size: .6875rem; }
 .topo-case-browser-trigger[aria-expanded="true"] { border-color: var(--topo-accent); color: var(--topo-accent); }
-.topo-case-browser-popup { position: absolute; z-index: 30; top: 0; left: 5.25rem; width: min(56rem, calc(100% - 5.25rem)); max-height: min(70dvh, 44rem); overflow: auto; padding: .75rem; border: 1px solid var(--topo-line); border-radius: .5rem; background: var(--topo-panel); box-shadow: 0 12px 32px rgb(0 0 0 / .25); }
-.topo-case-browser--folders .topo-case-browser-popup { width: min(22rem, calc(100% - 5.25rem)); }
-/* The popup owns vertical scrolling; retain table overflow for wide columns. */
-.topo-case-browser-popup .topo-cases-table-scroll { max-height: none; }
-.topo-inspector { position: relative; grid-column: 2; grid-row: 1 / 3; color: var(--topo-ink); background: var(--topo-panel); border: 0; padding: 0; width: 100%; min-width: 0; max-width: none; height: calc(100dvh - 7rem); margin: 0; }
-.topo-inspector > aside { max-height: 100%; height: 100%; }
+.topo-case-browser-popup { position: absolute; z-index: 30; top: 0; left: 5.25rem; right: 0.5rem; width: auto; max-width: min(56rem, calc(100% - 5.75rem)); box-sizing: border-box; max-height: min(70dvh, 44rem); overflow: auto; padding: .75rem; border: 1px solid var(--topo-line); border-radius: .5rem; background: var(--topo-panel); box-shadow: 0 12px 32px rgb(0 0 0 / .25); }
+.topo-case-browser--folders .topo-case-browser-popup { max-width: min(22rem, calc(100% - 5.75rem)); }
+/* Popup owns vertical scrolling; keep table horizontal overflow for wide columns. */
+.topo-case-browser-popup .topo-cases-table-scroll {
+  max-height: none;
+  flex: none;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+.topo-inspector {
+  position: relative;
+  grid-column: 2;
+  grid-row: 1 / 3;
+  color: var(--topo-ink);
+  background: var(--topo-panel);
+  border: 0;
+  padding: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+.topo-inspector > aside { max-height: 100%; height: 100%; min-height: 0; }
 @media (max-width: 767px) {
-  .topo-cases-grid--inspecting { grid-template-columns: 1fr 1fr; grid-template-rows: auto auto; }
+  /* Fill remaining workspace height so inspector scrolls, not main + inspector. */
+  .topo-cases-grid--inspecting {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    overflow-x: visible;
+    min-height: 0;
+  }
   .topo-cases-grid--inspecting > .topo-case-browser--cases { grid-column: 2; grid-row: 1; }
   .topo-case-browser-trigger { min-height: 2.75rem; flex-direction: row; }
-  .topo-inspector { grid-column: 1 / -1; grid-row: 2; }
-  .topo-case-browser-popup, .topo-case-browser--folders .topo-case-browser-popup { top: 3.5rem; left: 0; width: 100%; }
-  .topo-toolbar label { flex: 1 1 12rem; }
+  .topo-inspector { grid-column: 1 / -1; grid-row: 2; height: 100%; max-height: none; min-height: 0; }
+  .topo-case-browser-popup, .topo-case-browser--folders .topo-case-browser-popup { top: 3.5rem; left: 0; right: 0; width: 100%; max-width: none; }
 }
 
 /* Inline prose links retain a non-color affordance in both themes. */
 p a { text-decoration: underline; text-underline-offset: 3px; }
 
-/* Shared control geometry: compact desktop, comfortable touch interaction. */
-.button:not(.button--icon-only), .input, .select__trigger, .textarea {
-  border-radius: 8px;
-}
-.button:not(.button--icon-only), .input, .select__trigger {
-  min-height: 36px;
-}
-@media (pointer: coarse) {
-  .button, .select__trigger, input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; }
-}
 :root, .dark {
   --danger: var(--topo-danger);
   --danger-foreground: var(--topo-danger-fg);
@@ -338,10 +356,112 @@ p a { text-decoration: underline; text-underline-offset: 3px; }
   --success-foreground: var(--topo-success-fg);
 }
 
-/* Shared labeled fields for secondary authoring screens. */
-.topo-field { display: flex; flex-direction: column; gap: .375rem; min-width: 0; margin-top: .75rem; font-size: .75rem; color: var(--topo-muted); }
-.topo-field > :is(input, textarea) { display: block; width: 100%; color: var(--topo-ink); }
-.grid > .topo-field { margin-top: 0; }
+/*
+ * Shared layout/control chrome lives in @layer components so Tailwind utilities
+ * (gap-*, items-end, h-8, mt-*) can override without fighting unlayered CSS.
+ */
+@layer components {
+  /*
+   * HeroUI Select value sits high in fixed-height triggers (e.g. Sort with py-0)
+   * because .select__trigger is inline-flex without cross-axis centering and
+   * .select__value stretches, leaving text at the top of the span.
+   */
+  .select__trigger {
+    @apply items-center;
+  }
+
+  .select__value {
+    @apply leading-none;
+  }
+
+  /*
+   * Selected / active list rows and expandable headers. Soft accent keeps
+   * --topo-ink / --topo-muted readable; do not paint body text on solid accent.
+   */
+  .topo-selected-surface {
+    background-color: var(--topo-accent-soft);
+    color: var(--topo-ink);
+  }
+
+  .topo-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.75rem;
+    border: 1px solid var(--topo-line);
+    border-radius: 0.5rem;
+    background: var(--topo-panel);
+  }
+
+  .topo-toolbar label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--topo-muted);
+  }
+
+  .topo-toolbar :is(input, select) {
+    min-width: 0;
+    max-width: 100%;
+    min-height: 2.25rem;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--topo-line);
+    border-radius: 0.375rem;
+    color: var(--topo-ink);
+    background: var(--topo-panel);
+  }
+
+  @media (max-width: 767px) {
+    .topo-toolbar label {
+      flex: 1 1 12rem;
+    }
+  }
+
+  /* Shared labeled fields for secondary authoring screens. */
+  .topo-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    min-width: 0;
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--topo-muted);
+  }
+
+  .topo-field > :is(input, textarea) {
+    display: block;
+    width: 100%;
+    color: var(--topo-ink);
+  }
+
+  .grid > .topo-field {
+    margin-top: 0;
+  }
+
+  /* Shared control geometry: compact desktop, comfortable touch interaction. */
+  .button:not(.button--icon-only),
+  .input,
+  .select__trigger,
+  .textarea {
+    border-radius: 8px;
+  }
+
+  .button:not(.button--icon-only),
+  .input,
+  .select__trigger {
+    min-height: 36px;
+  }
+
+  @media (pointer: coarse) {
+    .button,
+    .select__trigger,
+    input:not([type="checkbox"]):not([type="radio"]) {
+      min-height: 44px;
+    }
+  }
+}
 
 /* Shared / stakeholder report print and Save-as-PDF. */
 @media print {

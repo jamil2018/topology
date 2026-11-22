@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { useState } from "react";
 import { parseFallbackSteps, type OrderedStep } from "@/lib/tcm/steps";
+import { TopoSelect } from "./ui/topo-select";
 
 export type SharedStepOption = {
   id: string;
@@ -118,12 +119,13 @@ export function CaseStepsEditor({
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-1">
-              <button
-                type="button"
+              <span
+                role="button"
+                tabIndex={disabled ? -1 : 0}
                 draggable={!disabled}
                 aria-label={`Drag to reorder step ${index + 1}`}
-                disabled={disabled}
-                className="cursor-grab rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)] active:cursor-grabbing disabled:cursor-default disabled:opacity-40"
+                aria-disabled={disabled || undefined}
+                className="cursor-grab rounded p-1 text-[color:var(--topo-muted)] hover:bg-[color:var(--topo-chip)] hover:text-[color:var(--topo-ink)] active:cursor-grabbing aria-disabled:cursor-default aria-disabled:opacity-40"
                 onDragStart={(event) => {
                   if (disabled) {
                     event.preventDefault();
@@ -140,7 +142,7 @@ export function CaseStepsEditor({
                 }}
               >
                 <DotsSixVerticalIcon size={14} weight="bold" />
-              </button>
+              </span>
               <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                 Step {index + 1}
                 {step.sharedStepId ? " · shared" : ""}
@@ -217,23 +219,21 @@ export function CaseStepsEditor({
           Add step
         </Button>
         {sharedSteps.length > 0 ? (
-          <select
-            aria-label="Insert shared step"
-            disabled={disabled}
-            className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs"
-            defaultValue=""
-            onChange={(e) => {
-              if (e.target.value) addShared(e.target.value);
-              e.target.value = "";
+          <TopoSelect
+            ariaLabel="Insert shared step"
+            isDisabled={disabled}
+            className="w-auto"
+            value=""
+            placeholder="Insert shared step…"
+            onChange={(value) => {
+              if (value) addShared(value);
             }}
-          >
-            <option value="">Insert shared step…</option>
-            {sharedSteps.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            options={sharedSteps.map((s) => ({
+              id: s.id,
+              label: s.name,
+            }))}
+            compact
+          />
         ) : null}
       </div>
     </div>

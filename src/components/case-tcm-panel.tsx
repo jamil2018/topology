@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Button, Input } from "@heroui/react";
+import { TopoCheckbox } from "./ui/topo-checkbox";
 import { PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import { InlineRowsSkeleton } from "./skeletons";
+import { TopoSelect } from "./ui/topo-select";
 
 export type ParameterDraft = { name: string; defaultValue: string };
 export type DatasetDraft = { values: Record<string, string> };
@@ -70,9 +73,9 @@ export function CaseVersionsList({
 
   if (loading) {
     return (
-      <p className="text-xs text-[color:var(--topo-muted)]" role="status">
-        Loading versions…
-      </p>
+      <div role="status" aria-busy="true" aria-label="Loading versions">
+        <InlineRowsSkeleton rows={3} dense />
+      </div>
     );
   }
 
@@ -285,33 +288,35 @@ export function CaseTcmPanel({
                     {def.required ? " *" : ""}
                   </span>
                   {def.type === "select" ? (
-                    <select
-                      className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1"
+                    <TopoSelect
+                      ariaLabel={def.label}
+                      className="w-full"
                       value={String(customFields[def.key] ?? "")}
-                      disabled={disabled}
-                      onChange={(e) =>
+                      isDisabled={disabled}
+                      onChange={(value) =>
                         onCustomFieldsChange({
                           ...customFields,
-                          [def.key]: e.target.value,
+                          [def.key]: value,
                         })
                       }
-                    >
-                      <option value="">Select…</option>
-                      {(def.options ?? []).map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { id: "", label: "Select…" },
+                        ...(def.options ?? []).map((opt) => ({
+                          id: opt,
+                          label: opt,
+                        })),
+                      ]}
+                      compact
+                    />
                   ) : def.type === "boolean" ? (
-                    <input
-                      type="checkbox"
-                      checked={Boolean(customFields[def.key])}
-                      disabled={disabled}
-                      onChange={(e) =>
+                    <TopoCheckbox
+                      compact
+                      isSelected={Boolean(customFields[def.key])}
+                      isDisabled={disabled}
+                      onChange={(isSelected) =>
                         onCustomFieldsChange({
                           ...customFields,
-                          [def.key]: e.target.checked,
+                          [def.key]: isSelected,
                         })
                       }
                     />

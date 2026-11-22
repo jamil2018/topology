@@ -7,6 +7,7 @@ import {
   RESULT_STATUSES,
   type MemberOption,
   type ResultRow,
+  type StatusCounts,
   type StatusFilter,
 } from "./run-executor-model";
 import { statusChipHint, statusDotClass } from "./run-status-styles";
@@ -15,7 +16,11 @@ import {
   scrollIndexIntoView,
   useVirtualWindow,
 } from "./run-virtual-list";
+import { Button } from "@heroui/react";
 import { formatStatusLabel } from "@/lib/format-labels";
+import { TopoCheckbox } from "./ui/topo-checkbox";
+import { TopoSearchField } from "./ui/topo-search-field";
+import { TopoSelect } from "./ui/topo-select";
 
 const STATUS_CHIPS: { id: Exclude<StatusFilter, "all">; label: string }[] = [
   { id: "untested", label: "Untested" },
@@ -42,6 +47,8 @@ export function RunCaseList({
   mineOnly,
   query,
   currentUserId,
+  statusCounts,
+  mineCount: mineCountProp,
   selectedIds,
   selectionEnabled = false,
   bulkPending = false,
@@ -63,6 +70,8 @@ export function RunCaseList({
   mineOnly: boolean;
   query: string;
   currentUserId?: string | null;
+  statusCounts?: StatusCounts;
+  mineCount?: number;
   selectedIds?: Set<string>;
   selectionEnabled?: boolean;
   bulkPending?: boolean;
@@ -76,10 +85,12 @@ export function RunCaseList({
   onBulkStatus?: (status: string) => void;
   onBulkAssignee?: (assigneeId: string | null) => void;
 }) {
-  const counts = countResultStatuses(results);
-  const mineCount = currentUserId
-    ? results.filter((row) => row.assigneeId === currentUserId).length
-    : 0;
+  const counts = statusCounts ?? countResultStatuses(results);
+  const mineCount =
+    mineCountProp ??
+    (currentUserId
+      ? results.filter((row) => row.assigneeId === currentUserId).length
+      : 0);
   const { setParent, parent, start, end, totalHeight } = useVirtualWindow({
     count: filtered.length,
     rowHeight: RUN_CASE_ROW_HEIGHT,
@@ -99,29 +110,30 @@ export function RunCaseList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="space-y-2 border-b border-[color:var(--topo-line)] p-2.5">
-        <input
-          type="search"
-          aria-label="Search cases"
+        <TopoSearchField
+          ariaLabel="Search cases"
           placeholder="Search key or title"
           value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          className="w-full rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
+          onChange={onQueryChange}
+          className="w-full"
         />
         <div
           className="flex flex-wrap gap-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] p-1"
           role="group"
           aria-label="Filter cases"
         >
-          <button type="button" aria-pressed={statusFilter === "all"} onClick={() => onStatusFilter("all")} className={chipClass(statusFilter === "all")}>All {results.length}</button>
+          <Button type="button" size="sm" variant="ghost" aria-pressed={statusFilter === "all"} onPress={() => onStatusFilter("all")} className={chipClass(statusFilter === "all")}>All {results.length}</Button>
           {STATUS_CHIPS.map((chip) => {
             const active = statusFilter === chip.id;
             return (
-              <button
+              <Button
                 key={chip.id}
                 type="button"
+                size="sm"
+                variant="ghost"
                 aria-pressed={active}
                 aria-label={`${chip.label} ${counts[chip.id]}`}
-                onClick={() => onStatusFilter(active ? "all" : chip.id)}
+                onPress={() => onStatusFilter(active ? "all" : chip.id)}
                 className={chipClass(active)}
               >
                 {chip.label}{" "}
@@ -131,14 +143,16 @@ export function RunCaseList({
                 >
                   {counts[chip.id]}
                 </span>
-              </button>
+              </Button>
             );
           })}
-          <button
+          <Button
             type="button"
+            size="sm"
+            variant="ghost"
             aria-pressed={mineOnly}
             aria-label={`Mine ${mineCount}`}
-            onClick={() => onMineOnly(!mineOnly)}
+            onPress={() => onMineOnly(!mineOnly)}
             className={chipClass(mineOnly)}
           >
             Mine{" "}
@@ -148,24 +162,22 @@ export function RunCaseList({
             >
               {mineCount}
             </span>
-          </button>
+          </Button>
         </div>
         {selectionEnabled ? (
           <div className="flex flex-wrap items-center gap-2">
-            <label className="inline-flex items-center gap-1.5 text-xs text-[color:var(--topo-muted)]">
-              <input
-                type="checkbox"
-                checked={allFilteredSelected}
-                disabled={filtered.length === 0 || bulkPending}
-                aria-label="Select all filtered cases"
-                onChange={() => {
-                  if (allFilteredSelected) onClearSelection?.();
-                  else onSelectFiltered?.();
-                }}
-                className="accent-[color:var(--topo-accent)]"
-              />
+            <TopoCheckbox
+              compact
+              isSelected={allFilteredSelected}
+              isDisabled={filtered.length === 0 || bulkPending}
+              aria-label="Select all filtered cases"
+              onChange={(isSelected) => {
+                if (isSelected) onSelectFiltered?.();
+                else onClearSelection?.();
+              }}
+            >
               Select filtered
-            </label>
+            </TopoCheckbox>
             {selectedCount > 0 ? (
               <span className="font-mono text-xs text-[color:var(--topo-muted)]">
                 {selectedCount} selected
@@ -179,52 +191,50 @@ export function RunCaseList({
             role="toolbar"
             aria-label="Bulk result updates"
           >
-            <select
-              aria-label="Bulk status"
-              disabled={bulkPending}
-              defaultValue=""
-              className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs text-[color:var(--topo-ink)] accent-[color:var(--topo-accent)]"
-              onChange={(e) => {
-                const value = e.target.value;
-                e.target.value = "";
+            <TopoSelect
+              ariaLabel="Bulk status"
+              isDisabled={bulkPending}
+              className="w-auto"
+              value=""
+              placeholder="Status…"
+              onChange={(value) => {
                 if (value) onBulkStatus?.(value);
               }}
-            >
-              <option value="">Status…</option>
-              {RESULT_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {formatStatusLabel(status)}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Bulk assignee"
-              disabled={bulkPending}
-              defaultValue=""
-              className="rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1 text-xs text-[color:var(--topo-ink)] accent-[color:var(--topo-accent)]"
-              onChange={(e) => {
-                const value = e.target.value;
-                e.target.value = "";
+              options={RESULT_STATUSES.map((status) => ({
+                id: status,
+                label: formatStatusLabel(status),
+              }))}
+              compact
+            />
+            <TopoSelect
+              ariaLabel="Bulk assignee"
+              isDisabled={bulkPending}
+              className="w-auto"
+              value=""
+              placeholder="Assignee…"
+              onChange={(value) => {
                 if (value === "") return;
                 onBulkAssignee?.(value === "__none__" ? null : value);
               }}
-            >
-              <option value="">Assignee…</option>
-              <option value="__none__">Unassigned</option>
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name ?? member.email}
-                </option>
-              ))}
-            </select>
-            <button
+              options={[
+                { id: "__none__", label: "Unassigned" },
+                ...members.map((member) => ({
+                  id: member.id,
+                  label: member.name ?? member.email,
+                })),
+              ]}
+              compact
+            />
+            <Button
               type="button"
-              disabled={bulkPending}
-              onClick={() => onClearSelection?.()}
-              className="text-xs text-[color:var(--topo-muted)] underline hover:text-[color:var(--topo-ink)]"
+              size="sm"
+              variant="ghost"
+              isDisabled={bulkPending}
+              onPress={() => onClearSelection?.()}
+              className="h-auto min-h-0 px-0 py-0 text-xs text-[color:var(--topo-muted)] underline hover:text-[color:var(--topo-ink)]"
             >
               Clear
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>
@@ -233,7 +243,7 @@ export function RunCaseList({
         {filtered.length === 0 ? (
           <p className="px-3 py-6 text-sm text-[color:var(--topo-muted)]">
             No cases match these filters.
-            <button type="button" className="mt-2 block underline" onClick={() => { onStatusFilter("all"); onMineOnly(false); onQueryChange(""); }}>Clear filters</button>
+            <Button type="button" size="sm" variant="ghost" className="mt-2 block h-auto min-h-0 px-0 py-0 underline" onPress={() => { onStatusFilter("all"); onMineOnly(false); onQueryChange(""); }}>Clear filters</Button>
           </p>
         ) : (
           <ul
@@ -263,21 +273,21 @@ export function RunCaseList({
                     }`}
                   >
                     {selectionEnabled ? (
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={bulkPending}
+                      <TopoCheckbox
+                        compact
+                        className="mt-1.5"
+                        isSelected={checked}
+                        isDisabled={bulkPending}
                         aria-label={`Select ${result.case.key}`}
-                        className="mt-1.5 accent-[color:var(--topo-accent)]"
                         onChange={() => onToggleSelected?.(result.id)}
-                        onClick={(e) => e.stopPropagation()}
                       />
                     ) : null}
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
                       aria-current={focused ? "true" : undefined}
-                      onClick={() => onSelect(result.id)}
-                      className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                      onPress={() => onSelect(result.id)}
+                      className="flex h-auto min-h-0 min-w-0 flex-1 items-start justify-start gap-2 px-0 py-0 text-left"
                     >
                       <span
                         aria-hidden
@@ -296,7 +306,7 @@ export function RunCaseList({
                           <span className="sr-only"> · {statusChipHint(result.status)}</span>
                         </span>
                       </span>
-                    </button>
+                    </Button>
                   </div>
                 </li>
               );
