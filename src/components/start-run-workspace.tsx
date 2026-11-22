@@ -262,14 +262,14 @@ export function StartRunWorkspace({
             />
           </TextField>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs text-[color:var(--topo-muted)]">
-              Environment
+            <TextField name="run-environment" className="w-full">
+              <Label>Environment</Label>
               <Input
                 value={environment}
                 onChange={(event) => setEnvironment(event.target.value)}
-                className="h-8"
+                className="h-8 w-full"
               />
-            </label>
+            </TextField>
             {!retest ? (
               <TopoSelect
                 label="Assignee"

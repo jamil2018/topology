@@ -246,7 +246,7 @@ const CaseTableRow = memo(function CaseTableRow({
           onChange={() => onToggleSelect(row.id)}
         />
       </td>
-      <td className="px-3 py-2 font-mono text-xs text-[color:var(--topo-accent)]">
+      <td className="px-3 py-2 font-mono text-xs text-[color:var(--topo-ink)]">
         <Button
           type="button"
           variant="ghost"
@@ -378,10 +378,10 @@ const CaseMobileRow = memo(function CaseMobileRow({
           onPress={() => onOpen(row)}
         >
           <span className="block">
-            <span className="block font-mono text-xs text-[color:var(--topo-accent)]">
+            <span className="block font-mono text-xs text-[color:var(--topo-muted)]">
               {row.key}
             </span>
-            <span className="block text-sm font-medium text-[color:var(--topo-ink)]">
+            <span className="block truncate text-sm font-medium text-[color:var(--topo-ink)]">
               {row.title}
             </span>
             {row.intent ? <IntentLink intent={row.intent} /> : null}

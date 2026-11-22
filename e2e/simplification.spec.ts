@@ -107,11 +107,12 @@ test("filtering does not silently change the chosen cases", async ({page}) => {
   await page.goto('/runs/new');
   const create = page.getByRole('button',{name:/Create run ·/});
   const initial = await create.textContent();
-  await page.getByRole('textbox',{name:'Search cases',exact:true}).fill('no-matching-ux-case');
+  // HeroUI SearchField exposes role=searchbox, not textbox.
+  await page.getByRole('searchbox',{name:'Search cases',exact:true}).fill('no-matching-ux-case');
   await expect(page.getByText(/selected cases are outside these filters/)).toBeVisible();
   await expect(create).toHaveText(initial!);
   await page.getByRole('button',{name:'Clear filters',exact:true}).click();
-  await expect(page.getByRole('textbox',{name:'Search cases',exact:true})).toHaveValue('');
+  await expect(page.getByRole('searchbox',{name:'Search cases',exact:true})).toHaveValue('');
   await expect(create).toHaveText(initial!);
 });
 

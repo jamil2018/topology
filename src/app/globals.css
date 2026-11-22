@@ -13,7 +13,8 @@
   --topo-ink: #18181b;
   --topo-muted: #62626c;
   --topo-line: #d4d4d8;
-  --topo-accent: #0d7068;
+  /* Darker teal so accent-colored body text clears 4.5:1 on chip/panel. */
+  --topo-accent: #0a5f58;
   --topo-accent-soft: #ccfbf1;
   --topo-signal: #ea580c;
   --topo-success: #047857;
@@ -33,8 +34,8 @@
 
   /*
    * HeroUI control tokens (unlayered, so they beat @heroui/styles @layer theme).
-   * Primary/focus follow --topo-accent. Light accent (#0d7068) keeps white
-   * label text (~5.5:1). Dark accent is bright teal — use paper/near-black
+   * Primary/focus follow --topo-accent. Light accent (#0a5f58) keeps white
+   * label text (~6:1). Dark accent is bright teal — use paper/near-black
    * as --accent-foreground on solid accent controls only; never put muted
    * body copy on solid accent. Neutrals follow the chrome tokens so secondary,
    * tertiary, overlays, and fields match chip/panel/surface instead of the

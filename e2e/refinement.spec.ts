@@ -1,5 +1,16 @@
 import { test, expect } from "./fixtures";
 import AxeBuilder from "@axe-core/playwright";
+import type { Page } from "@playwright/test";
+
+/** Click HeroUI Checkbox.Content so React Aria toggles controlled selection. */
+async function clickSelectAllVisible(page: Page) {
+  const checkbox = page.getByRole("checkbox", { name: "Select all visible cases" });
+  await page
+    .locator('[data-slot="checkbox"]')
+    .filter({ has: checkbox })
+    .locator('[data-slot="checkbox-content"]')
+    .click();
+}
 
 for (const theme of ["light", "dark"] as const) {
   test(`screen families are accessible in ${theme}`, async ({ page }, info) => {
@@ -48,10 +59,9 @@ test("review template, create fresh run, retest failure and follow lineage", asy
   const name = `Refinement ${Date.now()}`;
   await page.goto("/runs/new");
   await page.getByLabel("Run name", { exact: true }).filter({visible:true}).fill(name);
-  // HeroUI Checkbox.Control overlays the input; force reaches the real control.
-  await page.getByRole("checkbox", { name: "Select all visible cases" }).click({ force: true });
+  await clickSelectAllVisible(page);
   await expect(page.getByRole("button", { name: /^Create run/ })).toBeDisabled();
-  await page.getByRole("checkbox", { name: "Select all visible cases" }).click({ force: true });
+  await clickSelectAllVisible(page);
   await page.getByRole("button", { name: "Save as template", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Template saved" })).toBeVisible();
   await page.goto("/runs");

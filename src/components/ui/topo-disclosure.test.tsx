@@ -12,8 +12,9 @@ describe("TopoDisclosure", () => {
   it("expands to reveal body content and reports expanded state", async () => {
     const user = userEvent.setup();
     const onExpandedChange = vi.fn();
-    render(
+    const { container } = render(
       <TopoDisclosure
+        id="ci"
         title="Filter and sort"
         summary="3 active"
         onExpandedChange={onExpandedChange}
@@ -22,6 +23,7 @@ describe("TopoDisclosure", () => {
       </TopoDisclosure>,
     );
 
+    expect(container.querySelector("#ci")).not.toBeNull();
     const trigger = screen.getByRole("button", { name: /Filter and sort/i });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText(/3 active/)).toBeInTheDocument();

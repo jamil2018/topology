@@ -38,9 +38,10 @@ export function TopoDisclosure({
   isDisabled,
   id,
 }: TopoDisclosureProps) {
-  return (
+  // Keep `id` on a real wrapper so hash deep-links and getElementById work.
+  // HeroUI/RAC Disclosure does not reliably expose the prop as a DOM id.
+  const disclosure = (
     <Disclosure
-      id={id}
       className={
         bordered
           ? `rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3 ${className ?? ""}`.trim()
@@ -79,4 +80,7 @@ export function TopoDisclosure({
       </Disclosure.Content>
     </Disclosure>
   );
+
+  if (!id) return disclosure;
+  return <div id={id}>{disclosure}</div>;
 }
