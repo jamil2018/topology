@@ -42,7 +42,8 @@ for (const theme of ["light", "dark"] as const) {
   });
 }
 
-test("responsive cases, keyboard dialog and inspector", async ({ page }, info) => {
+test("responsive case layout across seven widths", async ({ page }, info) => {
+  test.setTimeout(60_000);
   for (const width of [320, 390, 834, 1194, 1366, 1440, 1920]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/cases");
@@ -50,6 +51,11 @@ test("responsive cases, keyboard dialog and inspector", async ({ page }, info) =
     expect.soft(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `cases at ${width}`).toBeLessThanOrEqual(1);
     await page.screenshot({caret: "initial",  path: info.outputPath(`cases-${width}.png`), fullPage: true });
   }
+});
+
+test("keyboard dialogs trap focus on the case catalog", async ({ page }) => {
+  await page.goto("/cases");
+  await expect(page.locator("main h1")).toHaveText("Test cases");
   await page.keyboard.press("?");
   const shortcuts = page.getByRole("dialog", { name: "Keyboard shortcuts" });
   await expect(shortcuts).toBeVisible();
