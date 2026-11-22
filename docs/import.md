@@ -109,3 +109,51 @@ Dry run returns `wouldCreate`, `wouldSkip` (existing keys), `sample`, and `error
 Local, loopback, and private API URLs are rejected (same SSRF rules as outbound webhooks). Redirects are not followed.
 
 Fixtures used by unit tests live in `fixtures/import/`.
+
+## Historical TestRail and Qase runs
+
+Open Test cases → Import cases → Import run history. Upload a JSON bundle with completed source runs, their result records, and the downloaded bytes for attachments. Use the same source namespace as the case import. File imports without a namespace use `file`. For an API-based case import, set an explicit namespace when importing the cases so it can be reused here.
+
+The bundle supports up to 50 runs and 8 MiB total. Include a separate entry for each run and combine paginated result responses into its `results` array. TestRail bundles also include the run's `get_tests` records. Qase bundles use the inner records from the v1 run and result responses. [TestRail run API](https://support.testrail.com/hc/en-us/articles/7077874763156-Runs) · [TestRail result API](https://support.testrail.com/hc/en-us/articles/7077819312404-Results) · [Qase run model](https://github.com/qase-tms/qase-api-client/blob/main/docs/Model/Run.md) · [Qase result model](https://github.com/qase-tms/qase-api-client/blob/main/docs/Model/Result.md)
+
+```json
+{
+  "provider": "testrail",
+  "sourceNamespace": "checkout-legacy",
+  "statusMapping": { "4": "untested" },
+  "runs": [{
+    "run": {
+      "id": 89,
+      "name": "Checkout regression",
+      "is_completed": true,
+      "created_on": 1700000000,
+      "completed_on": 1700000300
+    },
+    "tests": [{ "id": 13, "case_id": 42, "title": "Retain the cart" }],
+    "results": [{
+      "id": 101,
+      "test_id": 13,
+      "status_id": 5,
+      "created_on": 1700000100,
+      "comment": "Cart disappeared",
+      "elapsed": "1m 2s"
+    }],
+    "expected": { "results": 1, "attachments": 1 },
+    "attachments": [{
+      "id": 501,
+      "resultId": 101,
+      "filename": "console.log",
+      "contentType": "text/plain",
+      "dataBase64": "Y2FydCBlbXB0eQ=="
+    }]
+  }]
+}
+```
+
+For Qase, set `provider` to `qase`. Supply `run.id`, `run.title`, and `run.end_time`. The importer accepts a completed status and reads the optional `start_time` and environment title. Each result needs `hash`, `run_id`, `case_id`, and `status`. Include ISO timestamps with a time zone and durations in `time_spent_ms`. Attachments use the result hash as `resultId`. Supply downloaded attachment bytes in base64 at up to 1 MiB per file. The importer reads attachment bytes directly from the bundle.
+
+Preview reports each run's result and attachment counts, unavailable case links, and skipped runs. Supply optional `expected` counts to check the bundle against the source export totals. Add explicit `statusMapping` entries for custom statuses before import. Supported target statuses include `passed`, `failed`, `blocked`, `skipped`, and `untested`. A run with an unsupported status, missing result record, or declared attachment without bytes stays skipped until the bundle is corrected. Results with a missing or ambiguous case association import without a catalog link. Links use the case import's provider, namespace, and source ID.
+
+Apply saves each run in its own transaction. Uploading the same bundle again resumes failed runs and returns links to identical completed imports. A different snapshot of an already-imported source run is reported as a conflict. Imported runs preserve source result IDs, timestamps, status, notes, and supported attachments. They carry historical provenance and lack a verified case revision or CI commit.
+
+The API accepts the raw JSON bundle at `POST /api/import/history?mode=preview`. Resubmit it to `POST /api/import/history?mode=apply&digest=…` with the preview digest. Applying requires `cases.view`, `runs.create`, and `runs.edit`. Responses report each run's outcome so operators can reconcile partial progress. Apply migration `0015_vendor_run_history` during upgrade.

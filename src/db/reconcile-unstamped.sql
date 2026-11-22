@@ -533,3 +533,13 @@ CREATE INDEX IF NOT EXISTS "regression_baselines_project_plan_idx" ON "regressio
 ALTER TABLE "runs" ADD COLUMN IF NOT EXISTS "baseline_id" uuid REFERENCES "regression_baselines"("id") ON DELETE set null;
 ALTER TABLE "run_results" ADD COLUMN IF NOT EXISTS "case_snapshot" jsonb;
 ALTER TABLE "workspaces" ADD COLUMN IF NOT EXISTS "require_case_review" boolean DEFAULT false NOT NULL;
+CREATE TABLE IF NOT EXISTS "vendor_run_history" (
+  "workspace_id" uuid NOT NULL REFERENCES "workspaces"("id") ON DELETE cascade,
+  "provider" text NOT NULL,
+  "namespace" text NOT NULL,
+  "source_run_id" text NOT NULL,
+  "digest" text NOT NULL,
+  "run_id" uuid REFERENCES "runs"("id") ON DELETE set null,
+  CONSTRAINT "vendor_run_history_identity_unique" UNIQUE ("workspace_id", "provider", "namespace", "source_run_id")
+);
+CREATE INDEX IF NOT EXISTS "vendor_run_history_run_idx" ON "vendor_run_history" ("run_id");

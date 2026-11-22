@@ -64,6 +64,7 @@ export function ImportWorkspace() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [provider, setProvider] = useState<ImportProvider>("testrail");
   const [source, setSource] = useState<"file" | "api">("file");
+  const [sourceNamespace, setSourceNamespace] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [api, setApi] = useState<ApiForm>(emptyApi);
@@ -87,6 +88,7 @@ export function ImportWorkspace() {
         provider,
         mapping,
         dryRun: dry,
+        sourceNamespace: sourceNamespace.trim() || undefined,
         api: {
           baseUrl: api.baseUrl.trim(),
           email: api.email.trim() || undefined,
@@ -99,6 +101,7 @@ export function ImportWorkspace() {
       provider,
       mapping,
       dryRun: dry,
+      sourceNamespace: sourceNamespace.trim() || undefined,
       content,
       filename: fileName ?? undefined,
     });
@@ -200,13 +203,18 @@ export function ImportWorkspace() {
         title="Import cases"
         description="Map TestRail, Qase, Zephyr Scale, or Xray exports onto Topology cases. Preview and dry-run before anything is written."
         actions={
-          <Link
-            href="/cases"
-            className="button button--sm button--secondary inline-flex items-center gap-1.5"
-          >
-            <ArrowLeftIcon size={14} weight="bold" />
-            Back to cases
-          </Link>
+          <>
+            {can("runs.create") && can("cases.view") ? (
+              <Link href="/cases/import/history" className="button button--sm button--secondary">Import run history</Link>
+            ) : null}
+            <Link
+              href="/cases"
+              className="button button--sm button--secondary inline-flex items-center gap-1.5"
+            >
+              <ArrowLeftIcon size={14} weight="bold" />
+              Back to cases
+            </Link>
+          </>
         }
       />
 
@@ -385,6 +393,12 @@ export function ImportWorkspace() {
             </p>
           </div>
         )}
+
+        <TextField name="source-namespace" className="max-w-md" variant="secondary">
+          <Label className="text-xs text-[color:var(--topo-muted)]">Source namespace (optional)</Label>
+          <Input value={sourceNamespace} placeholder={source === "file" ? "file" : "Derived from the source project"}
+            maxLength={500} onChange={(event) => { setSourceNamespace(event.target.value); setDryRun(null); }} />
+        </TextField>
 
         <div className="flex flex-wrap gap-2">
           <Button

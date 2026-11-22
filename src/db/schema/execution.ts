@@ -116,6 +116,18 @@ export const runs = pgTable("runs", {
   index("runs_environment_id_idx").on(table.environmentId),
 ]);
 
+export const vendorRunHistory = pgTable("vendor_run_history", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  namespace: text("namespace").notNull(),
+  sourceRunId: text("source_run_id").notNull(),
+  digest: text("digest").notNull(),
+  runId: uuid("run_id").references(() => runs.id, { onDelete: "set null" }),
+}, (table) => [
+  unique("vendor_run_history_identity_unique").on(table.workspaceId, table.provider, table.namespace, table.sourceRunId),
+  index("vendor_run_history_run_idx").on(table.runId),
+]);
+
 export type RunnerCaseRevision = { id: string; key: string; intentId: string | null; revision: string };
 export type RunnerEvidenceMatch = "matched" | "unmapped" | "ambiguous" | "unselected" | "stale_revision";
 

@@ -35,7 +35,7 @@ describe("journaled migrator", () => {
       readFileSync(path.join(folder, "meta/_journal.json"), "utf8"),
     ) as { entries: { tag: string; idx: number }[] };
 
-    expect(journal.entries).toHaveLength(15);
+    expect(journal.entries).toHaveLength(16);
     expect(journal.entries[0]?.idx).toBe(0);
     expect(journal.entries[0]?.tag).toBe("0000_baseline");
     expect(journal.entries[1]?.idx).toBe(1);
@@ -58,9 +58,10 @@ describe("journaled migrator", () => {
     expect(journal.entries[12]?.tag).toBe("0012_vendor_case_sources");
     expect(journal.entries[13]?.tag).toBe("0013_regression_baselines");
     expect(journal.entries[14]?.tag).toBe("0014_case_review_policy");
+    expect(journal.entries[15]?.tag).toBe("0015_vendor_run_history");
 
     const files = readMigrationFiles({ migrationsFolder: folder });
-    expect(files).toHaveLength(15);
+    expect(files).toHaveLength(16);
     const baseline = files[0]!.sql.join("\n");
     expect(baseline).toContain('CREATE TABLE "users"');
     expect(baseline).toContain('CREATE TABLE "attachments"');
