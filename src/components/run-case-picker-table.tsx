@@ -232,7 +232,7 @@ export function RunCasePickerTable({
         </div>
 
         <TopoSearchField
-          label="Search"
+          label="Search cases"
           name="case-search"
           ariaLabel="Search cases"
           placeholder="Search by title, key, or tag"

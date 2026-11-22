@@ -51,7 +51,7 @@ export async function startManualRun(
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
 
   for (const title of titles) {
-    await page.getByRole("searchbox", { name: "Search", exact: true }).fill(title);
+    await page.getByRole("searchbox", { name: "Search cases", exact: true }).fill(title);
     const rowCheckbox = page.getByRole("checkbox", {
       name: `Select ${title}`,
       exact: true,
@@ -62,7 +62,7 @@ export async function startManualRun(
       .locator('[data-slot="checkbox-content"]');
     await rowContent.scrollIntoViewIfNeeded();
     await rowContent.click();
-    await page.getByRole("searchbox", { name: "Search", exact: true }).fill("");
+    await page.getByRole("searchbox", { name: "Search cases", exact: true }).fill("");
   }
   await expect(
     page.getByText(`${titles.length} selected`, { exact: true }),

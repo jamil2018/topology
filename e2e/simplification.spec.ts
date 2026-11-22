@@ -42,7 +42,7 @@ test("content-first case creation and run setup preserve data and recover from e
   const environment = page.getByLabel('Environment',{exact:true}).locator('visible=true');
   await environment.fill('');
   await expect(page.getByRole('button',{name:/Create run ·/})).toBeDisabled();
-  await expect(page.getByText('Enter an environment in Run options.')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Enter an environment in Run options.' }).first()).toBeVisible();
   await environment.fill('staging');
   await expect(environment).toBeVisible();
   await runOptions.click();
@@ -112,8 +112,8 @@ test("filtering does not silently change the chosen cases", async ({page}) => {
   await page.goto('/runs/new');
   const create = page.getByRole('button',{name:/Create run ·/});
   const initial = await create.textContent();
-  // Visible Label is "Search"; SearchField role is searchbox (not textbox).
-  const caseSearch = page.getByRole('searchbox', { name: 'Search', exact: true });
+  // HeroUI SearchField uses role=searchbox (not textbox).
+  const caseSearch = page.getByRole('searchbox', { name: 'Search cases', exact: true });
   await caseSearch.fill('no-matching-ux-case');
   await expect(page.getByText(/selected cases are outside these filters/)).toBeVisible();
   await expect(create).toHaveText(initial!);
