@@ -261,8 +261,8 @@ describe("HubPulse graph containment", () => {
           milestone={null}
           initialView="overview"
           releases={[
-            { id: "rel-1", name: "1.0.0" },
-            { id: "rel-2", name: "1.1.0" },
+            { id: "rel-1", name: "1.0.0", gitTag: null, sha: null },
+            { id: "rel-2", name: "1.1.0", gitTag: null, sha: null },
           ]}
           selectedReleaseId="rel-1"
         />

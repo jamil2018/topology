@@ -20,7 +20,7 @@ function jsonResponse(payload: unknown, status = 200) {
 }
 
 /** Mirror browser fetch: reject with signal.reason (string reasons become overlay noise). */
-function rejectionForSignal(signal?: AbortSignal) {
+function rejectionForSignal(signal?: AbortSignal | null) {
   if (signal?.reason !== undefined) return signal.reason;
   return Object.assign(new Error("The operation was aborted."), {
     name: "AbortError",
