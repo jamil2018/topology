@@ -5,24 +5,9 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { environments, testPlans } from "@/db/schema";
 import { requireProjectAccess } from "@/lib/project";
-import { getPlan, invalidPlanSelection, matrixFromBody, replacePlanCases } from "@/lib/tcm/plans";
+import { getPlan, savePlan, updatePlanSchema } from "@/lib/tcm/plans";
 
 type Params = { params: Promise<{ id: string }> };
-
-const patchSchema = z.object({
-  name: z.string().trim().min(1).max(200).optional(),
-  description: z.string().optional(),
-  status: z.enum(["draft", "active", "completed", "archived"]).optional(),
-  milestoneId: z.string().uuid().nullable().optional(),
-  matrix: z
-    .object({
-      browsers: z.array(z.string()).optional(),
-      operatingSystems: z.array(z.string()).optional(),
-      environmentIds: z.array(z.string().uuid()).optional(),
-    })
-    .optional(),
-  caseIds: z.array(z.string().uuid()).optional(),
-});
 
 export async function GET(request: Request, { params }: Params) {
   const session = await auth();
@@ -69,48 +54,19 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!z.string().uuid().safeParse(id).success) {
     return NextResponse.json({ error: "Invalid plan id" }, { status: 400 });
   }
-  const existing = await db.query.testPlans.findFirst({
-    where: and(
-      eq(testPlans.id, id),
-      eq(testPlans.workspaceId, access.ctx.project.id),
-    ),
-  });
-  if (!existing) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const parsed = patchSchema.safeParse(body);
+  const parsed = updatePlanSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid plan update" }, { status: 400 });
   }
-  const invalid = await invalidPlanSelection(access.ctx.project.id, parsed.data);
-  if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
-  const plan = await db.transaction(async (tx) => {
-    const [updated] = await tx.update(testPlans).set({
-      ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
-      ...(parsed.data.description !== undefined
-        ? { description: parsed.data.description }
-        : {}),
-      ...(parsed.data.status !== undefined ? { status: parsed.data.status } : {}),
-      ...(parsed.data.milestoneId !== undefined
-        ? { milestoneId: parsed.data.milestoneId }
-        : {}),
-      ...(parsed.data.matrix !== undefined
-        ? { matrixJson: matrixFromBody(parsed.data.matrix) }
-        : {}),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(testPlans.id, id), eq(testPlans.workspaceId, access.ctx.project.id))).returning();
-    if (updated && parsed.data.caseIds) await replacePlanCases(id, parsed.data.caseIds, tx);
-    return updated;
-  });
-  if (!plan) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ plan });
+  const result = await savePlan({ workspaceId: access.ctx.project.id, actorId: session.user.id, planId: id, data: parsed.data });
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+  return NextResponse.json({ plan: result.plan });
 }
 
 export async function DELETE(request: Request, { params }: Params) {

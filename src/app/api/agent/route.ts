@@ -13,8 +13,10 @@ import { seedManualRunResults } from "@/lib/tcm/seed-run";
 import { parseMatrixJson } from "@/lib/tcm/matrix";
 import { listRegressionBaselines, readRegressionBaseline } from "@/lib/tcm/baselines";
 import { readExploratorySession } from "@/lib/tcm/exploratory-session";
+import { planRevision } from "@/lib/tcm/plans";
+import { runTemplateRevision, validateTemplateReferences } from "@/lib/run-template-access";
 import {
-  caseStatusEnum, caseVersions, cases, customFieldDefs, folders, resultStatusEnum, runResults,
+  caseStatusEnum, caseVersions, cases, customFieldDefs, environments, folders, resultStatusEnum, runResults,
   runs, runStatusEnum, runTemplates, sharedSteps, testImplementations, testIntents, testPlanCases, testPlans, workspaces,
 } from "@/db/schema";
 import {
@@ -146,14 +148,42 @@ export async function GET(request: Request) {
     if (!isUuid(id)) return NextResponse.json({ error: "Invalid plan id", code: "INVALID_ID" }, { status: 400 });
     const plan = await db.query.testPlans.findFirst({ where: and(eq(testPlans.id, id), eq(testPlans.workspaceId, workspaceId)) });
     if (!plan) return NextResponse.json({ error: "Plan not found", code: "PLAN_NOT_FOUND" }, { status: 404 });
-    const linked = await db.select({ id: cases.id, key: cases.key, title: cases.title, status: cases.status })
+    const linked = await db.select({ id: cases.id, key: cases.key, title: cases.title, status: cases.status, linkId: testPlanCases.caseId })
       .from(testPlanCases).leftJoin(cases, and(eq(testPlanCases.caseId, cases.id), eq(cases.workspaceId, workspaceId)))
-      .where(eq(testPlanCases.planId, id)).orderBy(asc(testPlanCases.position));
+      .where(eq(testPlanCases.planId, id)).orderBy(asc(testPlanCases.position), asc(testPlanCases.caseId));
     const { matrixJson, ...details } = plan;
     return NextResponse.json({
-      plan: { ...details, matrix: parseMatrixJson(matrixJson), cases: linked.filter((row) => row.id !== null) },
+      plan: {
+        ...details, matrix: parseMatrixJson(matrixJson),
+        cases: linked.filter((row) => row.id !== null).map(({ id, key, title, status }) => ({ id, key, title, status })),
+      },
+      revision: planRevision(plan, linked.map(({ linkId }) => linkId)),
       unavailableCases: linked.filter((row) => row.id === null).length,
       href: `/plans/${id}`,
+    });
+  }
+
+  if (resource === "environments") {
+    const cursor = cursorId(searchParams);
+    if (cursor === null) return NextResponse.json({ error: "Invalid cursor", code: "INVALID_CURSOR" }, { status: 400 });
+    const limit = parseLimitParam(searchParams.get("limit"), 50);
+    const rows = await db.select({ id: environments.id, name: environments.name, kind: environments.kind })
+      .from(environments).where(and(eq(environments.workspaceId, workspaceId), cursor ? lt(environments.id, cursor) : undefined))
+      .orderBy(desc(environments.id)).limit(limit + 1);
+    const { selected, nextCursor } = pageById(rows, limit);
+    return NextResponse.json({ items: selected, nextCursor });
+  }
+
+  if (resource === "run_template") {
+    const id = searchParams.get("id") ?? "";
+    if (!isUuid(id)) return NextResponse.json({ error: "Invalid run template id", code: "INVALID_ID" }, { status: 400 });
+    const template = await db.query.runTemplates.findFirst({
+      where: and(eq(runTemplates.id, id), eq(runTemplates.workspaceId, workspaceId)),
+    });
+    if (!template) return NextResponse.json({ error: "Run template not found", code: "TEMPLATE_NOT_FOUND" }, { status: 404 });
+    return NextResponse.json({
+      template, revision: runTemplateRevision(template),
+      warning: await validateTemplateReferences(workspaceId, template), href: `/runs/new?template=${id}`,
     });
   }
 

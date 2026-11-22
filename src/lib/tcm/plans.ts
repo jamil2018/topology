@@ -1,4 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { z } from "zod";
 import { db } from "@/db";
 import {
   cases,
@@ -22,21 +24,101 @@ type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const projectCaseIds = (workspaceId: string) =>
   db.select({ id: cases.id }).from(cases).where(eq(cases.workspaceId, workspaceId));
 
-export async function invalidPlanSelection(
+const planFields = z.object({
+  name: z.string().trim().min(1).max(200),
+  description: z.string().optional(),
+  milestoneId: z.uuid().nullable().optional(),
+  matrix: z.object({
+    browsers: z.array(z.string()).optional(),
+    operatingSystems: z.array(z.string()).optional(),
+    environmentIds: z.array(z.uuid()).optional(),
+  }).optional(),
+  caseIds: z.array(z.uuid()).optional(),
+});
+
+export const createPlanSchema = planFields;
+export const updatePlanSchema = planFields.partial().extend({
+  status: z.enum(["draft", "active", "completed", "archived"]).optional(),
+});
+
+export function planRevision(plan: typeof testPlans.$inferSelect, caseIds: readonly string[]) {
+  return createHash("sha256").update(JSON.stringify([
+    plan.id, plan.name, plan.description, plan.status, plan.milestoneId, plan.matrixJson, caseIds,
+  ])).digest("hex");
+}
+
+async function invalidPlanSelection(
   workspaceId: string,
-  input: { caseIds?: readonly string[]; milestoneId?: string | null },
+  input: { caseIds?: readonly string[]; milestoneId?: string | null; matrix?: PlanMatrixInput },
+  tx: Transaction,
 ) {
   if (input.caseIds?.length) {
-    const found = await db.select({ id: cases.id }).from(cases).where(and(
+    const found = await tx.select({ id: cases.id }).from(cases).where(and(
       eq(cases.workspaceId, workspaceId), inArray(cases.id, input.caseIds),
-    ));
+    )).for("share");
     if (found.length !== input.caseIds.length) return "Select distinct cases from the current project";
   }
   if (input.milestoneId) {
-    const milestone = await db.query.milestones.findFirst({ where: and(eq(milestones.id, input.milestoneId), eq(milestones.workspaceId, workspaceId)) });
+    const [milestone] = await tx.select({ id: milestones.id }).from(milestones).where(and(
+      eq(milestones.id, input.milestoneId), eq(milestones.workspaceId, workspaceId),
+    )).for("share");
     if (!milestone) return "Select a milestone from the current project";
   }
+  if (input.matrix?.environmentIds?.length) {
+    const ids = [...new Set(input.matrix.environmentIds)];
+    const found = await tx.select({ id: environments.id }).from(environments).where(and(
+      eq(environments.workspaceId, workspaceId), inArray(environments.id, ids),
+    )).for("share");
+    if (found.length !== ids.length) return "Select environments from the current project";
+  }
   return null;
+}
+
+type SavePlanInput = {
+  workspaceId: string;
+  actorId: string | null;
+} & (
+  | { planId?: undefined; data: z.input<typeof createPlanSchema>; revision?: undefined }
+  | { planId: string; data: z.input<typeof updatePlanSchema>; revision?: string }
+);
+
+export function savePlan(input: SavePlanInput, tx?: Transaction) {
+  return tx ? savePlanInTransaction(input, tx) : db.transaction((executor) => savePlanInTransaction(input, executor));
+}
+
+async function savePlanInTransaction(input: SavePlanInput, tx: Transaction) {
+  const { workspaceId, actorId } = input;
+  if (input.planId === undefined) {
+    const invalid = await invalidPlanSelection(workspaceId, input.data, tx);
+    if (invalid) return { ok: false as const, error: invalid, status: 400 };
+    const { matrix, caseIds, ...fields } = input.data;
+    const [plan] = await tx.insert(testPlans).values({
+      ...fields, workspaceId, matrixJson: matrixFromBody(matrix ?? {}), createdById: actorId,
+    }).returning();
+    if (caseIds?.length) await replacePlanCases(plan.id, caseIds, tx);
+    return { ok: true as const, plan };
+  }
+
+  const scope = and(eq(testPlans.id, input.planId), eq(testPlans.workspaceId, workspaceId));
+  const [current] = await tx.select().from(testPlans).where(scope).for("update");
+  if (!current) return { ok: false as const, error: "Plan not found", status: 404 };
+  if (input.revision) {
+    const linked = await tx.select({ id: testPlanCases.caseId }).from(testPlanCases)
+      .where(eq(testPlanCases.planId, input.planId)).orderBy(asc(testPlanCases.position), asc(testPlanCases.caseId));
+    if (planRevision(current, linked.map(({ id }) => id)) !== input.revision) {
+      return { ok: false as const, error: "Plan changed. Refresh it and submit a new proposal", status: 409 };
+    }
+  }
+  const invalid = await invalidPlanSelection(workspaceId, input.data, tx);
+  if (invalid) return { ok: false as const, error: invalid, status: 400 };
+  const { matrix, caseIds, ...fields } = input.data;
+  const [plan] = await tx.update(testPlans).set({
+    ...fields,
+    matrixJson: matrix ? matrixFromBody(matrix) : undefined,
+    updatedAt: new Date(),
+  }).where(scope).returning();
+  if (caseIds) await replacePlanCases(plan.id, caseIds, tx);
+  return { ok: true as const, plan };
 }
 
 export async function listPlans(workspaceId: string) {

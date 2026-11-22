@@ -121,14 +121,18 @@ export function ctxCanWrite(ctx: ActiveProjectContext) {
 }
 
 export function ctxCanAdmin(ctx: ActiveProjectContext) {
-  const custom = ctx.membership.customRole;
+  return membershipCanAdmin(ctx.membership, ctx.actions);
+}
+
+export function membershipCanAdmin(membership: MembershipWithRole, actions: Action[]) {
+  const custom = membership.customRole;
   if (custom?.isSystem && custom.systemKey) {
     return canAdmin(custom.systemKey);
   }
   if (custom && !custom.isSystem) {
-    return actionsAllowAdmin(ctx.actions);
+    return actionsAllowAdmin(actions);
   }
-  return actionsAllowAdmin(ctx.actions) || canAdmin(ctx.membership.role);
+  return actionsAllowAdmin(actions) || canAdmin(membership.role);
 }
 
 export async function listUserProjects(

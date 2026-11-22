@@ -1,25 +1,10 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { environments, testPlans } from "@/db/schema";
+import { environments } from "@/db/schema";
 import { requireProjectAccess } from "@/lib/project";
-import { invalidPlanSelection, listPlans, matrixFromBody, replacePlanCases } from "@/lib/tcm/plans";
-
-const matrixSchema = z.object({
-  browsers: z.array(z.string()).optional(),
-  operatingSystems: z.array(z.string()).optional(),
-  environmentIds: z.array(z.string().uuid()).optional(),
-});
-
-const createSchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  description: z.string().optional().default(""),
-  milestoneId: z.string().uuid().nullable().optional(),
-  matrix: matrixSchema.optional(),
-  caseIds: z.array(z.string().uuid()).optional(),
-});
+import { createPlanSchema, listPlans, savePlan } from "@/lib/tcm/plans";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -64,26 +49,14 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const parsed = createSchema.safeParse(body);
+  const parsed = createPlanSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message ?? "Invalid plan" },
       { status: 400 },
     );
   }
-  const invalid = await invalidPlanSelection(access.ctx.project.id, parsed.data);
-  if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
-  const plan = await db.transaction(async (tx) => {
-    const [created] = await tx.insert(testPlans).values({
-      workspaceId: access.ctx.project.id,
-      name: parsed.data.name,
-      description: parsed.data.description,
-      milestoneId: parsed.data.milestoneId ?? null,
-      matrixJson: matrixFromBody(parsed.data.matrix ?? {}),
-      createdById: session.user.id,
-    }).returning();
-    if (parsed.data.caseIds?.length) await replacePlanCases(created.id, parsed.data.caseIds, tx);
-    return created;
-  });
-  return NextResponse.json({ plan }, { status: 201 });
+  const result = await savePlan({ workspaceId: access.ctx.project.id, actorId: session.user.id, data: parsed.data });
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+  return NextResponse.json({ plan: result.plan }, { status: 201 });
 }

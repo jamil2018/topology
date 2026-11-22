@@ -20,7 +20,7 @@ Project-scoped agent credentials, transactional proposal review, assigned matrix
 
 ## Remaining adoption and workflow work
 
-- Extend agent authoring to plan and template changes.
+- Add configurable case-review enforcement for direct human catalog edits.
 - Qualify hosted GitHub callbacks and run a live GitLab CI sandbox. GitHub artifact pull delivery has passed a live sandbox. Run the reference journeys in connected Codex and Claude Code sessions and measure the pilot.
 - Migrate historical runs and attachments, sync Jira requirement revisions, add first-class Gherkin and Cucumber mapping, and reconcile Playwright source discovery.
 - Add cross-project dashboards and sharing, scheduled reports, integration administration, and remotely hosted OAuth-backed MCP.

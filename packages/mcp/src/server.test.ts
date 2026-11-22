@@ -8,6 +8,7 @@ const AGENT_TOOLS = [
   "list_cases",
   "get_case",
   "get_plan",
+  "get_run_template",
   "get_baseline",
   "list_catalog",
   "create_case",

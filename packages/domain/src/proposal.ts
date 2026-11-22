@@ -7,6 +7,8 @@
 
 export const proposalEntityTypes = [
   "case",
+  "plan",
+  "run_template",
   "intent",
   "requirement",
   "risk",

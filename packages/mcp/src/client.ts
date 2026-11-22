@@ -75,6 +75,11 @@ export class TopologyClient {
     return this.request(`/api/v1/agent?${qs}`);
   }
 
+  getRunTemplate(id: string) {
+    const qs = new URLSearchParams({ resource: "run_template", id });
+    return this.request(`/api/v1/agent?${qs}`);
+  }
+
   getBaseline(id: string) {
     const qs = new URLSearchParams({ resource: "baseline", id });
     return this.request(`/api/v1/agent?${qs}`);

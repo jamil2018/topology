@@ -40,9 +40,15 @@ export function createTopologyMcpServer(client: TopologyClient) {
   );
   server.tool(
     "get_plan",
-    "Read a project plan's case selection and matrix",
+    "Read a project plan's case selection, matrix, and revision",
     { id: z.uuid() },
     async ({ id }) => jsonText(await client.getPlan(id)),
+  );
+  server.tool(
+    "get_run_template",
+    "Read a run template, its revision, and unavailable references",
+    { id: z.uuid() },
+    async ({ id }) => jsonText(await client.getRunTemplate(id)),
   );
   server.tool(
     "get_baseline",
@@ -52,9 +58,9 @@ export function createTopologyMcpServer(client: TopologyClient) {
   );
   server.tool(
     "list_catalog",
-    "List folders, shared steps, custom field definitions, plans, or run templates",
+    "List folders, shared steps, custom fields, environments, plans, baselines, or run templates",
     {
-      resource: z.enum(["folders", "shared_steps", "custom_fields", "plans", "run_templates", "baselines"]),
+      resource: z.enum(["folders", "shared_steps", "custom_fields", "environments", "plans", "run_templates", "baselines"]),
       cursor: z.string().optional(),
       limit: z.number().int().min(1).max(100).optional(),
     },
@@ -370,7 +376,7 @@ export function createTopologyMcpServer(client: TopologyClient) {
 
   server.tool(
     "propose_coverage",
-    "Queue a coverage change for human review. Include exploration and an idempotency key to propose a case from a session finding.",
+    "Queue a case, plan, run template, or quality graph change for human review. Include exploration and an idempotency key to propose a case from a session finding.",
     {
       idempotencyKey: operationKey.optional(),
       payload: z.object({

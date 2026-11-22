@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { apiTokens, auditEvents, caseDatasetRows, cases, testImplementations, caseSteps, notifications, proposals, retestSources, runResults, runStepResults, runs, testPlanCases, testPlans, users, workspaces } from "@/db/schema";
+import { apiTokens, auditEvents, caseDatasetRows, cases, testImplementations, caseSteps, notifications, proposals, retestSources, runResults, runStepResults, runs, runTemplates, testPlanCases, testPlans, users, workspaces } from "@/db/schema";
 import { GET, POST } from "@/app/api/v1/agent/route";
 import { POST as uploadExecution } from "@/app/api/executions/route";
 import { ensurePullRequest, ensureRepository } from "@/lib/git-sync";
@@ -177,6 +177,54 @@ describe("Scoped agent operations", () => {
     expect(await db.query.cases.findFirst({ where: and(eq(cases.workspaceId, projectId), eq(cases.key, "EXP-RECOVERY")) })).toBeUndefined();
     await reviewProposal({ workspaceId: projectId, proposalId: proposal.id, decision: "accepted", approvedById: ownerId });
     expect(await db.query.cases.findFirst({ where: and(eq(cases.workspaceId, projectId), eq(cases.key, "EXP-RECOVERY")) })).toMatchObject({ status: "ready" });
+  });
+
+  it("reviews plan and template authoring atomically and rejects stale revisions", async () => {
+    async function queue(key: string, diffs: Record<string, unknown>[]) {
+      const response = await post(workToken, key, { action: "propose_coverage", payload: { diffs } });
+      expect(response.status).toBe(201);
+      const { proposal } = await response.json();
+      expect(proposal.status).toBe("pending");
+      return proposal.id as string;
+    }
+    const accept = (proposalId: string, approvedById = ownerId) =>
+      reviewProposal({ workspaceId: projectId, proposalId, approvedById, decision: "accepted" });
+    const planFields = { name: "Proposed checkout plan", matrix: { browsers: ["chromium"] }, caseIds: [readyCaseId] };
+    const templateFields = { name: "Proposed checkout template", caseIds: [readyCaseId], environment: "staging" };
+    const planCreate = { entityType: "plan", action: "create", before: null, after: planFields };
+    const templateCreate = { entityType: "run_template", action: "create", before: null, after: templateFields };
+    const invalid = await queue("catalog-invalid", [
+      planCreate,
+      { ...templateCreate, after: { ...templateFields, caseIds: [projectId] } },
+    ]);
+    await expect(accept(invalid)).rejects.toMatchObject({ status: 400 });
+    expect(await db.query.testPlans.findFirst({ where: and(eq(testPlans.workspaceId, projectId), eq(testPlans.name, planFields.name)) })).toBeUndefined();
+    expect((await db.query.proposals.findFirst({ where: eq(proposals.id, invalid) }))?.status).toBe("pending");
+
+    const create = await queue("catalog-create", [planCreate, templateCreate]);
+    const viewer = await db.query.users.findFirst({ where: eq(users.email, "viewer@topology.local") });
+    await expect(accept(create, viewer!.id)).rejects.toMatchObject({ status: 403 });
+    const { applied } = await accept(create);
+    const [plan, template] = applied!;
+    const read = async (resource: string, id: string) => {
+      const response = await GET(request(readToken, new URLSearchParams({ resource, id })));
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    const savedPlan = await read("plan", plan.id);
+    const savedTemplate = await read("run_template", template.id);
+    expect(savedPlan.plan).toMatchObject({ name: planFields.name, status: "draft", cases: [{ id: readyCaseId }] });
+    expect(savedTemplate.template).toMatchObject(templateFields);
+    const update = [
+      { entityType: "plan", action: "update", entityId: plan.id, before: { revision: savedPlan.revision }, after: { status: "active" } },
+      { entityType: "run_template", action: "update", entityId: template.id, before: { revision: savedTemplate.revision }, after: { ...templateFields, environment: "local" } },
+    ];
+    const change = await queue("catalog-update", update);
+    const stale = await queue("catalog-stale", update);
+    await accept(change);
+    await expect(accept(stale)).rejects.toMatchObject({ status: 409 });
+    expect((await read("plan", plan.id)).plan.status).toBe("active");
+    expect(await db.query.runTemplates.findFirst({ where: eq(runTemplates.id, template.id) })).toMatchObject({ environment: "local" });
   });
 
   it("rolls back earlier edits if a later proposal diff fails", async () => {

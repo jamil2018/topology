@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   isProposalActorType,
   isProposalStatus,
@@ -12,6 +12,11 @@ import { readCaseRevision } from "@/lib/case-revision";
 import { buildCasePatch, updateCaseSchema } from "@/lib/case-update";
 import { replaceCaseParameters, replaceCaseSteps, snapshotCaseVersion, upsertCustomFieldValues } from "@/lib/tcm/case-tcm";
 import { createCaseSchema, persistCase } from "@/lib/case-create";
+import { membershipActions, membershipCanAdmin, type MembershipWithRole } from "@/lib/project";
+import { roleHasAction } from "@/lib/permissions";
+import { createPlanSchema, savePlan, updatePlanSchema } from "@/lib/tcm/plans";
+import { runTemplateSchema } from "@/lib/run-template";
+import { saveRunTemplate } from "@/lib/run-template-access";
 import { isUuid } from "@/lib/queries/ids";
 import {
   auditEvents,
@@ -26,6 +31,8 @@ import {
   risks,
   testImplementations,
   testIntents,
+  workspaceMembers,
+  workspaces,
   type Proposal as ProposalRow,
 } from "@/db/schema";
 import {
@@ -883,8 +890,55 @@ async function applyUpdateDiff(
   );
 }
 
+async function applyExecutionDefinition(
+  tx: ProposalTransaction,
+  workspaceId: string,
+  diff: ProposalDiff,
+  authorId: string | null,
+  reviewer: MembershipWithRole,
+): Promise<ApplyResult["applied"][number]> {
+  if (diff.action === "link") throw new ProposalApplyError("Plans and templates support create and update proposals");
+  const actions = membershipActions(reviewer);
+  const updating = diff.action === "update";
+  const entityId = diff.entityId;
+  const revision = diff.before?.revision;
+  if (updating && (!entityId || !isUuid(entityId) || typeof revision !== "string" || !/^[a-f0-9]{64}$/.test(revision))) {
+    throw new ProposalApplyError("An update needs a valid entity ID and current revision");
+  }
+  const template = diff.entityType === "run_template";
+  const canEditAny = template && updating && membershipCanAdmin(reviewer, actions);
+  if (!canEditAny && !roleHasAction(actions, updating && !template ? "runs.edit" : "runs.create")) {
+    throw new ProposalApplyError("The reviewer needs permission to change this plan or template", 403);
+  }
+  const common = { workspaceId, actorId: authorId ?? reviewer.userId };
+  let id: string;
+  if (template) {
+    const parsed = runTemplateSchema.safeParse(diff.after);
+    if (!parsed.success) throw new ProposalApplyError("Invalid proposed template fields");
+    const saved = await saveRunTemplate({
+      ...common, data: parsed.data, canEditAny,
+      ...(updating ? { actorId: reviewer.userId, templateId: entityId!, revision: revision as string } : {}),
+    }, tx);
+    if (!saved.ok) throw new ProposalApplyError(saved.error, saved.status);
+    id = saved.template.id;
+  } else if (updating) {
+    const parsed = updatePlanSchema.safeParse(diff.after);
+    if (!parsed.success || Object.keys(parsed.data).length === 0) throw new ProposalApplyError("Invalid proposed plan update");
+    const saved = await savePlan({ ...common, planId: entityId!, revision: revision as string, data: parsed.data }, tx);
+    if (!saved.ok) throw new ProposalApplyError(saved.error, saved.status);
+    id = saved.plan.id;
+  } else {
+    const parsed = createPlanSchema.safeParse(diff.after);
+    if (!parsed.success) throw new ProposalApplyError("Invalid proposed plan fields");
+    const saved = await savePlan({ ...common, data: parsed.data }, tx);
+    if (!saved.ok) throw new ProposalApplyError(saved.error, saved.status);
+    id = saved.plan.id;
+  }
+  return { action: diff.action, entityType: diff.entityType, id };
+}
+
 /**
- * Apply a validated proposal payload to the quality graph.
+ * Apply a validated proposal payload to the project.
  * Only call after an explicit human accept.
  */
 async function applyProposalPayload(
@@ -893,12 +947,15 @@ async function applyProposalPayload(
   payload: ProposalPayload,
   authorId: string | null,
   provenance: ProposalApplyProvenance,
+  reviewer: MembershipWithRole,
 ): Promise<ApplyResult> {
   const applied: ApplyResult["applied"] = [];
   const keyToId = new Map<string, string>();
 
   for (const diff of payload.diffs) {
-    if (diff.action === "create") {
+    if (diff.entityType === "plan" || diff.entityType === "run_template") {
+      applied.push(await applyExecutionDefinition(tx, workspaceId, diff, authorId, reviewer));
+    } else if (diff.action === "create") {
       await applyCreateDiff(tx, workspaceId, diff, applied, keyToId, authorId);
     } else if (diff.action === "link") {
       await applyLinkDiff(tx, workspaceId, diff, applied, keyToId);
@@ -923,6 +980,19 @@ export async function reviewProposal(opts: {
   provenance?: ProposalApplyProvenance;
 }> {
   return db.transaction(async (tx) => {
+    const [allowedProject] = await tx.select({ id: workspaceMembers.id }).from(workspaceMembers)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
+      .where(and(
+        eq(workspaceMembers.workspaceId, opts.workspaceId),
+        eq(workspaceMembers.userId, opts.approvedById),
+        isNull(workspaces.archivedAt),
+      )).for("share");
+    const reviewer = allowedProject && await tx.query.workspaceMembers.findFirst({
+      where: eq(workspaceMembers.id, allowedProject.id), with: { customRole: true },
+    });
+    if (!reviewer || !roleHasAction(membershipActions(reviewer), "proposals.review")) {
+      throw new ProposalApplyError("Proposal review permission required", 403);
+    }
     const [row] = await tx.select().from(proposals).where(and(
       eq(proposals.id, opts.proposalId),
       eq(proposals.workspaceId, opts.workspaceId),
@@ -943,6 +1013,7 @@ export async function reviewProposal(opts: {
           parseProposalPayload(row.payloadJson),
           row.createdById,
           proposalApplyProvenance(row, opts.approvedById),
+          reviewer,
         )
       : undefined;
 

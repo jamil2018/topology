@@ -44,7 +44,7 @@ function summarizeDiff(diff: ProposalDiff): string {
         : typeof after.fromKey === "string"
           ? after.fromKey
           : null;
-  const title = typeof after.title === "string" ? after.title : null;
+  const title = typeof after.title === "string" ? after.title : typeof after.name === "string" ? after.name : null;
   const relation =
     typeof after.relation === "string" ? after.relation : null;
   if (diff.action === "link") {
@@ -52,6 +52,7 @@ function summarizeDiff(diff: ProposalDiff): string {
   }
   if (key && title) return `${diff.action} ${diff.entityType} ${key}: ${title}`;
   if (key) return `${diff.action} ${diff.entityType} ${key}`;
+  if (title) return `${diff.action} ${diff.entityType} ${title}`;
   return `${diff.action} ${diff.entityType}`;
 }
 
@@ -73,6 +74,10 @@ function appliedEntityHref(change: AppliedChange): string | null {
       return change.key
         ? `/cases/${encodeURIComponent(change.key)}`
         : `/cases?case=${encodeURIComponent(change.id)}`;
+    case "plan":
+      return `/plans/${change.id}`;
+    case "run_template":
+      return `/runs/new?template=${change.id}`;
     default:
       return null;
   }
@@ -310,7 +315,7 @@ export function ProposalsWorkspace({
                   <ul className="space-y-0.5 font-mono text-xs text-[color:var(--topo-muted)]">
                     {item.diffs.map((diff, i) => (
                       <li key={`${item.id}-${i}`}>
-                        {diff.entityType === "case" ? (
+                        {["case", "plan", "run_template"].includes(diff.entityType) ? (
                           <details>
                             <summary className="cursor-pointer">{summarizeDiff(diff)}</summary>
                             {diff.before ? (

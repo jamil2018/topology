@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { runTemplates } from "@/db/schema";
 import { requireProjectAccess, ctxCanAdmin, ctxHasAction } from "@/lib/project";
 import { runTemplateSchema } from "@/lib/run-template";
-import { validateTemplateReferences } from "@/lib/run-template-access";
+import { saveRunTemplate, validateTemplateReferences } from "@/lib/run-template-access";
 type Params = { params: Promise<{ id: string }> };
 async function accessTemplate(request: Request, { params }: Params) {
   const session = await auth();
@@ -18,7 +18,7 @@ async function accessTemplate(request: Request, { params }: Params) {
   const [template] = await db.select().from(runTemplates).where(and(eq(runTemplates.workspaceId, access.ctx.project.id), eq(runTemplates.id, id)));
   if (!template) return { response: NextResponse.json({ error: "Template not found" }, { status: 404 }) };
   if (request.method !== "GET" && !(ctxCanAdmin(access.ctx) || (ctxHasAction(access.ctx, "runs.create") && template.createdById === session.user.id))) return { response: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
-  return { template, workspaceId: access.ctx.project.id };
+  return { template, workspaceId: access.ctx.project.id, actorId: session.user.id, canEditAny: ctxCanAdmin(access.ctx) };
 }
 export async function GET(request: Request, params: Params) {
   const result = await accessTemplate(request, params);
@@ -30,10 +30,9 @@ export async function PATCH(request: Request, params: Params) {
   if (result.response) return result.response;
   const parsed = runTemplateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
-  const error = await validateTemplateReferences(result.workspaceId, parsed.data);
-  if (error) return NextResponse.json({ error }, { status: 400 });
-  const [template] = await db.update(runTemplates).set({ ...parsed.data, updatedAt: new Date() }).where(eq(runTemplates.id, result.template.id)).returning();
-  return NextResponse.json({ template });
+  const saved = await saveRunTemplate({ ...result, templateId: result.template.id, data: parsed.data });
+  if (!saved.ok) return NextResponse.json({ error: saved.error }, { status: saved.status });
+  return NextResponse.json({ template: saved.template });
 }
 export async function DELETE(request: Request, params: Params) {
   const result = await accessTemplate(request, params);
