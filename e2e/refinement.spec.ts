@@ -9,7 +9,7 @@ for (const theme of ["light", "dark"] as const) {
     await page.goto('/');
     await settings;
     const saved = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH');
-    await page.getByRole('button', {name: theme === 'dark' ? 'Dark theme' : 'Light theme',exact:true}).click();
+    await page.getByRole('radiogroup', { name: 'Color theme' }).getByRole('radio', { name: theme === 'dark' ? 'Dark theme' : 'Light theme', exact: true }).click();
     expect((await saved).ok()).toBeTruthy();
     for (const route of ["/", "/cases", "/runs", "/runs/new", "/plans", "/triage", "/automation", "/reports", "/settings", "/requirements", "/releases", "/cases/import", "/intents", "/journeys", "/components", "/risks", "/milestones"]) {
       await page.goto(route);
@@ -48,9 +48,10 @@ test("review template, create fresh run, retest failure and follow lineage", asy
   const name = `Refinement ${Date.now()}`;
   await page.goto("/runs/new");
   await page.getByLabel("Run name", { exact: true }).filter({visible:true}).fill(name);
-  await page.getByRole("checkbox", { name: "Select all visible cases" }).click();
+  // HeroUI Checkbox.Control overlays the input; force reaches the real control.
+  await page.getByRole("checkbox", { name: "Select all visible cases" }).click({ force: true });
   await expect(page.getByRole("button", { name: /^Create run/ })).toBeDisabled();
-  await page.getByRole("checkbox", { name: "Select all visible cases" }).click();
+  await page.getByRole("checkbox", { name: "Select all visible cases" }).click({ force: true });
   await page.getByRole("button", { name: "Save as template", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Template saved" })).toBeVisible();
   await page.goto("/runs");
@@ -92,7 +93,7 @@ test("execution reflows with accessible actions in both themes", async ({ page }
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
     const saved = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH');
-    await page.getByRole('button', {name:theme === 'dark' ? 'Dark theme' : 'Light theme',exact:true}).click();
+    await page.getByRole('radiogroup', { name: 'Color theme' }).getByRole('radio', { name: theme === 'dark' ? 'Dark theme' : 'Light theme', exact: true }).click();
     expect((await saved).ok()).toBeTruthy();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     for (const width of [320, 390, 834, 1194, 1366, 1440, 1920]) {

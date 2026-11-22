@@ -50,12 +50,19 @@ export function useQueryState<T>(
 
   const writeUrl = (resolved: T) => {
     const url = new URL(window.location.href);
+    const hadPage = url.searchParams.has("page");
     if (resolved === fallback) url.searchParams.delete(key);
     else url.searchParams.set(key, String(resolved));
     if (options.resetPage) url.searchParams.delete("page");
     const href = url.pathname + url.search + url.hash;
-    if (options.replace) window.history.replaceState(window.history.state, "", href);
-    else window.history.pushState(null, "", href);
+    // Prefer replace for chatty search typing, but push when clearing `page`
+    // so browser Back can restore the prior page entry.
+    const clearingPage = options.resetPage && hadPage;
+    if (options.replace && !clearingPage) {
+      window.history.replaceState(window.history.state, "", href);
+    } else {
+      window.history.pushState(null, "", href);
+    }
   };
 
   const update = (next: T | ((previous: T) => T)) => {

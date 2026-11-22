@@ -66,6 +66,29 @@ describe("useQueryState", () => {
     expect(new URLSearchParams(window.location.search).get("q")).toBe("pay");
   });
 
+  it("pushes instead of replace when search clears page", async () => {
+    window.history.replaceState(null, "", "/cases?page=2");
+    const { result } = renderHook(() =>
+      useQueryState("q", "", String, { debounceMs: 200, replace: true }),
+    );
+    const pushSpy = vi.spyOn(window.history, "pushState");
+    const replaceSpy = vi.spyOn(window.history, "replaceState");
+    vi.useFakeTimers();
+
+    act(() => {
+      result.current[1]("checkout");
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+
+    expect(pushSpy).toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("q")).toBe("checkout");
+    expect(params.has("page")).toBe(false);
+  });
+
   it("coalesces rapid debounced updates to the latest value", async () => {
     const { result } = renderHook(() =>
       useQueryState("q", "", String, { debounceMs: 200, replace: true }),

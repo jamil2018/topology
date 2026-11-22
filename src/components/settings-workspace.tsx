@@ -68,6 +68,17 @@ export function SettingsWorkspace({
   const [prefsMsg, setPrefsMsg] = useState<string | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [expandedDisclosures, setExpandedDisclosures] = useState<
+    Record<string, boolean>
+  >({});
+
+  function disclosureExpanded(id: string) {
+    return {
+      isExpanded: expandedDisclosures[id] ?? false,
+      onExpandedChange: (open: boolean) =>
+        setExpandedDisclosures((prev) => ({ ...prev, [id]: open })),
+    };
+  }
 
   // Canonicalize legacy ?section= tabs into the merged pages (+ anchors).
   useEffect(() => {
@@ -86,6 +97,11 @@ export function SettingsWorkspace({
       const el = document.getElementById(anchor);
       if (!el) return;
       if (el instanceof HTMLDetailsElement) el.open = true;
+      else {
+        setExpandedDisclosures((prev) =>
+          prev[anchor] ? prev : { ...prev, [anchor]: true },
+        );
+      }
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         el.scrollIntoView({ block: "start" });
@@ -499,6 +515,7 @@ export function SettingsWorkspace({
                   </span>
                 }
                 bodyClassName="mt-4 space-y-3"
+                {...disclosureExpanded("agent")}
               >
                 <ConnectAgentPanel defaultUrl={defaultUrl} compact />
               </TopoDisclosure>
@@ -514,6 +531,7 @@ export function SettingsWorkspace({
                   </span>
                 }
                 bodyClassName="mt-4 space-y-3"
+                {...disclosureExpanded("ci")}
               >
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
@@ -537,6 +555,7 @@ export function SettingsWorkspace({
                   </span>
                 }
                 bodyClassName="mt-4 space-y-3"
+                {...disclosureExpanded("repositories")}
               >
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
@@ -560,6 +579,7 @@ export function SettingsWorkspace({
                   </span>
                 }
                 bodyClassName="mt-4 space-y-3"
+                {...disclosureExpanded("ai")}
               >
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
@@ -584,6 +604,7 @@ export function SettingsWorkspace({
                   </span>
                 }
                 bodyClassName="mt-4 space-y-3"
+                {...disclosureExpanded("webhooks")}
               >
                 <WebhooksPanel />
               </TopoDisclosure>
@@ -599,6 +620,7 @@ export function SettingsWorkspace({
                   </span>
                 }
                 bodyClassName="mt-4 space-y-3"
+                {...disclosureExpanded("inbound")}
               >
                 <div>
                   <h2 className="text-sm font-semibold text-[color:var(--topo-ink)]">
@@ -622,6 +644,7 @@ export function SettingsWorkspace({
                   </span>
                 }
                 bodyClassName="mt-4 space-y-3"
+                {...disclosureExpanded("notifications")}
               >
                 <NotificationChannelsPanel />
               </TopoDisclosure>

@@ -43,10 +43,11 @@ test("admin can open every settings section", async ({ page }) => {
   await expect(
     settingsNav.getByRole("link", { name: "Integrations" }),
   ).toHaveAttribute("aria-current", "page");
-  for (const [summary, heading] of [["Connect an agent", "Connect an agent"], ["Import automated results", "CI ingest"], ["Repositories", "Repositories"], ["AI drafting", "AI (optional)"], ["Webhooks", "Webhooks"]]) {
+  for (const [title, heading] of [["Connect an agent", "Connect an agent"], ["Import automated results", "CI ingest"], ["Repositories", "Repositories"], ["AI drafting", "AI (optional)"], ["Webhooks", "Webhooks"]]) {
     const content = page.getByRole("heading", {name:heading, exact:true});
     await expect(content).not.toBeVisible();
-    await page.locator("summary").filter({hasText:summary}).click();
+    // HeroUI Disclosure uses a button trigger, not native <summary>.
+    await page.getByRole("button", { name: new RegExp(`^${title}`) }).click();
     await expect(content).toBeVisible();
   }
 

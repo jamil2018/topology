@@ -57,11 +57,11 @@ test("search, filter, create, edit, folder, saved view, and bulk tag", async ({
   expect(response.ok()).toBeTruthy();
   await expect(save).toBeDisabled();
   await page.getByRole("button", { name: "Close case editor" }).click();
-  await expect(
-    page.getByText(edited, {exact:true}).filter({visible:true}),
-  ).toBeVisible({ timeout: 15_000 });
-
+  // Search so the edited row is on the current page regardless of sort/folder.
   await page.getByLabel("Search cases").filter({visible:true}).fill(edited);
+  await expect(
+    page.getByRole("button", { name: edited, exact: true }),
+  ).toBeVisible({ timeout: 15_000 });
   // HeroUI Checkbox.Control overlays the input; force reaches the real control.
   await page
     .getByRole("row")
