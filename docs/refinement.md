@@ -1,5 +1,16 @@
 # QA productivity and UI refinement
 
+## Status (read first)
+
+| Status | Meaning |
+| --- | --- |
+| **Historical refinement record** | Documents the productivity/UI refinement pass and its verification counts at the time. |
+| **Landed in product** | Run templates, retests with lineage, team saved views, notifications open redirect, paginated cases/runs, and related APIs described below shipped; see later migrations `0004_productivity` / `0005_retest_case_links` and current app code. |
+| **Superseded follow-ups** | Case-inspector layout and Home naming were further simplified in [ux-simplification.md](ux-simplification.md). Middleware→proxy migration and broader release gates continued after this record. |
+| **Not a live scoreboard** | Unit/UI/Lighthouse numbers and open qualification notes below are historical evidence, not current CI status. |
+
+---
+
 ## Scope and compatibility
 
 The refinement preserves Geist, Phosphor, HeroUI, and the zinc/teal palette. Project capabilities come from the existing server membership model; API checks remain authoritative. Existing saved views default to private, and existing list/API shapes remain supported.

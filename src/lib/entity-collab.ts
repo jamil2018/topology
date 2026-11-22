@@ -8,6 +8,7 @@ import {
   requirements,
   testIntents,
 } from "@/db/schema";
+import type { Action } from "@/lib/permissions";
 
 export const COLLAB_ENTITY_TYPES = [
   "intent",
@@ -20,6 +21,32 @@ export type CollabEntityType = (typeof COLLAB_ENTITY_TYPES)[number];
 
 export function isCollabEntityType(value: string): value is CollabEntityType {
   return (COLLAB_ENTITY_TYPES as readonly string[]).includes(value);
+}
+
+/** Map collab entity types to RBAC view actions (components share requirements.*). */
+export function collabViewAction(entityType: CollabEntityType): Action {
+  switch (entityType) {
+    case "intent":
+      return "intents.view";
+    case "requirement":
+    case "component":
+      return "requirements.view";
+    case "release":
+      return "releases.view";
+  }
+}
+
+/** Map collab entity types to RBAC edit actions (components share requirements.*). */
+export function collabEditAction(entityType: CollabEntityType): Action {
+  switch (entityType) {
+    case "intent":
+      return "intents.edit";
+    case "requirement":
+    case "component":
+      return "requirements.edit";
+    case "release":
+      return "releases.edit";
+  }
 }
 
 export function serializeOwner(

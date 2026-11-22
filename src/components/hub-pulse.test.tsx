@@ -11,6 +11,9 @@ vi.mock("next/navigation", () => ({
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
+  document.cookie =
+    "topology-hub-view-test-project=; Path=/; Max-Age=0; SameSite=Lax";
 });
 
 const pulse = {
@@ -86,6 +89,11 @@ describe("HubPulse default QA home", () => {
       "aria-pressed",
       "true",
     );
+    expect(screen.getByRole("link", { name: "Start run" })).toHaveAttribute(
+      "href",
+      "/runs/new",
+    );
+    expect(screen.getByText(/1 open failure/)).toBeInTheDocument();
     expect(screen.queryByText("Graph coverage")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "EM" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Release switcher")).not.toBeInTheDocument();
@@ -127,7 +135,7 @@ describe("HubPulse graph containment", () => {
     );
     expect(screen.getByRole("link", { name: /HAR-12/i })).toHaveAttribute(
       "href",
-      "/cases?q=HAR-12",
+      "/intents?intent=intent-1",
     );
   });
 
@@ -138,7 +146,59 @@ describe("HubPulse graph containment", () => {
     await user.click(screen.getByRole("button", { name: "Overview" }));
     expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "EM" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "EM" })).toHaveAttribute(
+      "title",
+      expect.stringContaining("Engineering manager"),
+    );
+    expect(
+      screen.getByText(/Show every Overview section without a persona filter/),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open Impact" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /HAR-12/i })).not.toBeInTheDocument();
+  });
+
+  it("renders SSR cookie view without post-paint flip and persists toggles", async () => {
+    const user = userEvent.setup();
+    render(
+      <QualityGraphProvider
+        workspaceId="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        initialEnabled={false}
+      >
+        <HubPulse
+          pulse={pulse}
+          milestone={null}
+          initialView="overview"
+          hasUrlView={false}
+        />
+      </QualityGraphProvider>,
+    );
+
+    // First paint matches the server-provided cookie/URL preference.
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "My work" }));
+    expect(screen.getByRole("heading", { name: "Home" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("topology:hub-view:test-project")).toBe(
+      "home",
+    );
+    expect(document.cookie).toMatch(/topology-hub-view-test-project=home/);
+  });
+
+  it("keeps explicit URL home view even when overview was preferred", () => {
+    render(
+      <QualityGraphProvider
+        workspaceId="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        initialEnabled={false}
+      >
+        <HubPulse
+          pulse={pulse}
+          milestone={null}
+          initialView="home"
+          hasUrlView
+        />
+      </QualityGraphProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Home" })).toBeInTheDocument();
   });
 });

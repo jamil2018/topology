@@ -11,6 +11,8 @@ const CHANNEL_EVENTS = [
   "mention",
   "run.completed",
   "coverage.dropped",
+  "proposal.created",
+  "issue.created",
 ] as const;
 
 type ChannelEvent = (typeof CHANNEL_EVENTS)[number];
@@ -53,6 +55,8 @@ const emptyDraft = {
     "mention",
     "run.completed",
     "coverage.dropped",
+    "proposal.created",
+    "issue.created",
   ]),
 };
 
@@ -252,7 +256,7 @@ export function NotificationChannelsPanel() {
         </h2>
         <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
           Slack, Teams, or SMTP alerts for assignments, mentions, completed
-          runs, and coverage drops. Secrets stay write-only.
+          runs, coverage drops, proposals, and issues. Secrets stay write-only.
         </p>
       </div>
 

@@ -481,6 +481,7 @@ export function RunCaseDetail({
           comments={result.comments}
           draft={commentDraft}
           pending={pending}
+          members={members}
           onDraftChange={onCommentDraftChange}
           onSubmit={onComment}
           onUpload={(file) => queueUpload([file])}

@@ -9,13 +9,17 @@ export type NotificationChannelEvent =
   | "assignment"
   | "mention"
   | "run.completed"
-  | "coverage.dropped";
+  | "coverage.dropped"
+  | "proposal.created"
+  | "issue.created";
 
 export const NOTIFICATION_CHANNEL_EVENTS: readonly NotificationChannelEvent[] = [
   "assignment",
   "mention",
   "run.completed",
   "coverage.dropped",
+  "proposal.created",
+  "issue.created",
 ] as const;
 
 export type NotificationChannelKind = "slack" | "teams" | "smtp";
@@ -229,6 +233,43 @@ export function formatChannelMessage(
       title: `Run completed: ${name}`,
       body: `${passed} passed, ${failed} failed of ${total}`,
       href: id ? `${base}/runs/${id}` : null,
+      data,
+    };
+  }
+  if (event === "proposal.created") {
+    const proposalId =
+      typeof data.proposalId === "string" ? data.proposalId : null;
+    const entityType =
+      typeof data.entityType === "string" ? data.entityType : "entity";
+    const diffCount =
+      typeof data.diffCount === "number" ? data.diffCount : null;
+    return {
+      event,
+      title: "New proposal",
+      body:
+        diffCount != null
+          ? `${entityType} · ${diffCount} change${diffCount === 1 ? "" : "s"}`
+          : `Proposed ${entityType} update`,
+      href: proposalId ? `${base}/proposals` : `${base}/proposals`,
+      data,
+    };
+  }
+  if (event === "issue.created") {
+    const issue = (data.issue ?? {}) as Record<string, unknown>;
+    const result = (data.result ?? {}) as Record<string, unknown>;
+    const key =
+      typeof issue.remoteKey === "string" ? issue.remoteKey : null;
+    const title =
+      typeof issue.title === "string" ? issue.title : "Tracker issue filed";
+    const runId = typeof result.runId === "string" ? result.runId : null;
+    const resultId = typeof result.id === "string" ? result.id : null;
+    return {
+      event,
+      title: key ? `Issue created: ${key}` : "Issue created",
+      body: title,
+      href: runId
+        ? `${base}/runs/${runId}${resultId ? `?result=${resultId}` : ""}`
+        : `${base}/triage`,
       data,
     };
   }

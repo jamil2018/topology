@@ -224,13 +224,22 @@ npx topology runs complete --run-id <id>`}
                 className="px-3 py-2.5 text-sm"
               >
                 <div className="flex flex-wrap items-center gap-2 text-[color:var(--topo-ink)]">
-                  <span className="font-mono text-xs text-[color:var(--topo-accent)]">
+                  <Link
+                    href={`/cases?q=${encodeURIComponent(hint.caseKey)}`}
+                    className="font-mono text-xs text-[color:var(--topo-accent)] underline-offset-2 hover:underline"
+                  >
                     {hint.caseKey}
-                  </span>
+                  </Link>
                   <span className="truncate font-medium">{hint.title}</span>
                   <StatusChip tone="warning" mono>
                     score {hint.score}
                   </StatusChip>
+                  <Link
+                    href={`/runs/new?cases=${encodeURIComponent(hint.caseId)}`}
+                    className="text-xs text-[color:var(--topo-muted)] underline-offset-2 hover:underline"
+                  >
+                    Retest
+                  </Link>
                 </div>
                 <div className="mt-1 text-xs text-[color:var(--topo-muted)]">
                   {hint.hint}

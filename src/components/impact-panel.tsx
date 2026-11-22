@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Button, Input } from "@heroui/react";
+import { gapHref, gapLabel } from "./hub-widgets";
 import { useProjectActions } from "./project-actions";
 import { StatusChip } from "./status-chip";
 
@@ -31,11 +32,38 @@ type AffectedResponse = {
   error?: string;
 };
 
+type PullRequestRow = {
+  id: string;
+  number: number;
+  title: string | null;
+  status: string;
+  head: string | null;
+};
+
+function entityHref(
+  kind: "intent" | "requirement" | "component",
+  item: ImpactEntity,
+): string {
+  if (kind === "intent") {
+    return item.id
+      ? `/intents?intent=${encodeURIComponent(item.id)}`
+      : "/intents";
+  }
+  if (kind === "requirement") {
+    return item.id
+      ? `/requirements?requirement=${encodeURIComponent(item.id)}`
+      : "/requirements";
+  }
+  return "/components";
+}
+
 function EntityList({
   title,
+  kind,
   items,
 }: {
   title: string;
+  kind: "intent" | "requirement" | "component";
   items: ImpactEntity[];
 }) {
   if (items.length === 0) return null;
@@ -46,8 +74,13 @@ function EntityList({
       </h3>
       <ul className="max-h-40 space-y-0.5 overflow-y-auto text-sm">
         {items.map((item) => (
-          <li key={item.key} className="font-mono text-xs text-[color:var(--topo-ink)]">
-            {item.key}
+          <li key={item.key}>
+            <Link
+              href={entityHref(kind, item)}
+              className="font-mono text-xs text-[color:var(--topo-accent)] underline-offset-2 hover:underline"
+            >
+              {item.key}
+            </Link>
             {item.title ? (
               <span className="ml-2 font-sans text-[color:var(--topo-muted)]">
                 {item.title}
@@ -62,7 +95,7 @@ function EntityList({
 
 export function ImpactPanel() {
   const router = useRouter();
-  const { can } = useProjectActions();
+  const { can, projectId } = useProjectActions();
   const [pending, startTransition] = useTransition();
   const [draftPending, setDraftPending] = useState(false);
   const [commitSha, setCommitSha] = useState("");
@@ -71,6 +104,53 @@ export function ImpactPanel() {
   const [result, setResult] = useState<AffectedResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
+  const [recentPrs, setRecentPrs] = useState<PullRequestRow[]>([]);
+  const [reposConnected, setReposConnected] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setResult(null);
+    setRecentPrs([]);
+    setReposConnected(null);
+    setError(null);
+    setDraftMessage(null);
+
+    const controller = new AbortController();
+    let cancelled = false;
+    const headers: HeadersInit = projectId
+      ? { "x-topology-project-id": projectId }
+      : {};
+    void (async () => {
+      try {
+        const [prRes, repoRes] = await Promise.all([
+          fetch("/api/pull-requests", { signal: controller.signal, headers }),
+          fetch("/api/repositories", { signal: controller.signal, headers }),
+        ]);
+        if (cancelled) return;
+        if (repoRes.ok) {
+          const repoData = (await repoRes.json()) as {
+            repositories?: unknown[];
+          };
+          setReposConnected((repoData.repositories?.length ?? 0) > 0);
+        } else {
+          setReposConnected(false);
+        }
+        if (prRes.ok) {
+          const prData = (await prRes.json()) as {
+            pullRequests?: PullRequestRow[];
+          };
+          setRecentPrs((prData.pullRequests ?? []).slice(0, 8));
+        }
+      } catch {
+        if (!cancelled && !controller.signal.aborted) {
+          setReposConnected(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [projectId]);
 
   function analysisBody(): Record<string, unknown> | null {
     const body: Record<string, unknown> = {};
@@ -100,7 +180,10 @@ export function ImpactPanel() {
     startTransition(async () => {
       const res = await fetch("/api/affected", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(projectId ? { "x-topology-project-id": projectId } : {}),
+        },
         body: JSON.stringify(body),
       });
       const data = (await res.json()) as AffectedResponse & {
@@ -118,6 +201,13 @@ export function ImpactPanel() {
     });
   }
 
+  function selectPullRequest(pr: PullRequestRow) {
+    setPrNumber(String(pr.number));
+    if (pr.head?.trim()) {
+      setCommitSha(pr.head.trim());
+    }
+  }
+
   async function draftMissingTests() {
     if (!can("intents.edit") && !can("proposals.create")) return;
     const body = analysisBody();
@@ -131,7 +221,10 @@ export function ImpactPanel() {
     try {
       const res = await fetch("/api/ai/draft?heuristic=1", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(projectId ? { "x-topology-project-id": projectId } : {}),
+        },
         body: JSON.stringify({
           job: "change_impact",
           ...body,
@@ -203,6 +296,57 @@ export function ImpactPanel() {
           />
         </label>
       </div>
+
+      {reposConnected === false ? (
+        <p className="text-sm text-[color:var(--topo-muted)]">
+          No repository connected.{" "}
+          <Link
+            href="/settings?section=integrations#repositories"
+            className="underline"
+          >
+            Connect a repository
+          </Link>{" "}
+          to pick from recent PRs.
+        </p>
+      ) : recentPrs.length > 0 ? (
+        <div className="space-y-1.5">
+          <div className="font-medium text-xs text-[color:var(--topo-muted)]">
+            Recent pull requests
+          </div>
+          <ul className="flex flex-wrap gap-1.5">
+            {recentPrs.map((pr) => {
+              const selected = prNumber.trim() === String(pr.number);
+              return (
+                <li key={pr.id}>
+                  <button
+                    type="button"
+                    onClick={() => selectPullRequest(pr)}
+                    className={`rounded-md border px-2.5 py-1 text-left text-xs transition ${
+                      selected
+                        ? "border-[color:var(--topo-accent)] bg-[color:var(--topo-chip)] text-[color:var(--topo-ink)]"
+                        : "border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-chip)]/60"
+                    }`}
+                  >
+                    <span className="font-mono">#{pr.number}</span>
+                    {pr.title ? (
+                      <span className="ml-1.5 text-[color:var(--topo-muted)]">
+                        {pr.title.length > 40
+                          ? `${pr.title.slice(0, 40)}…`
+                          : pr.title}
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : reposConnected ? (
+        <p className="text-xs text-[color:var(--topo-muted)]">
+          No synced pull requests yet. Enter a PR number or commit SHA above.
+        </p>
+      ) : null}
+
       <Button
         variant="primary"
         size="sm"
@@ -276,26 +420,47 @@ export function ImpactPanel() {
               {result.paths.join(", ")}
             </p>
           ) : null}
-          <EntityList title="Intents" items={result.impact.intents} />
-          <EntityList title="Requirements" items={result.impact.requirements} />
+          <EntityList
+            title="Intents"
+            kind="intent"
+            items={result.impact.intents}
+          />
+          <EntityList
+            title="Requirements"
+            kind="requirement"
+            items={result.impact.requirements}
+          />
+          <EntityList
+            title="Components"
+            kind="component"
+            items={result.impact.components}
+          />
           {result.impact.gaps.length > 0 ? (
             <div className="space-y-1">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-[color:var(--topo-muted)]">
                 Gaps ({result.impact.gaps.length})
               </h3>
               <ul className="space-y-1 text-sm text-[color:var(--topo-ink)]">
-                {result.impact.gaps.map((g, i) => (
-                  <li key={`${g.kind}-${g.key}-${i}`}>
-                    <span className="font-mono text-xs">{g.kind}</span>{" "}
-                    {g.key}
-                    {g.title ? (
-                      <span className="text-[color:var(--topo-muted)]">
-                        {" "}
-                        — {g.title}
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
+                {result.impact.gaps.map((g, i) => {
+                  const href = gapHref(g.kind, g.id ?? g.key, g.key);
+                  return (
+                    <li key={`${g.kind}-${g.key}-${i}`}>
+                      <Link
+                        href={href}
+                        className="font-mono text-xs text-[color:var(--topo-accent)] underline-offset-2 hover:underline"
+                      >
+                        {gapLabel(g.kind)}
+                      </Link>{" "}
+                      <span className="font-mono text-xs">{g.key}</span>
+                      {g.title ? (
+                        <span className="text-[color:var(--topo-muted)]">
+                          {" "}
+                          — {g.title}
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ) : null}

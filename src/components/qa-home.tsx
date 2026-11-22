@@ -69,11 +69,13 @@ export function QaHome({ pulse }: { pulse: HubPulseData }) {
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       {(() => {
+        const linkedTotal =
+          pulse.linkedIssuesTotal ?? pulse.openLinkedIssues ?? 0;
         const completed = [
           ...(pulse.cases.total ? ["1"] : []),
           ...(pulse.runs.total ? ["2"] : []),
           ...((pulse.runs.automation ?? 0) > 0 ? ["3"] : []),
-          ...((pulse.openLinkedIssues ?? 0) > 0 ? ["4"] : []),
+          ...(linkedTotal > 0 ? ["4"] : []),
         ];
         const allDone = completed.length === 4;
         if (allDone) return null;

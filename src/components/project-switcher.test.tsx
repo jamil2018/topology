@@ -62,6 +62,36 @@ describe("ProjectSwitcher", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a compact New project affordance when collapsed with no projects", () => {
+    render(
+      <ProjectSwitcher
+        projects={[]}
+        activeProjectId={null}
+        collapsed
+        canManage
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "New project" });
+    expect(link).toHaveAttribute("href", "/settings?section=projects");
+  });
+
+  it("shows an empty marker when collapsed with no projects and no manage rights", () => {
+    render(
+      <ProjectSwitcher
+        projects={[]}
+        activeProjectId={null}
+        collapsed
+        canManage={false}
+      />,
+    );
+
+    expect(screen.getByLabelText("No projects")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "New project" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("closes when clicking outside", async () => {
     const user = userEvent.setup();
     render(

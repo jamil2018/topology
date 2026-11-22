@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { workspaces } from "@/db/schema";
 import {
   AI_PROVIDERS,
+  assertSafeAiBaseUrl,
   getWorkspaceAiProviderConfig,
   toPublicAiProviderView,
 } from "@/lib/ai-provider";
@@ -83,7 +84,17 @@ export async function PUT(request: Request) {
     updates.aiModel = parsed.data.model;
   }
   if (parsed.data.baseUrl !== undefined) {
-    updates.aiBaseUrl = parsed.data.baseUrl;
+    const nextBaseUrl =
+      parsed.data.baseUrl === null
+        ? null
+        : parsed.data.baseUrl.trim() || null;
+    if (nextBaseUrl) {
+      const safe = await assertSafeAiBaseUrl(nextBaseUrl);
+      if (!safe.ok) {
+        return NextResponse.json({ error: safe.error }, { status: 400 });
+      }
+    }
+    updates.aiBaseUrl = nextBaseUrl;
   }
 
   if (Object.keys(updates).length <= 1) {

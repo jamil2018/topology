@@ -2,6 +2,7 @@
 import { useProjectActions } from "./project-actions";
 import { useMutationFeedback } from "./use-mutation-feedback";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@heroui/react";
@@ -25,6 +26,13 @@ export type ProposalListItem = {
   updatedAt: string | Date;
 };
 
+type AppliedChange = {
+  action: string;
+  entityType: string;
+  id: string;
+  key?: string;
+};
+
 function summarizeDiff(diff: ProposalDiff): string {
   const after = diff.after ?? {};
   const key =
@@ -46,6 +54,34 @@ function summarizeDiff(diff: ProposalDiff): string {
   return `${diff.action} ${diff.entityType}`;
 }
 
+function appliedEntityHref(change: AppliedChange): string | null {
+  switch (change.entityType) {
+    case "intent":
+      return `/intents?intent=${encodeURIComponent(change.id)}`;
+    case "requirement":
+      return `/requirements?requirement=${encodeURIComponent(change.id)}`;
+    case "risk":
+      return "/risks";
+    case "component":
+      return "/components";
+    case "implementation":
+      return change.key
+        ? `/cases?q=${encodeURIComponent(change.key)}`
+        : "/intents";
+    case "case":
+      return change.key
+        ? `/cases/${encodeURIComponent(change.key)}`
+        : `/cases?case=${encodeURIComponent(change.id)}`;
+    default:
+      return null;
+  }
+}
+
+function appliedEntityLabel(change: AppliedChange): string {
+  const keyBit = change.key ? ` ${change.key}` : "";
+  return `${change.entityType}${keyBit}`;
+}
+
 export function ProposalsWorkspace({
   initial,
   aiProvider,
@@ -58,6 +94,10 @@ export function ProposalsWorkspace({
   const [items, setItems] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
+  const [acceptNotice, setAcceptNotice] = useState<{
+    proposalId: string;
+    applied: AppliedChange[];
+  } | null>(null);
   const { can } = useProjectActions();
   const { saving, submit } = useMutationFeedback(setError);
   const pending = transitionPending || saving;
@@ -112,6 +152,7 @@ export function ProposalsWorkspace({
     if (!can("proposals.review")) return;
     return submit(async () => {
     setError(null);
+    if (status === "accepted") setAcceptNotice(null);
     const res = await fetch("/api/proposals", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -120,6 +161,7 @@ export function ProposalsWorkspace({
     const data = (await res.json().catch(() => ({}))) as {
       error?: string;
       proposal?: ProposalListItem;
+      applied?: AppliedChange[];
     };
     if (!res.ok) {
       setError(data.error ?? `Failed to ${status.slice(0, -2)}`);
@@ -129,6 +171,12 @@ export function ProposalsWorkspace({
       setItems((prev) =>
         prev.map((p) => (p.id === id ? { ...p, ...data.proposal! } : p)),
       );
+    }
+    if (status === "accepted") {
+      setAcceptNotice({
+        proposalId: id,
+        applied: data.applied ?? [],
+      });
     }
     startTransition(() => router.refresh());
     });
@@ -170,6 +218,46 @@ export function ProposalsWorkspace({
 
       {draftMessage ? (
         <p className="text-sm text-[color:var(--topo-muted)]">{draftMessage}</p>
+      ) : null}
+
+      {acceptNotice ? (
+        <p
+          role="status"
+          className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 text-sm text-[color:var(--topo-ink)]"
+        >
+          Proposal accepted
+          {acceptNotice.applied.length > 0 ? (
+            <>
+              {" · "}
+              {acceptNotice.applied.slice(0, 4).map((change, i) => {
+                const href = appliedEntityHref(change);
+                const label = appliedEntityLabel(change);
+                return (
+                  <span key={`${change.entityType}-${change.id}-${i}`}>
+                    {i > 0 ? ", " : null}
+                    {href ? (
+                      <Link href={href} className="underline">
+                        Open {label}
+                      </Link>
+                    ) : (
+                      <span>{label}</span>
+                    )}
+                  </span>
+                );
+              })}
+              {acceptNotice.applied.length > 4
+                ? ` (+${acceptNotice.applied.length - 4} more)`
+                : null}
+            </>
+          ) : (
+            <>
+              {" · "}
+              <Link href="/intents" className="underline">
+                Open workspace
+              </Link>
+            </>
+          )}
+        </p>
       ) : null}
 
       {queue.length === 0 ? (

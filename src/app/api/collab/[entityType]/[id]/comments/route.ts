@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
 import {
+  collabEditAction,
+  collabViewAction,
   createEntityComment,
   entityExistsInWorkspace,
   isCollabEntityType,
@@ -22,20 +24,20 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const access = await requireProjectAccess(session.user.id, {
-    request,
-    action: "intents.view",
-  });
-  if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status });
-  }
-
   const { entityType: rawType, id: entityId } = await params;
   if (!isCollabEntityType(rawType)) {
     return NextResponse.json({ error: "Invalid entity type" }, { status: 400 });
   }
   if (!z.string().uuid().safeParse(entityId).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    action: collabViewAction(rawType),
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   const exists = await entityExistsInWorkspace(
@@ -61,20 +63,20 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const access = await requireProjectAccess(session.user.id, {
-    request,
-    action: "intents.edit",
-  });
-  if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status });
-  }
-
   const { entityType: rawType, id: entityId } = await params;
   if (!isCollabEntityType(rawType)) {
     return NextResponse.json({ error: "Invalid entity type" }, { status: 400 });
   }
   if (!z.string().uuid().safeParse(entityId).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    action: collabEditAction(rawType),
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   const exists = await entityExistsInWorkspace(

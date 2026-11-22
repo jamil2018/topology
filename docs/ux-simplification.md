@@ -1,5 +1,16 @@
 # UI simplification review — 2026-11-14
 
+## Status (read first)
+
+| Status | Meaning |
+| --- | --- |
+| **Historical UX review** | Records the 2026-11-14 simplification pass, bugs found during verification, and reviewer ratings. |
+| **Landed in product** | Home/Overview naming, simplified case/run creation, execution filters, settings disclosures, and the full-width case-details workspace described below shipped into the current app. |
+| **Resolved in-pass** | Global Enter shortcut swallowing native activation, repositories webhook URL hydration mismatch, run-status `ILIKE` enum crash, loading-role names, and Home theme animation contrast issues were fixed during this review. |
+| **Not a live scoreboard** | Pass counts, Lighthouse, and heuristic 9/10 ratings below are scoped historical evidence, not current CI or WCAG certification. |
+
+---
+
 This pass reduces the concepts users must remember while creating cases, preparing runs, recording results, filtering work, and finding settings. It builds on the existing uncommitted refinement work; it does not replace that work or claim its verification as new evidence.
 
 ## Changes and rationale

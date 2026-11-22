@@ -2,8 +2,9 @@
 import { formatDateTime } from "@/lib/format-date";
 
 import Link from "next/link";
-import { PlayIcon } from "@phosphor-icons/react";
+import { PlayIcon, PrinterIcon } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "motion/react";
+import { BrandMark } from "./brand-mark";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
 import {
@@ -95,11 +96,22 @@ function formatPassRateDelta(delta: number | null): string {
   return `${sign}${delta} pts`;
 }
 
-export function ReportDetail({ report }: { report: ReportDetailModel }) {
+export function ReportDetail({
+  report,
+  publicShareToken,
+}: {
+  report: ReportDetailModel;
+  /** When set, render a read-only stakeholder view (no auth chrome). */
+  publicShareToken?: string;
+}) {
   const reduceMotion = useReducedMotion();
   const { run, kpis, executive, suiteBreakdown, timeline, failures, trend } =
     report;
   const isLive = run.status === "in_progress";
+  const isPublic = Boolean(publicShareToken);
+  const shareExportBase = publicShareToken
+    ? `/api/share/reports/${encodeURIComponent(publicShareToken)}/export`
+    : null;
 
   const kpiTiles = [
     {
@@ -144,8 +156,25 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
 
   return (
     <div className="space-y-5">
+      {isPublic ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <BrandMark size={28} eyebrow="Shared report" />
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--topo-muted)]">
+            Read only
+          </p>
+        </div>
+      ) : null}
+
       <PageHeader
-        eyebrow={isLive ? "Report · live run" : "Report · linked run"}
+        eyebrow={
+          isPublic
+            ? isLive
+              ? "Shared report · live run"
+              : "Shared report · read only"
+            : isLive
+              ? "Report · live run"
+              : "Report · linked run"
+        }
         title={run.name}
         description={
           run.description?.trim() ||
@@ -183,29 +212,53 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
           </>
         }
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={`/runs/${run.id}`}
-              className="inline-flex items-center gap-1.5 rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
-            >
-              <PlayIcon size={14} weight="bold" aria-hidden />
-              Open run
-            </Link>
-            <Link
-              href="/reports"
-              className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
-            >
-              All reports
-            </Link>
-            {!isLive ? <ReportExportActions runId={run.id} /> : null}
-            {kpis.failed > 0 ? (
-              <Link
-                href="/triage"
-                className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
-              >
-                Triage
-              </Link>
-            ) : null}
+          <div className="topo-no-print flex flex-wrap gap-2">
+            {isPublic && shareExportBase ? (
+              <>
+                {(["csv", "xlsx", "pdf"] as const).map((format) => (
+                  <a
+                    key={format}
+                    href={`${shareExportBase}?format=${format}`}
+                    className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium uppercase text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+                  >
+                    {format}
+                  </a>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+                >
+                  <PrinterIcon size={14} weight="bold" aria-hidden />
+                  Print
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  href={`/runs/${run.id}`}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
+                >
+                  <PlayIcon size={14} weight="bold" aria-hidden />
+                  Open run
+                </Link>
+                <Link
+                  href="/reports"
+                  className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+                >
+                  All reports
+                </Link>
+                {!isLive ? <ReportExportActions runId={run.id} /> : null}
+                {kpis.failed > 0 ? (
+                  <Link
+                    href="/triage"
+                    className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+                  >
+                    Triage
+                  </Link>
+                ) : null}
+              </>
+            )}
           </div>
         }
       />
@@ -246,8 +299,9 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
       </section>
 
       <p className="font-mono text-xs text-[color:var(--topo-muted)]">
-        Run {run.id.slice(0, 8)} · started {formatWhen(run.startedAt)} · finished{" "}
-        {formatWhen(run.completedAt)} · source {run.source}
+        {isPublic ? null : <>Run {run.id.slice(0, 8)} · </>}
+        started {formatWhen(run.startedAt)} · finished {formatWhen(run.completedAt)}{" "}
+        · source {run.source}
       </p>
 
       <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-line)] sm:grid-cols-3 lg:grid-cols-7">
@@ -350,17 +404,28 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
                     className="align-top hover:bg-[color:var(--topo-chip)]/30"
                   >
                     <td className="px-3 py-2.5">
-                      <Link
-                        href={`/runs/${run.id}?result=${row.resultId}`}
-                        className="block max-w-xs rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--topo-accent)]"
-                      >
-                        <div className="font-mono text-xs text-[color:var(--topo-accent)] hover:underline">
-                          {row.caseKey}
+                      {isPublic ? (
+                        <div className="block max-w-xs">
+                          <div className="font-mono text-xs text-[color:var(--topo-ink)]">
+                            {row.caseKey}
+                          </div>
+                          <div className="mt-0.5 text-[color:var(--topo-ink)]">
+                            {row.title}
+                          </div>
                         </div>
-                        <div className="mt-0.5 text-[color:var(--topo-ink)]">
-                          {row.title}
-                        </div>
-                      </Link>
+                      ) : (
+                        <Link
+                          href={`/runs/${run.id}?result=${row.resultId}`}
+                          className="block max-w-xs rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--topo-accent)]"
+                        >
+                          <div className="font-mono text-xs text-[color:var(--topo-accent)] hover:underline">
+                            {row.caseKey}
+                          </div>
+                          <div className="mt-0.5 text-[color:var(--topo-ink)]">
+                            {row.title}
+                          </div>
+                        </Link>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-xs text-[color:var(--topo-muted)]">
                       {row.suite}
@@ -446,14 +511,16 @@ export function ReportDetail({ report }: { report: ReportDetailModel }) {
         )}
       </section>
 
-      <div className="flex justify-end">
-        <Link
-          href={`/runs/${run.id}`}
-          className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
-        >
-          Execute / review cases
-        </Link>
-      </div>
+      {isPublic ? null : (
+        <div className="flex justify-end">
+          <Link
+            href={`/runs/${run.id}`}
+            className="rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+          >
+            Execute / review cases
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

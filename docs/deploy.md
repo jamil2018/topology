@@ -12,7 +12,7 @@ Requires Docker Compose and a generated `AUTH_SECRET`.
 cp .env.example .env.prod
 # Set AUTH_SECRET (openssl rand -base64 32), AUTH_URL to the public origin,
 # and a strong POSTGRES_PASSWORD.
-docker compose -f docker-compose.prod.yml up --build -d
+docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
 ```
 
 The app listens on `0.0.0.0:4317` inside the container (override with `HOST` / `PORT`). Postgres is not published to the host. Open http://127.0.0.1:4317 and complete first-run `/setup` — production does **not** seed demo data.
@@ -32,7 +32,7 @@ that is, `ghcr.io/${{ github.repository }}` from the workflow. Pull only tags th
 docker pull ghcr.io/<owner>/topology:<tag>
 
 TOPOLOGY_IMAGE=ghcr.io/<owner>/topology:<tag> \
-  docker compose -f docker-compose.prod.yml up -d --no-build
+  docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build
 ```
 
 The Next.js standalone server honors `PORT` and `HOSTNAME`. The image entrypoint maps `HOST` → `HOSTNAME` (default `0.0.0.0`) so the process is reachable from a reverse proxy. `npm run dev` stays bound to `127.0.0.1`.
@@ -97,21 +97,36 @@ Fresh databases are created by the journaled Drizzle migrator, not `drizzle-kit 
 npm run db:migrate
 ```
 
-That runs `src/db/migrate.ts`, which applies `drizzle/meta/_journal.json`. The first (and currently only) entry is `0000_baseline` — a full schema dump through the Phase 1 security tables (`api_tokens` scopes, `login_rate_limits`, `audit_events`, per-repo `webhook_secret`).
+That runs `src/db/migrate.ts`, which applies `drizzle/meta/_journal.json`. Current journal tags:
 
-The production image runs the same migrator on container start, before `server.js`. Subsequent boots are no-ops once `__drizzle_migrations` records the baseline hash.
+| Order | Tag |
+| --- | --- |
+| 0 | `0000_baseline` |
+| 1 | `0001_tcm_parity` |
+| 2 | `0002_scale` |
+| 3 | `0003_quality_graph_pref` |
+| 4 | `0004_productivity` |
+| 5 | `0005_retest_case_links` |
+| 6 | `0006_report_share_generation` |
+| 7 | `0007_collab_and_integrations` |
+| 8 | `0008_triage_resolution` |
+| 9 | `0009_scm_feedback` |
 
-Existing databases created with `drizzle-kit push` or the old “replay every `drizzle/*.sql` file” runner are not automatically stamped. For pre-1.0 local data, the supported path is dump → new volume → migrate → restore if you still need rows. Do not replay the retired `0001`–`0017` files; `0001` referenced tables that only appeared in `0003`.
+`0000_baseline` is the full schema dump through the Phase 1 security tables (`api_tokens` scopes, `login_rate_limits`, `audit_events`, per-repo `webhook_secret`). Later entries are additive.
+
+The production image runs the same migrator on container start, before `server.js`. Subsequent boots are no-ops once `__drizzle_migrations` records every journal hash.
+
+Existing databases created with `drizzle-kit push` or the old “replay every `drizzle/*.sql` file” runner are not automatically stamped. For pre-1.0 local data, the supported path is dump → new volume → migrate → restore if you still need rows. Do not replay retired pre-journal SQL files.
 
 ## Backup and restore
 
 Postgres:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T postgres \
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   pg_dump -U topology -d topology -Fc > topology.dump
 
-docker compose -f docker-compose.prod.yml exec -T postgres \
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   pg_restore -U topology -d topology --clean --if-exists < topology.dump
 ```
 
@@ -129,7 +144,7 @@ Restore order: database first, then attachment blobs. A DB without blobs yields 
 3. Start the new container. Boot applies any new journal entries, then serves traffic.
 4. If the app is unhealthy, roll back the image tag. Do not roll back a migration that already expanded schema unless you also restore the dump taken in step 1.
 
-Upgrade guarantee for this baseline: **additive SQL only** lands as new journal files (`0001_…`, `0002_…`). Destructive changes will be called out in [CHANGELOG.md](../CHANGELOG.md). This `0000_baseline` replacement is a one-time break from the unjournaled SQL folder.
+Upgrade guarantee: **additive SQL only** lands as new journal files after `0009_scm_feedback`. Destructive changes will be called out in [CHANGELOG.md](../CHANGELOG.md). The `0000_baseline` replacement was a one-time break from the unjournaled SQL folder.
 
 ## Sizing
 

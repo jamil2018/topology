@@ -84,4 +84,25 @@ describe("QaHome", () => {
     expect(screen.queryByText("Graph coverage")).not.toBeInTheDocument();
     expect(screen.queryByText("EM")).not.toBeInTheDocument();
   });
+
+  it("keeps guided step 4 complete when linked issues are closed", () => {
+    render(
+      <QaHome
+        pulse={{
+          ...pulse,
+          cases: { total: 1, ready: 1, blocked: 0, draft: 0 },
+          // automation still 0 so checklist remains visible
+          runs: { total: 1, inProgress: 0, completed: 1, automation: 0 },
+          openLinkedIssues: 0,
+          linkedIssuesTotal: 2,
+          assignedRuns: [],
+          inProgressRuns: [],
+          failingNow: [],
+          retestQueue: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/File an issue · Complete/)).toBeInTheDocument();
+  });
 });

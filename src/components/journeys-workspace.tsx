@@ -65,7 +65,7 @@ export function JourneysWorkspace({
       <PageHeader
         eyebrow="Quality graph"
         title="Journeys"
-        description="Critical user journeys linked to intents via part_of edges. Hub shows journey coverage."
+        description="Critical user paths for Hub journey coverage. Intent links are created via proposals or the journeys API — this list shows link counts only."
         meta={<StatusChip mono>{items.length}</StatusChip>}
       />
 

@@ -1,19 +1,34 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, screen } from "@testing-library/react";
+import { act, cleanup, screen } from "@testing-library/react";
 import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import {
   buildTriageQueue,
   failureSignatureHash,
 } from "@topology/domain";
+import type { LiveEvent } from "@/lib/live-event";
 import { TriageWorkspace } from "./triage-workspace";
+
+const live = vi.hoisted(() => ({
+  onEvent: null as null | ((event: LiveEvent) => void | Promise<void>),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }));
 
+vi.mock("./use-live-updates", () => ({
+  useLiveUpdates: (
+    onEvent: (event: LiveEvent) => void | Promise<void>,
+  ) => {
+    live.onEvent = onEvent;
+    return "live";
+  },
+}));
+
 afterEach(() => {
   cleanup();
+  live.onEvent = null;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -350,5 +365,70 @@ describe("TriageWorkspace signature clusters", () => {
     );
     expect(screen.queryByText("TOP-1")).not.toBeInTheDocument();
     expect(screen.queryByText("TOP-2")).not.toBeInTheDocument();
+  });
+});
+
+describe("TriageWorkspace live refresh", () => {
+  it("skips overlapping triage refetches while one is in flight", async () => {
+    let resolveFetch: ((value: unknown) => void) | null = null;
+    const fetchMock = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TriageWorkspace initialQueue={queue} flakeHints={[]} />);
+    expect(live.onEvent).toBeTruthy();
+
+    const event = {
+      topic: "triage",
+      workspaceId: "*",
+      at: Date.now(),
+    } as LiveEvent;
+
+    await act(async () => {
+      void live.onEvent?.(event);
+      void live.onEvent?.(event);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("/api/triage");
+
+    await act(async () => {
+      resolveFetch?.({
+        ok: true,
+        json: async () => ({ queue }),
+      });
+    });
+  });
+});
+
+describe("TriageWorkspace flake hints", () => {
+  it("links flake hints to cases and optional retest", () => {
+    render(
+      <TriageWorkspace
+        initialQueue={[]}
+        flakeHints={[
+          {
+            caseId: "case-9",
+            caseKey: "TOP-9",
+            title: "Flaky checkout",
+            score: 0.7,
+            hint: "Flip-flops across recent runs",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "TOP-9" })).toHaveAttribute(
+      "href",
+      "/cases?q=TOP-9",
+    );
+    expect(screen.getByRole("link", { name: "Retest" })).toHaveAttribute(
+      "href",
+      "/runs/new?cases=case-9",
+    );
   });
 });

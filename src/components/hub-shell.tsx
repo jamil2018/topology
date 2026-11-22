@@ -7,21 +7,29 @@ import { motion } from "motion/react";
 import { Button, Modal } from "@heroui/react";
 import { signOut } from "next-auth/react";
 import {
+  ArticleIcon,
   BugIcon,
   CaretRightIcon,
   ChartBarIcon,
   ChartLineIcon,
   CirclesFourIcon,
+  CrosshairIcon,
+  CubeIcon,
+  FlagCheckeredIcon,
   FlagIcon,
   GearIcon,
+  HouseIcon,
   ListChecksIcon,
   MagnifyingGlassIcon,
+  MapTrifoldIcon,
   PlayCircleIcon,
   QuestionIcon,
+  RocketLaunchIcon,
   SidebarSimpleIcon,
   SignOutIcon,
   SparkleIcon,
   TargetIcon,
+  WarningIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { BrandMark } from "./brand-mark";
@@ -42,6 +50,7 @@ import {
   visibleNavGroups,
   visibleNavItems,
   type NavGroupDef,
+  type NavItemDef,
 } from "@/lib/nav-diet";
 
 const SIDEBAR_PREF = "topology:sidebar-collapsed";
@@ -49,8 +58,9 @@ function subscribeSidebar(listener: () => void) { window.addEventListener(SIDEBA
 function readSidebar() { try { return localStorage.getItem(SIDEBAR_PREF) === "1"; } catch { return false; } }
 type NavIcon = typeof CirclesFourIcon;
 
+/** Distinct icons per destination so collapsed icon-only mode never collides in-group. */
 const NAV_ICONS: Record<string, NavIcon> = {
-  "/": CirclesFourIcon,
+  "/": HouseIcon,
   "/cases": ListChecksIcon,
   "/plans": FlagIcon,
   "/runs": PlayCircleIcon,
@@ -59,18 +69,70 @@ const NAV_ICONS: Record<string, NavIcon> = {
   "/reports": ChartBarIcon,
   "/settings": GearIcon,
   "/intents": TargetIcon,
-  "/impact": ChartBarIcon,
-  "/milestones": FlagIcon,
-  "/releases": FlagIcon,
-  "/journeys": CirclesFourIcon,
-  "/requirements": ListChecksIcon,
-  "/risks": BugIcon,
-  "/components": CirclesFourIcon,
+  "/impact": CrosshairIcon,
+  "/milestones": FlagCheckeredIcon,
+  "/releases": RocketLaunchIcon,
+  "/journeys": MapTrifoldIcon,
+  "/requirements": ArticleIcon,
+  "/risks": WarningIcon,
+  "/components": CubeIcon,
   "/proposals": SparkleIcon,
 };
 
 function iconFor(href: string): NavIcon {
   return NAV_ICONS[href] ?? CirclesFourIcon;
+}
+
+const SUB_ROUTE_LABELS: Array<{ match: RegExp; label: string }> = [
+  { match: /^\/cases\/import(?:\/|$)/, label: "Import" },
+  { match: /^\/runs\/new(?:\/|$)/, label: "New run" },
+  { match: /^\/releases\/compare(?:\/|$)/, label: "Compare" },
+  { match: /^\/milestones\/[^/]+$/, label: "Detail" },
+  { match: /^\/runs\/[^/]+$/, label: "Run" },
+  { match: /^\/reports\/[^/]+$/, label: "Report" },
+  { match: /^\/plans\/[^/]+$/, label: "Detail" },
+];
+
+function resolveSubRouteLabel(pathname: string, parentHref: string | null) {
+  if (!parentHref || pathname === parentHref) return null;
+  for (const entry of SUB_ROUTE_LABELS) {
+    if (entry.match.test(pathname)) return entry.label;
+  }
+  const rest = pathname.slice(parentHref === "/" ? 0 : parentHref.length);
+  if (!rest || rest === "/") return null;
+  const segment = rest.replace(/^\//, "").split("/")[0];
+  if (!segment || /^[0-9a-f-]{8,}$/i.test(segment)) return "Detail";
+  return segment
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function resolveBreadcrumb(
+  pathname: string,
+  nav: NavItemDef[],
+  groups: NavGroupDef[],
+) {
+  const current =
+    nav.find((item) => isActivePath(pathname, item.href)) ?? null;
+  const currentGroup =
+    groups.find((group) =>
+      group.items.some((item) => isActivePath(pathname, item.href)),
+    ) ?? null;
+  const fallbackPages: Record<string, string> = {
+    "/connect": "Connect",
+  };
+  const primary =
+    current?.label ??
+    fallbackPages[pathname] ??
+    (pathname.startsWith("/connect") ? "Connect" : null) ??
+    "App";
+  const secondary = resolveSubRouteLabel(pathname, current?.href ?? null);
+  return {
+    groupLabel: currentGroup?.label ?? "Topology",
+    primaryLabel: primary,
+    secondaryLabel: secondary,
+  };
 }
 
 function NavLinks({
@@ -348,10 +410,7 @@ function HubShellInner({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const current = nav.find((item) => isActivePath(pathname, item.href));
-  const currentGroup = groups.find((group) =>
-    group.items.some((item) => isActivePath(pathname, item.href)),
-  );
+  const breadcrumb = resolveBreadcrumb(pathname, nav, groups);
 
   return (
     <div className="topology-shell flex min-h-[100dvh] bg-[color:var(--topo-paper)]">
@@ -409,7 +468,9 @@ function HubShellInner({
 
             <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
               <span className="truncate text-[color:var(--topo-muted)]">
-                {currentGroup?.label ?? "Topology"}
+                {breadcrumb.secondaryLabel
+                  ? breadcrumb.primaryLabel
+                  : breadcrumb.groupLabel}
               </span>
               <CaretRightIcon
                 size={12}
@@ -417,7 +478,7 @@ function HubShellInner({
                 className="shrink-0 text-[color:var(--topo-muted)] opacity-70"
               />
               <span className="truncate font-medium text-[color:var(--topo-ink)]">
-                {current?.label ?? "App"}
+                {breadcrumb.secondaryLabel ?? breadcrumb.primaryLabel}
               </span>
             </div>
 

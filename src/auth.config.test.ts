@@ -38,12 +38,22 @@ describe("authConfig.authorized", () => {
     for (const route of ["/api/coverage/snapshots", "/api/query/admin", "/api/git/repositories"]) expect(authorized(route, null)).toBe(false);
   });
 
-  it("allows only signed-report page and export routes to validate their tokens", () => {
+  it("allows only signed-report page, export, and attachment routes to validate their tokens", () => {
     expect(authorized("/share/reports/signed-token", null)).toBe(true);
     expect(authorized("/api/share/reports/signed-token/export", null)).toBe(true);
+    expect(
+      authorized(
+        "/api/share/reports/signed-token/attachments/11111111-2222-4333-8444-555555555555",
+        null,
+      ),
+    ).toBe(true);
     expect(authorized("/share/reports", null)).toBe(false);
     expect(authorized("/share/reports/token/admin", null)).toBe(false);
     expect(authorized("/api/share/reports/token", null)).toBe(false);
+    expect(authorized("/api/share/reports/token/attachments", null)).toBe(false);
+    expect(
+      authorized("/api/share/reports/token/attachments/id/extra", null),
+    ).toBe(false);
   });
 
   it("allows Next.js internals", () => {

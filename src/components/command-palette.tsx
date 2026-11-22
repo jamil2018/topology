@@ -98,6 +98,19 @@ type SearchHit = {
     priority: string;
     snippet?: string | null;
   }>;
+  proposals?: Array<{
+    id: string;
+    name: string;
+    status?: string;
+    entityType?: string;
+    snippet?: string | null;
+  }>;
+  releases?: Array<{
+    id: string;
+    name: string;
+    status?: string;
+    snippet?: string | null;
+  }>;
 };
 
 type CommandItem = {
@@ -119,6 +132,8 @@ const EMPTY_HITS: SearchHit = {
   plans: [],
   milestones: [],
   triage: [],
+  proposals: [],
+  releases: [],
 };
 
 function matchFieldBadge(entity: string, matchField?: string): string {
@@ -209,6 +224,9 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [hits, setHits] = useState<SearchHit>(EMPTY_HITS);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchRetryKey, setSearchRetryKey] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const trimmedQuery = query.trim();
 
@@ -217,6 +235,8 @@ export function CommandPalette() {
     setQuery("");
     setActive(0);
     setHits(EMPTY_HITS);
+    setSearching(false);
+    setSearchError(null);
   }, []);
 
   useEffect(() => {
@@ -258,12 +278,29 @@ export function CommandPalette() {
   useEffect(() => {
     if (!open) return;
     const q = query.trim();
-    if (!q) return;
+    if (!q) {
+      setSearching(false);
+      setSearchError(null);
+      setHits(EMPTY_HITS);
+      return;
+    }
     let cancelled = false;
+    setSearching(true);
+    setSearchError(null);
     const timer = window.setTimeout(() => {
       if (cancelled) return;
       void fetch(`/api/search?q=${encodeURIComponent(q)}`)
-        .then((res) => (res.ok ? res.json() : null))
+        .then(async (res) => {
+          if (!res.ok) {
+            const data = (await res.json().catch(() => ({}))) as {
+              error?: unknown;
+            };
+            throw new Error(
+              typeof data.error === "string" ? data.error : "Search failed",
+            );
+          }
+          return res.json();
+        })
         .then((data) => {
           if (cancelled || !data) return;
           setHits({
@@ -274,20 +311,32 @@ export function CommandPalette() {
             plans: data.plans ?? [],
             milestones: data.milestones ?? [],
             triage: data.triage ?? [],
+            proposals: data.proposals ?? [],
+            releases: data.releases,
             requirements: data.requirements,
             intents: data.intents,
             risks: data.risks,
           });
+          setSearchError(null);
         })
-        .catch(() => {
-          /* ignore network errors */
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setHits(EMPTY_HITS);
+          setSearchError(
+            err instanceof Error && err.message
+              ? err.message
+              : "Search failed",
+          );
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false);
         });
     }, 120);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, query]);
+  }, [open, query, searchRetryKey]);
 
   const items = useMemo(() => {
     const list: CommandItem[] = [];
@@ -441,6 +490,17 @@ export function CommandPalette() {
           close();
         },
       },
+      {
+        id: "action-connect-agent",
+        label: "Connect agent",
+        hint: "MCP / API token",
+        group: "Actions",
+        Icon: PlugsIcon,
+        run: () => {
+          router.push("/settings?section=integrations#agent");
+          close();
+        },
+      },
     ];
 
     for (const action of actions) {
@@ -448,6 +508,7 @@ export function CommandPalette() {
       if (action.id === "action-start-run" && !can("runs.create")) continue;
       if (action.id === "action-file-issue" && !can("triage.manage")) continue;
       if (action.id === "action-connect-ci" && !can("automation.manage")) continue;
+      if (action.id === "action-connect-agent" && !can("settings.view")) continue;
       if (
         !q ||
         action.label.toLowerCase().includes(q) ||
@@ -638,6 +699,42 @@ export function CommandPalette() {
         },
       });
     }
+    for (const proposal of resolvedHits.proposals ?? []) {
+      list.push({
+        id: `proposal-${proposal.id}`,
+        label: proposal.name,
+        badge: proposal.status
+          ? `Proposal · ${proposal.status}`
+          : "Proposal",
+        snippet:
+          proposal.snippet && proposal.snippet !== proposal.name
+            ? proposal.snippet
+            : undefined,
+        group: "Jump",
+        Icon: SparkleIcon,
+        run: () => {
+          router.push(`/proposals?proposal=${proposal.id}`);
+          close();
+        },
+      });
+    }
+    for (const release of resolvedHits.releases ?? []) {
+      list.push({
+        id: `release-${release.id}`,
+        label: release.name,
+        badge: "Release",
+        snippet:
+          release.snippet && release.snippet !== release.name
+            ? release.snippet
+            : undefined,
+        group: "Jump",
+        Icon: FlagIcon,
+        run: () => {
+          router.push(`/releases/${release.id}`);
+          close();
+        },
+      });
+    }
 
     return list;
   }, [can, close, focus, hits, pathname, qualityGraphEnabled, query, router, trimmedQuery]);
@@ -704,6 +801,28 @@ export function CommandPalette() {
                 esc
               </kbd>
             </div>
+            {searching || searchError ? (
+              <div className="flex items-center justify-between gap-2 border-b border-[color:var(--topo-line)] px-3 py-1.5 text-xs text-[color:var(--topo-muted)]">
+                {searching ? (
+                  <span role="status" aria-live="polite">
+                    Searching…
+                  </span>
+                ) : (
+                  <span role="alert" className="min-w-0 truncate">
+                    {searchError}
+                  </span>
+                )}
+                {searchError && !searching ? (
+                  <button
+                    type="button"
+                    className="shrink-0 font-medium text-[color:var(--topo-accent)]"
+                    onClick={() => setSearchRetryKey((n) => n + 1)}
+                  >
+                    Retry
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             <ul
               className="max-h-[min(22rem,50vh)] overflow-y-auto py-1.5"
               role="listbox"
@@ -714,7 +833,11 @@ export function CommandPalette() {
             >
               {items.length === 0 ? (
                 <li className="px-3 py-8 text-center text-sm text-[color:var(--topo-muted)]">
-                  No matching commands
+                  {searching
+                    ? "Searching…"
+                    : searchError
+                      ? "Search unavailable"
+                      : "No matching commands"}
                 </li>
               ) : (
                 items.map((item, index) => {

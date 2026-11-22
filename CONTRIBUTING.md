@@ -11,11 +11,13 @@ Please read the [code of conduct](CODE_OF_CONDUCT.md) before opening issues or p
 ## Local setup
 
 ```bash
-./scripts/setup.sh   # install, Compose Postgres, migrate, seed
+./scripts/setup.sh   # install, Compose Postgres, migrate, seed (macOS/Linux)
 npm run dev
 ```
 
 Or the same steps by hand: `docker compose up -d`, `npm install`, `npm run db:migrate`, `npm run db:seed`.
+
+**Windows (PowerShell):** `docker compose up -d`; `Copy-Item .env.example .env.local`; then `npm install`, `npm run db:migrate`, `npm run db:seed`, `npm run dev`.
 
 App: http://127.0.0.1:4317 · Health: http://127.0.0.1:4317/api/health
 
@@ -47,7 +49,7 @@ See [validation commands and evidence](tasks/validation/README.md), [release pla
 
 Documented in `.env.example`:
 
-- **Auth:** `AUTH_SECRET`, `AUTH_URL`, optional GitHub/Google OAuth, optional `TOPOLOGY_AIR_GAP=1`
+- **Auth:** `AUTH_SECRET`, `AUTH_URL`, optional GitHub/Google OAuth, optional generic OIDC (`AUTH_OIDC_*`), optional `TOPOLOGY_AIR_GAP=1`
 - **API / agents:** `TOPOLOGY_API_TOKEN`, `TOPOLOGY_URL`
 - **Attachments:** `ATTACHMENTS_DRIVER` (`local` \| `s3`), `ATTACHMENTS_DIR` (default `./data/attachments`)
 - **Trackers:** `TOPOLOGY_ISSUE_PROVIDER` (`mock` \| `jira` \| `linear` \| `github`) plus provider credentials
@@ -56,7 +58,7 @@ Never commit real OAuth or tracker tokens. Prefer `mock` for local issue filing 
 
 ## Database
 
-- Use `npm run db:migrate` (journaled Drizzle migrator, `drizzle/meta/_journal.json`). Fresh databases apply `0000_baseline`.
+- Use `npm run db:migrate` (journaled Drizzle migrator, `drizzle/meta/_journal.json`). Fresh databases apply `0000_baseline` through `0009_scm_feedback`.
 - After schema changes, run `npm run db:generate` to add a new journal entry, then `npm run db:migrate`.
 - Do not use `drizzle-kit push` in setup, CI, or production. `npm run db:push` remains a local escape hatch only.
 - Production image, Compose, backup, and upgrades: [docs/deploy.md](docs/deploy.md).

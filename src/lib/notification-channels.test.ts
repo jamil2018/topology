@@ -95,5 +95,21 @@ describe("notification-channels helpers", () => {
     });
     expect(completed.title).toContain("Nightly");
     expect(completed.body).toContain("9 passed");
+
+    const proposal = formatChannelMessage("proposal.created", {
+      proposalId: "p1",
+      entityType: "case",
+      diffCount: 2,
+    });
+    expect(proposal.title).toBe("New proposal");
+    expect(proposal.body).toContain("case");
+    expect(proposal.href).toContain("/proposals");
+
+    const issue = formatChannelMessage("issue.created", {
+      issue: { remoteKey: "LIN-9", title: "Cart total wrong" },
+      result: { id: "res-1", runId: "run-1" },
+    });
+    expect(issue.title).toContain("LIN-9");
+    expect(issue.href).toContain("/runs/run-1");
   });
 });

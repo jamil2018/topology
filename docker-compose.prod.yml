@@ -2,14 +2,18 @@
 #
 #   cp .env.example .env.prod
 #   # set AUTH_SECRET, AUTH_URL, and a strong POSTGRES_PASSWORD
-#   docker compose -f docker-compose.prod.yml up --build -d
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
+#
+# Compose fails fast when POSTGRES_PASSWORD or AUTH_SECRET are unset (no
+# silent "topology" defaults). Pass --env-file .env.prod so interpolation
+# and the app container both see the same secrets.
 #
 # The app image is built from ./Dockerfile. After a version tag (v*), GitHub
 # Actions publishes ghcr.io/<github.repository> (see docs/deploy.md). To run a
 # published tag instead of a local build:
 #
 #   TOPOLOGY_IMAGE=ghcr.io/<owner>/topology:<tag> \
-#     docker compose -f docker-compose.prod.yml up -d --no-build
+#     docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build
 
 services:
   postgres:
@@ -17,7 +21,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-topology}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-topology}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}
       POSTGRES_DB: ${POSTGRES_DB:-topology}
     volumes:
       - topology_prod_pgdata:/var/lib/postgresql/data
@@ -39,7 +43,9 @@ services:
       - path: .env.prod
         required: false
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-topology}:${POSTGRES_PASSWORD:-topology}@postgres:5432/${POSTGRES_DB:-topology}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-topology}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}@postgres:5432/${POSTGRES_DB:-topology}
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env.prod}
+      AUTH_URL: ${AUTH_URL:?Set AUTH_URL in .env.prod}
       HOST: 0.0.0.0
       HOSTNAME: 0.0.0.0
       PORT: "4317"

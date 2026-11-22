@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
@@ -12,6 +13,7 @@ import { HubPulse } from "@/components/hub-pulse";
 import { db } from "@/db";
 import { releases } from "@/db/schema";
 import { parseHubPersona } from "@/lib/hub-persona";
+import { readHubViewCookie } from "@/lib/hub-view-pref";
 import { getJourneyCoverage } from "@/lib/quality-graph";
 import { resolveActiveProject } from "@/lib/project";
 
@@ -57,14 +59,26 @@ export default async function HomePage({
       ? params.release
       : (releaseRows[0]?.id ?? null);
 
+  const hasUrlView = params.view === "overview" || params.view === "home";
+  const hasUrlPersona = typeof params.persona === "string";
+  const jar = await cookies();
+  const cookieView = readHubViewCookie(jar, workspaceId);
+  const initialView = hasUrlView
+    ? params.view === "overview"
+      ? "overview"
+      : "home"
+    : (cookieView ?? "home");
+
   return (
     <HubPulse
       pulse={pulseWithJourney}
       milestone={milestone}
       releases={releaseRows}
       selectedReleaseId={selectedReleaseId}
-      initialPersona={parseHubPersona(params.persona)}
-      initialView={params.view === "overview" ? "overview" : "home"}
+      initialPersona={hasUrlPersona ? parseHubPersona(params.persona) : null}
+      initialView={initialView}
+      hasUrlView={hasUrlView}
+      hasUrlPersona={hasUrlPersona}
     />
   );
 }
