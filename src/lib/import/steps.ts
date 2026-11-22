@@ -1,3 +1,5 @@
+export const STRUCTURED_STEPS_FIELD = "__topologyStructuredSteps";
+
 export type ImportStep = {
   action: string;
   expected?: string;
@@ -7,6 +9,7 @@ export type ImportStep = {
 export function formatSteps(steps: ImportStep[]): {
   steps: string;
   expectedResult: string;
+  [STRUCTURED_STEPS_FIELD]?: string;
 } {
   const actions: string[] = [];
   const expected: string[] = [];
@@ -22,6 +25,7 @@ export function formatSteps(steps: ImportStep[]): {
   return {
     steps: actions.join("\n"),
     expectedResult: expected.join("\n"),
+    ...(steps.length ? { [STRUCTURED_STEPS_FIELD]: JSON.stringify(steps) } : {}),
   };
 }
 
@@ -56,6 +60,7 @@ export function mergeStepRows(
   const merged: Record<string, string>[] = [];
   let current: Record<string, string> | null = null;
   let stepCount = 0;
+  let structured: ImportStep[] = [];
 
   const pick = (row: Record<string, string>, keys: string[] | undefined) => {
     if (!keys?.length) return "";
@@ -69,6 +74,7 @@ export function mergeStepRows(
     const data = pick(row, options.dataKeys);
     if (!action && !expected && !data) return;
     stepCount += 1;
+    structured.push({ action, expected, data });
     const actionLine = [action, data].filter(Boolean).join(" — ");
     const steps = current.steps ? `${current.steps}\n` : "";
     const expectedSoFar = current.expectedResult
@@ -80,27 +86,28 @@ export function mergeStepRows(
     }
   };
 
+  function flush(row: Record<string, string>) {
+    delete row.__group;
+    if (structured.length) row[STRUCTURED_STEPS_FIELD] = JSON.stringify(structured);
+    merged.push(row);
+  }
+
   for (const row of rows) {
     const group = firstFilled(row, options.groupKeys);
     const continuation =
       !group || (current && group.value === (current.__group ?? ""));
     if (!current || !continuation) {
-      if (current) {
-        delete current.__group;
-        merged.push(current);
-      }
+      if (current) flush(current);
       current = { ...row, steps: "", expectedResult: "" };
       current.__group = group?.value ?? "";
       stepCount = 0;
+      structured = [];
       appendStep(row);
       continue;
     }
     appendStep(row);
   }
-  if (current) {
-    delete current.__group;
-    merged.push(current);
-  }
+  if (current) flush(current);
   return merged;
 }
 
@@ -120,6 +127,6 @@ export function uniqueFields(
     fields.push(name);
   };
   extra.forEach(add);
-  for (const name of present) add(name);
+  for (const name of present) if (name !== STRUCTURED_STEPS_FIELD) add(name);
   return fields;
 }

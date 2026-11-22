@@ -39,6 +39,7 @@ export type ParsedImportBody = {
   content: string;
   filename: string;
   api: ImportApiConfig | null;
+  sourceNamespace: string | null;
 };
 
 export async function requireImportAccess(request: Request) {
@@ -131,6 +132,7 @@ export async function readImportBody(
   let content = "";
   let filename = "";
   let apiRaw: unknown;
+  let namespaceRaw: unknown;
 
   if (contentType.includes("multipart/form-data")) {
     let form: FormData;
@@ -149,6 +151,7 @@ export async function readImportBody(
     mappingRaw = form.get("mapping");
     dryRunRaw = form.get("dryRun");
     apiRaw = form.get("api");
+    namespaceRaw = form.get("sourceNamespace");
     const file = form.get("file");
     const text = form.get("content");
     if (file instanceof File) {
@@ -171,6 +174,7 @@ export async function readImportBody(
     mappingRaw = json.mapping;
     dryRunRaw = json.dryRun;
     apiRaw = json.api;
+    namespaceRaw = json.sourceNamespace;
     if (typeof json.content === "string") content = json.content;
     if (typeof json.filename === "string") filename = json.filename;
   }
@@ -196,6 +200,10 @@ export async function readImportBody(
     };
   }
 
+  if (namespaceRaw != null && (typeof namespaceRaw !== "string" || namespaceRaw.trim().length > 200)) {
+    return { ok: false, response: NextResponse.json({ error: "Invalid source namespace" }, { status: 400 }) };
+  }
+
   const dryRun =
     dryRunRaw === true ||
     dryRunRaw === "true" ||
@@ -211,6 +219,7 @@ export async function readImportBody(
       content,
       filename,
       api: parseApi(apiRaw),
+      sourceNamespace: typeof namespaceRaw === "string" ? namespaceRaw.trim() || null : null,
     },
   };
 }

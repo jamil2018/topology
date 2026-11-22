@@ -1,9 +1,8 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { apiTokens, users } from "@/db/schema";
+import { apiTokens, users, workspaceMembers, workspaces } from "@/db/schema";
 import {
-  API_TOKEN_SCOPES,
   parseTokenScopes,
   tokenHasScope,
   type ApiTokenScope,
@@ -142,7 +141,7 @@ export async function authenticateCiRequest(
         userId: user?.id ?? null,
         workspaceId: workspace.id,
         tokenId: null,
-        scopes: [...API_TOKEN_SCOPES],
+        scopes: ["read", "ci-write", "agent"],
       };
     }
   }
@@ -173,6 +172,17 @@ export async function authenticateCiRequest(
 
   const rejected = mismatchedCiProjectHeader(request, row.workspaceId);
   if (rejected) return rejected;
+  if (scopes.some((scope) => scope.startsWith("agent-"))) {
+    const [owner] = row.userId ? await db.select({ id: workspaceMembers.id }).from(workspaceMembers)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
+      .where(and(
+        eq(workspaceMembers.workspaceId, row.workspaceId),
+        eq(workspaceMembers.userId, row.userId),
+        isNull(workspaces.archivedAt),
+      )).limit(1) : [];
+    if (!owner) return { ok: false, status: 403, error: "Agent credential owner or project is inactive" };
+  }
+
 
   await db
     .update(apiTokens)

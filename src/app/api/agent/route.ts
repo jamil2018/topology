@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, lt } from "drizzle-orm";
 import { z } from "zod";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { dbErrorResponse, isUniqueViolation, readJsonBody } from "@/lib/http-errors";
 import { db } from "@/db";
-import { cases, runResults, runs, testImplementations, testIntents } from "@/db/schema";
+import { decodeListCursor, encodeListCursor, parseLimitParam } from "@/lib/list-pagination";
+import { listCasesPage } from "@/lib/queries/list-cases";
+import { isUuid } from "@/lib/queries/ids";
+import { readCaseRevision } from "@/lib/case-revision";
+import { loadCaseTcm } from "@/lib/tcm/case-tcm";
+import { seedManualRunResults } from "@/lib/tcm/seed-run";
+import {
+  caseStatusEnum, caseVersions, cases, customFieldDefs, folders, resultStatusEnum, runResults,
+  runs, runStatusEnum, runTemplates, sharedSteps, testImplementations, testIntents, testPlans, workspaces,
+} from "@/db/schema";
 import {
   createIssueFromResult,
   getScenarioContext,
@@ -12,24 +21,48 @@ import {
   syncIssuesOnPassingRetest,
   whatsPending,
 } from "@/lib/issues";
+import { AgentOperationError, runAgentOperation } from "@/lib/agent-operations";
+import { readGithubRunnerRequest } from "@/lib/github-runner";
 import { openTriageForResult } from "@/lib/ci-ingest";
 import {
   immutableMessageFor,
   isRunFrozen,
-  runImmutableResponse,
 } from "@/lib/run-immutability-http";
 
-async function requireToken(request: Request) {
-  return authenticateApiToken(request, { requiredScope: "agent" });
+const catalogResources = {
+  folders,
+  shared_steps: sharedSteps,
+  custom_fields: customFieldDefs,
+  plans: testPlans,
+  run_templates: runTemplates,
+} as const;
+
+function cursorId(params: URLSearchParams) {
+  const cursor = params.get("cursor");
+  if (cursor === null) return undefined;
+  const id = decodeListCursor(cursor)?.id;
+  return id && isUuid(id) ? id : null;
+}
+
+function pageById<Row extends { id: string }>(rows: Row[], limit: number) {
+  const selected = rows.slice(0, limit);
+  const last = selected.at(-1);
+  return {
+    selected,
+    nextCursor: rows.length > limit && last ? encodeListCursor({ id: last.id, sortValue: "" }) : null,
+  };
 }
 
 export async function GET(request: Request) {
-  const authResult = await requireToken(request);
+  const authResult = await authenticateApiToken(request);
   if (!authResult.ok) {
     return NextResponse.json(
-      { error: authResult.error },
+      { error: authResult.error, code: "AUTHORIZATION_FAILED" },
       { status: authResult.status },
     );
+  }
+  if (!authResult.scopes.includes("agent") && !authResult.scopes.includes("agent-read")) {
+    return NextResponse.json({ error: "Token scope insufficient", code: "CAPABILITY_REQUIRED" }, { status: 403 });
   }
   const workspaceId = authResult.workspaceId;
 
@@ -37,21 +70,78 @@ export async function GET(request: Request) {
   const resource = searchParams.get("resource") ?? "cases";
 
   if (resource === "cases") {
-    const q = searchParams.get("q")?.toLowerCase();
-    let rows = await db.query.cases.findMany({
-      where: eq(cases.workspaceId, workspaceId),
-      orderBy: [desc(cases.updatedAt)],
-      limit: 100,
-    });
-    if (q) {
-      rows = rows.filter(
-        (c) =>
-          c.key.toLowerCase().includes(q) ||
-          c.title.toLowerCase().includes(q) ||
-          c.tags.some((t) => t.toLowerCase().includes(q)),
-      );
+    const status = z.enum(caseStatusEnum.enumValues).optional().safeParse(searchParams.get("status") ?? undefined);
+    const cursor = searchParams.get("cursor");
+    if (!status.success || (cursor !== null && !isUuid(decodeListCursor(cursor)?.id ?? ""))) {
+      return NextResponse.json({ error: "Invalid status or cursor" }, { status: 400 });
     }
-    return NextResponse.json({ cases: rows });
+    const page = await listCasesPage(workspaceId, {
+      search: searchParams.get("q") ?? undefined,
+      statusFilter: status.data,
+      sort: "key",
+      dir: "asc",
+      limit: parseLimitParam(searchParams.get("limit"), 100),
+      cursor,
+    });
+    return NextResponse.json({
+      cases: page.items,
+      total: page.total,
+      nextCursor: page.nextCursor,
+    });
+  }
+
+  if (resource === "case") {
+    const id = searchParams.get("id");
+    const key = searchParams.get("key");
+    if ((!id && !key) || (id && !isUuid(id)) || (id && key)) {
+      return NextResponse.json({ error: "Provide one valid case id or key", code: "INVALID_ID" }, { status: 400 });
+    }
+    const row = await db.query.cases.findFirst({ where: and(
+      eq(cases.workspaceId, workspaceId),
+      id ? eq(cases.id, id) : eq(cases.key, key!),
+    ) });
+    if (!row) return NextResponse.json({ error: "Case not found", code: "CASE_NOT_FOUND" }, { status: 404 });
+    const [tcm, versions, revision] = await Promise.all([
+      loadCaseTcm(workspaceId, row.id),
+      db.query.caseVersions.findMany({
+        where: and(eq(caseVersions.workspaceId, workspaceId), eq(caseVersions.caseId, row.id)),
+        orderBy: [desc(caseVersions.version)],
+        limit: 20,
+        columns: { id: true, version: true, createdAt: true },
+      }),
+      readCaseRevision(workspaceId, row.id),
+    ]);
+    return NextResponse.json({ case: { ...row, ...tcm }, versions, revision: revision?.revision ?? null, href: `/cases/${encodeURIComponent(row.key)}` });
+  }
+
+  if (Object.hasOwn(catalogResources, resource)) {
+    const cursor = cursorId(searchParams);
+    if (cursor === null) return NextResponse.json({ error: "Invalid cursor", code: "INVALID_CURSOR" }, { status: 400 });
+    const limit = parseLimitParam(searchParams.get("limit"), 50);
+    const table = catalogResources[resource as keyof typeof catalogResources];
+    const rows = await db.select().from(table).where(and(
+      eq(table.workspaceId, workspaceId),
+      cursor ? lt(table.id, cursor) : undefined,
+    )).orderBy(desc(table.id)).limit(limit + 1);
+    const { selected, nextCursor } = pageById(rows, limit);
+    return NextResponse.json({ items: selected, nextCursor });
+  }
+
+  if (resource === "runs" && (searchParams.has("cursor") || searchParams.has("status") ||
+      searchParams.has("limit") || new URL(request.url).pathname === "/api/v1/agent")) {
+    const cursor = cursorId(searchParams);
+    const status = z.enum(runStatusEnum.enumValues).optional().safeParse(searchParams.get("status") ?? undefined);
+    if (cursor === null || !status.success) {
+      return NextResponse.json({ error: "Invalid status or cursor", code: "INVALID_FILTER" }, { status: 400 });
+    }
+    const limit = parseLimitParam(searchParams.get("limit"), 50);
+    const rows = await db.query.runs.findMany({ where: and(
+      eq(runs.workspaceId, workspaceId),
+      cursor ? lt(runs.id, cursor) : undefined,
+      status.data ? eq(runs.status, status.data) : undefined,
+    ), orderBy: [desc(runs.id)], limit: limit + 1 });
+    const { selected, nextCursor } = pageById(rows, limit);
+    return NextResponse.json({ runs: selected, nextCursor });
   }
 
   if (resource === "runs") {
@@ -64,28 +154,61 @@ export async function GET(request: Request) {
     return NextResponse.json({ runs: rows });
   }
 
+  if (resource === "workflow_request") {
+    const id = searchParams.get("id") ?? "";
+    if (!isUuid(id)) return NextResponse.json({ error: "Invalid request id", code: "INVALID_ID" }, { status: 400 });
+    const result = await readGithubRunnerRequest(workspaceId, id);
+    if (!result) return NextResponse.json({ error: "Workflow request not found", code: "WORKFLOW_REQUEST_NOT_FOUND" }, { status: 404 });
+    return NextResponse.json({ request: result });
+  }
+
+  if (resource === "result") {
+    const id = searchParams.get("id") ?? "";
+    if (!isUuid(id)) return NextResponse.json({ error: "Invalid result id", code: "INVALID_ID" }, { status: 400 });
+    const projectRunIds = db.select({ id: runs.id }).from(runs).where(eq(runs.workspaceId, workspaceId));
+    const row = await db.query.runResults.findFirst({
+      where: and(eq(runResults.id, id), inArray(runResults.runId, projectRunIds)),
+      with: { case: true, run: true, stepResults: true },
+    });
+    if (!row) return NextResponse.json({ error: "Result not found", code: "RESULT_NOT_FOUND" }, { status: 404 });
+    return NextResponse.json({ result: row, href: `/runs/${row.runId}` });
+  }
+
   if (resource === "results") {
     const runId = searchParams.get("runId");
-    const status = searchParams.get("status");
-    if (runId && !z.string().uuid().safeParse(runId).success) {
+    const status = z.enum(resultStatusEnum.enumValues).optional().safeParse(searchParams.get("status") ?? undefined);
+    const rawCursor = searchParams.get("cursor");
+    const cursor = decodeListCursor(rawCursor);
+    if (!status.success || (rawCursor !== null && !isUuid(cursor?.id ?? ""))) {
+      return NextResponse.json({ error: "Invalid status or cursor" }, { status: 400 });
+    }
+    if (runId && !isUuid(runId)) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
-    if (runId) {
-      const run = await db.query.runs.findFirst({
-        where: and(eq(runs.id, runId), eq(runs.workspaceId, workspaceId)),
-      });
-      if (!run) {
-        return NextResponse.json({ error: "Run not found" }, { status: 404 });
-      }
+    const projectRuns = db.select({ id: runs.id }).from(runs).where(and(
+      eq(runs.workspaceId, workspaceId),
+      runId ? eq(runs.id, runId) : undefined,
+    ));
+    if (runId && (await projectRuns).length === 0) {
+      return NextResponse.json({ error: "Run not found" }, { status: 404 });
     }
+    const limit = searchParams.has("limit") ? parseLimitParam(searchParams.get("limit"), 100) : 200;
     const rows = await db.query.runResults.findMany({
-      where: runId ? eq(runResults.runId, runId) : undefined,
+      where: and(
+        inArray(runResults.runId, projectRuns),
+        status.data ? eq(runResults.status, status.data) : undefined,
+        cursor ? lt(runResults.id, cursor.id) : undefined,
+      ),
       with: { case: true, run: true },
-      limit: 200,
+      orderBy: [desc(runResults.id)],
+      limit: limit + 1,
     });
-    const scoped = rows.filter((r) => r.run?.workspaceId === workspaceId);
-    const filtered = status ? scoped.filter((r) => r.status === status) : scoped;
-    return NextResponse.json({ results: filtered });
+    const results = rows.slice(0, limit);
+    const last = results.at(-1);
+    return NextResponse.json({
+      results,
+      nextCursor: rows.length > limit && last ? encodeListCursor({ id: last.id, sortValue: "" }) : null,
+    });
   }
 
   if (resource === "whats_pending") {
@@ -232,6 +355,7 @@ const createRunSchema = z.object({
 const recordResultSchema = z.object({
   action: z.literal("record_result"),
   runId: z.string().uuid(),
+  resultId: z.string().uuid().optional(),
   caseId: z.string().uuid().optional(),
   caseKey: z.string().optional(),
   status: z.enum(["untested", "passed", "failed", "blocked", "skipped"]),
@@ -308,7 +432,7 @@ const compareReleasesSchema = z
   );
 
 export async function POST(request: Request) {
-  const authResult = await requireToken(request);
+  const authResult = await authenticateApiToken(request);
   if (!authResult.ok) {
     return NextResponse.json(
       { error: authResult.error },
@@ -324,6 +448,41 @@ export async function POST(request: Request) {
     body && typeof body === "object" && "action" in body
       ? (body as { action?: unknown }).action
       : undefined;
+
+  const versioned = new URL(request.url).pathname === "/api/v1/agent";
+  const scoped = authResult.scopes.some((scope) => scope.startsWith("agent-"));
+  if (versioned || scoped) {
+    try {
+      const result = await runAgentOperation(authResult, request.headers.get("Idempotency-Key"), body);
+      return NextResponse.json(result.body, { status: result.status });
+    } catch (err) {
+      if (err instanceof AgentOperationError) {
+        return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+      }
+      if (isUniqueViolation(err)) {
+        return NextResponse.json({ error: "Resource already exists", code: "RESOURCE_CONFLICT" }, { status: 409 });
+      }
+      console.error("Agent operation failed", err instanceof Error ? err.name : "unknown");
+      return NextResponse.json({ error: "Agent operation failed", code: "OPERATION_FAILED" }, { status: 500 });
+    }
+  }
+
+  if (!authResult.scopes.includes("agent")) {
+    return NextResponse.json({ error: "Token scope insufficient", code: "CAPABILITY_REQUIRED" }, { status: 403 });
+  }
+  // Keep side-effect-free legacy methods available during and after cutover.
+  if (action !== "compare_releases" && authResult.tokenId) {
+    const [project] = await db.select({
+      legacyAgentWrites: workspaces.legacyAgentWrites,
+      archivedAt: workspaces.archivedAt,
+    }).from(workspaces).where(eq(workspaces.id, workspaceId));
+    if (!project?.legacyAgentWrites || project.archivedAt) {
+      return NextResponse.json({
+        error: "Legacy agent writes are disabled. Use project-scoped agent capabilities.",
+        code: "LEGACY_WRITE_DISABLED",
+      }, { status: 403 });
+    }
+  }
 
   try {
     if (action === "create_case") {
@@ -389,26 +548,21 @@ export async function POST(request: Request) {
         });
       }
 
-      const [run] = await db
-        .insert(runs)
-        .values({
+      const run = await db.transaction(async (tx) => {
+        const [created] = await tx.insert(runs).values({
           workspaceId,
           name: parsed.data.name,
           description: parsed.data.description,
           status: "planned",
           createdById: authResult.userId,
-        })
-        .returning();
-
-      if (caseRows.length) {
-        await db.insert(runResults).values(
-          caseRows.map((c) => ({
-            runId: run.id,
-            caseId: c.id,
-            status: "untested" as const,
-          })),
-        );
-      }
+        }).returning();
+        await seedManualRunResults({
+          workspaceId,
+          runId: created.id,
+          caseIds: caseRows.map((row) => row.id),
+        }, tx);
+        return created;
+      });
 
       return NextResponse.json({ run, caseCount: caseRows.length });
     }
@@ -421,57 +575,45 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      const run = await db.query.runs.findFirst({
-        where: and(
-          eq(runs.id, parsed.data.runId),
+      const { runId, resultId, status, notes } = parsed.data;
+      const outcome = await db.transaction(async (tx) => {
+        const [run] = await tx.select().from(runs).where(and(
+          eq(runs.id, runId),
           eq(runs.workspaceId, workspaceId),
-        ),
-      });
-      if (!run) {
-        return NextResponse.json({ error: "Run not found" }, { status: 404 });
-      }
-      if (isRunFrozen(run.status)) {
-        return runImmutableResponse(immutableMessageFor(run.status));
-      }
-      let caseId = parsed.data.caseId;
-      if (!caseId && parsed.data.caseKey) {
-        const c = await db.query.cases.findFirst({
-          where: and(
+        )).for("update");
+        if (!run) return { error: "Run not found", status: 404 } as const;
+        if (isRunFrozen(run.status)) return { error: immutableMessageFor(run.status), status: 409 } as const;
+
+        let caseId = parsed.data.caseId;
+        if (!resultId && !caseId && parsed.data.caseKey) {
+          const found = await tx.query.cases.findFirst({ where: and(
             eq(cases.key, parsed.data.caseKey),
             eq(cases.workspaceId, workspaceId),
-          ),
-        });
-        caseId = c?.id;
-      }
-      if (!caseId) {
-        return NextResponse.json({ error: "caseId required" }, { status: 400 });
-      }
-      const [updated] = await db
-        .update(runResults)
-        .set({
-          status: parsed.data.status,
-          notes: parsed.data.notes,
-          executedById: authResult.userId,
-          executedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(runResults.runId, parsed.data.runId),
-            eq(runResults.caseId, caseId),
-          ),
-        )
-        .returning();
-      if (!updated) {
-        return NextResponse.json({ error: "Result not found" }, { status: 404 });
-      }
+          ) });
+          caseId = found?.id;
+        }
+        if (!resultId && !caseId) return { error: "caseId or resultId required", status: 400 } as const;
+        const selected = await tx.query.runResults.findMany({ where: and(
+          eq(runResults.runId, runId),
+          resultId ? eq(runResults.id, resultId) : eq(runResults.caseId, caseId!),
+        ), limit: 2 });
+        if (selected.length > 1) return { error: "Multiple iterations match. Provide resultId", status: 409 } as const;
+        if (!selected.length) return { error: "Result not found", status: 404 } as const;
+        const [updated] = await tx.update(runResults).set({
+          status, notes, executedById: authResult.userId, executedAt: new Date(),
+        }).where(eq(runResults.id, selected[0].id)).returning();
+        return { updated };
+      });
+      if ("error" in outcome) return NextResponse.json({ error: outcome.error }, { status: outcome.status });
+      const { updated } = outcome;
       if (updated.status === "failed" || updated.status === "blocked") {
         await openTriageForResult(updated.id);
       }
-      if (updated.status === "passed" && caseId) {
+      if (updated.status === "passed" && updated.caseId) {
         try {
-          await syncIssuesOnPassingRetest({ workspaceId, caseId });
+          await syncIssuesOnPassingRetest({ workspaceId, caseId: updated.caseId });
         } catch {
-          // Outbound close is best-effort; the result is already recorded.
+          // Outbound close is best-effort during legacy compatibility.
         }
       }
       return NextResponse.json({ result: updated });

@@ -12,9 +12,9 @@ Vendor credentials are used for that request only. They are not stored.
 2. **Preview mapping** returns source column names, a suggested mapping onto Topology fields, counts, and up to five sample rows. Nothing is written.
 3. Adjust the mapping if a column was guessed wrong.
 4. **Dry run** applies the mapping, reports how many cases would be created, and lists keys that already exist. Still no writes.
-5. **Import cases** inserts new cases. Existing keys in the project are skipped. Missing folders are created by name (a path such as `Auth / Recovery` becomes a single folder name, same as CSV import).
+5. **Import cases** inserts new cases. Existing keys in the project are skipped. Folder paths such as `Auth / Recovery` create nested folders. A flat folder from an earlier vendor import is reused when its full name matches.
 
-Duplicate keys inside the file are also skipped after the first row.
+Duplicate keys or source IDs inside the file are skipped. A persisted source ID detects reimports after a local case key change. Pass the same `sourceNamespace` for repeated uploads from one source project, and a distinct namespace for a different source project. API imports default to the configured base URL and project.
 
 ## Topology fields
 
@@ -24,7 +24,7 @@ Duplicate keys inside the file are also skipped after the first row.
 | `title` | Required. |
 | `description` | Free text. |
 | `preconditions` | Free text. |
-| `steps` | Plain text. Structured `case_steps` are not required for import. |
+| `steps` | Structured vendor steps are stored with separate action, data, and expected result fields where available. Text-only formats remain supported. |
 | `expectedResult` | Plain text. Per-step expected results are numbered and joined. |
 | `priority` | `P0`–`P3`. Vendor labels such as Critical / High / Medium / Low are mapped. |
 | `status` | `draft`, `ready`, `blocked`, `deprecated`. |
@@ -37,7 +37,7 @@ Duplicate keys inside the file are also skipped after the first row.
 
 | Source | Shape |
 | --- | --- |
-| XML | Suite export (`<suite> / <sections> / <section> / <cases> / <case>`). Reads `custom/preconds`, `custom/steps_separated`, or text `custom/steps`. Nested sections become `Parent / Child`. |
+| XML | Suite export (`<suite> / <sections> / <section> / <cases> / <case>`). Reads `custom/preconds`, `custom/steps_separated`, or text `custom/steps`. Nested sections retain their hierarchy. |
 | CSV | Typical columns: `ID`, `Title`, `Section Hierarchy`, `Preconditions`, `Steps (Step)`, `Steps (Expected Result)`, `Priority`, `References`. |
 | JSON | API payload `{ cases, sections }` or a raw `cases` array (`custom_preconds`, `custom_steps_separated`, `priority_id`, `section_id`). |
 | API | `GET {base}/index.php?/api/v2/get_cases/{projectId}` plus `get_sections`. Basic auth (`email` + API key). |
@@ -104,7 +104,7 @@ Response includes `sourceFields`, `suggestedMapping`, `mapping`, `counts`, `samp
 
 Same body as preview, plus `dryRun: true | false`.
 
-Dry run returns `wouldCreate`, `wouldSkip` (existing keys), `sample`, and `errors`. Import returns `created`, `skipped`, and the inserted `{ id, key, title }` rows.
+Dry run returns `wouldCreate`, `wouldSkip` (existing keys), `sample`, and `errors`. Import returns `created`, `skipped`, and the inserted `{ id, key, title }` rows. Both apply and dry run include `skipDetails` for source identity, case-key, and in-file conflicts. Write failures appear in apply results.
 
 Local, loopback, and private API URLs are rejected (same SSRF rules as outbound webhooks). Redirects are not followed.
 

@@ -22,10 +22,13 @@ Usage:
   topology runs submit-thread --run-id <id> --shard <i> --file <junit.xml>
   topology runs complete --run-id <id>
   topology affected (--commit <sha> | --pr <n> | --path <p> [--path <p>...] | --paths a,b) [--rule <pattern=componentKey>]...
+  topology release evidence --pull-request-id <uuid>
   topology release analyze [--file input.json]
   topology release compare --before a.json --after b.json
   topology coverage [filter]
   topology test get <keyOrId>
+  topology agent list cases|runs|results [--q <text>] [--status <status>] [--cursor <cursor>]
+  topology agent apply <operation.json> --idempotency-key <key>
   topology query '<dsl>'
 
 Examples:
@@ -88,6 +91,7 @@ async function api(
   method: string,
   pathname: string,
   body?: unknown,
+  headers?: Record<string, string>,
 ): Promise<Json> {
   const res = await fetch(`${baseUrl()}${pathname}`, {
     method,
@@ -95,6 +99,7 @@ async function api(
       Authorization: `Bearer ${token()}`,
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...headers,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -305,6 +310,8 @@ async function cmdAffected(args: string[]) {
   if (paths.length > 0) body.paths = paths;
   if (commitSha?.trim()) body.commitSha = commitSha.trim();
   if (pr != null) body.pr = pr;
+  const repositoryId = getFlag(args, "--repository-id");
+  if (repositoryId) body.repositoryId = repositoryId;
 
   const data = await api("POST", "/api/affected", body);
   console.log(JSON.stringify(data, null, 2));
@@ -365,6 +372,28 @@ async function cmdTestGet(args: string[]) {
   console.log(JSON.stringify(data, null, 2));
 }
 
+async function cmdAgent(sub: string | undefined, args: string[]) {
+  const resource = args[0];
+  if (sub === "list" && ["cases", "runs", "results"].includes(resource ?? "")) {
+    const params = new URLSearchParams({ resource });
+    for (const name of ["q", "status", "cursor", "limit", "runId"]) {
+      const value = getFlag(args, `--${name}`);
+      if (value !== undefined) params.set(name, value);
+    }
+    console.log(JSON.stringify(await api("GET", `/api/v1/agent?${params}`), null, 2));
+    return;
+  }
+  if (sub === "apply") {
+    const key = getFlag(args, "--idempotency-key");
+    if (!resource || resource.startsWith("-") || !key) usage();
+    const input = JSON.parse(await readFile(path.resolve(resource), "utf8"));
+    const data = await api("POST", "/api/v1/agent", input, { "Idempotency-Key": key });
+    console.log(JSON.stringify(data, null, 2));
+    return;
+  }
+  usage();
+}
+
 async function main() {
   const [, , cmd, sub, ...rest] = process.argv;
   if (!cmd) usage();
@@ -407,6 +436,13 @@ async function main() {
     await cmdReleaseAnalyze(rest);
     return;
   }
+  if (cmd === "release" && sub === "evidence") {
+    const pullRequestId = getFlag(rest, "--pull-request-id");
+    if (!pullRequestId) usage();
+    const query = new URLSearchParams({ pullRequestId });
+    console.log(JSON.stringify(await api("GET", `/api/releases/evidence?${query}`), null, 2));
+    return;
+  }
   if (cmd === "release" && sub === "compare") {
     await cmdReleaseCompare(rest);
     return;
@@ -419,6 +455,10 @@ async function main() {
   }
   if (cmd === "test" && sub === "get") {
     await cmdTestGet(rest);
+    return;
+  }
+  if (cmd === "agent") {
+    await cmdAgent(sub, rest);
     return;
   }
   if (cmd === "query") {

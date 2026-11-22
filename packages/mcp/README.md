@@ -1,13 +1,13 @@
 # @topology/mcp
 
-MCP agent plugin for self-hosted [Topology](https://github.com/jamil2018/topology). Agents call the same Bearer-authenticated agent REST API as the UI; **graph writes from AI go through human-gated proposals** (`propose_coverage`), never silent catalog mutations.
+MCP agent plugin for self-hosted [Topology](https://github.com/jamil2018/topology). Agents call the same Bearer-authenticated agent REST API and shared domain commands. Scoped catalog changes go through human review with `propose_coverage`. See [agent workflows](../../docs/agent-workflows.md) for credential setup and legacy cutover.
 
 ## Env
 
 | Variable | Description |
 | --- | --- |
 | `TOPOLOGY_URL` | Base URL of your Topology instance (e.g. `http://127.0.0.1:4317`) |
-| `TOPOLOGY_API_TOKEN` | Bearer token with the `agent` scope (`Settings → Security` API tokens, or `TOPOLOGY_API_TOKEN` in server `.env.local` when env bypass is enabled) |
+| `TOPOLOGY_API_TOKEN` | Project token with `agent-read` and the capabilities needed for writes |
 
 ## Tools
 
@@ -16,10 +16,20 @@ MCP agent plugin for self-hosted [Topology](https://github.com/jamil2018/topolog
 | Tool | Description |
 | --- | --- |
 | `list_cases` | List or search test cases |
-| `create_case` | Create a test case |
+| `get_case` | Read a case with steps, datasets, custom fields and recent version history |
+| `list_catalog` | List folders, shared steps, field definitions, plans, and templates |
+| `create_case` | Create a test case using legacy compatibility |
 | `list_runs` | List recent test runs |
 | `create_run` | Create a run from case IDs or keys |
 | `list_results` | List results, optionally by run or status |
+| `get_result` | Read the result, iteration, and structured step snapshots |
+| `create_assigned_run` | Create an assigned manual run of ready cases |
+| `record_observation` | Record an exact result or step through the scoped API |
+| `create_retest` | Create an assigned run linked to failed or blocked source results |
+| `handoff_run` | Reassign an owned manual run to another project member with a note |
+| `request_pr_workflow` | Request an approved GitHub Actions workflow |
+| `get_workflow_request` | Read the workflow receipt and evidence link |
+| `get_pr_release_evidence` | Read the release matrix and sign-off status |
 | `record_result` | Record pass / fail / block / skip for a case in a run |
 | `whats_pending` | Hub pending work: untested results, failures without issues, retest queue |
 | `get_scenario_context` | Aggregate cases, recent results, open issues, and latest runs for a query |
@@ -47,7 +57,7 @@ MCP agent plugin for self-hosted [Topology](https://github.com/jamil2018/topolog
 
 | Tool | Description |
 | --- | --- |
-| `propose_coverage` | Queue a coverage proposal (create intent / link edge) for **human review**. Does **not** write to the graph until accepted. |
+| `propose_coverage` | Queue a case, automation-link, or coverage proposal for human review. Pass `idempotencyKey` with scoped credentials. |
 
 ## Cursor
 

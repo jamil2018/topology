@@ -1,133 +1,151 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { cases, folders } from "@/db/schema";
-import type { MappedCase } from "./types";
+import { caseImportSources, cases, folders } from "@/db/schema";
+import { isUniqueViolation } from "@/lib/http-errors";
+import { persistCase } from "@/lib/case-create";
+import type { ImportProvider, MappedCase } from "./types";
 
-export type PersistImportResult = {
-  created: Array<{ id: string; key: string; title: string; folderId: string | null }>;
-  skipped: string[];
-  wouldCreate: number;
-  wouldSkip: string[];
-  folderIds: string[];
-  primaryFolderId: string | null;
-};
-
-export async function persistImportedCases(options: {
+type ImportedCase = { id: string; key: string; title: string; folderId: string | null };
+type Skip = { key: string; reason: "existing_key" | "existing_source" | "duplicate_input" | "write_failed" };
+type ImportOptions = {
   workspaceId: string;
   actorId: string;
   rows: MappedCase[];
   dryRun: boolean;
-}): Promise<PersistImportResult> {
-  const existing = await db.query.cases.findMany({
-    where: eq(cases.workspaceId, options.workspaceId),
-    columns: { key: true },
-  });
-  const existingKeys = new Set(existing.map((row) => row.key));
-  const seen = new Set<string>();
-  const wouldSkip: string[] = [];
-  const toInsert: MappedCase[] = [];
+  provider: ImportProvider;
+  sourceNamespace: string;
+};
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-  for (const row of options.rows) {
-    if (existingKeys.has(row.key) || seen.has(row.key)) {
-      wouldSkip.push(row.key);
-      continue;
+async function findFolder(tx: Transaction, workspaceId: string, path: string) {
+  const labels = path.replace(/^\/+/, "").split(/\s+\/\s+/).map((part) => part.trim()).filter(Boolean);
+  if (!labels.length) return null;
+  // Older imports stored the complete label in a single root folder.
+  const [legacy] = await tx.select({ id: folders.id }).from(folders).where(and(
+    eq(folders.workspaceId, workspaceId),
+    sql`${folders.parentId} is null and lower(${folders.name}) = lower(${path})`,
+  )).orderBy(folders.id).limit(1);
+  if (legacy) return legacy.id;
+
+  let parentId: string | null = null;
+  for (const name of labels) {
+    const [found] = await tx.select({ id: folders.id }).from(folders).where(and(
+      eq(folders.workspaceId, workspaceId),
+      sql`${folders.parentId} is not distinct from ${parentId}::uuid
+        and lower(${folders.name}) = lower(${name})`,
+    )).orderBy(folders.id).limit(1);
+    if (found) {
+      parentId = found.id;
+    } else {
+      const [created]: Array<{ id: string }> = await tx.insert(folders).values({ workspaceId, name, parentId }).returning({ id: folders.id });
+      parentId = created.id;
     }
-    seen.add(row.key);
-    toInsert.push(row);
   }
+  return parentId;
+}
 
-  if (options.dryRun) {
-    return {
-      created: [],
-      skipped: wouldSkip,
-      wouldCreate: toInsert.length,
-      wouldSkip,
-      folderIds: [],
-      primaryFolderId: null,
-    };
-  }
-
-  const existingFolders = await db
-    .select()
-    .from(folders)
-    .where(eq(folders.workspaceId, options.workspaceId));
-  const folderByName = new Map(
-    existingFolders.map((folder) => [folder.name.toLowerCase(), folder]),
+function sourceWhere(options: ImportOptions) {
+  return and(
+    eq(caseImportSources.workspaceId, options.workspaceId),
+    eq(caseImportSources.provider, options.provider),
+    eq(caseImportSources.namespace, options.sourceNamespace),
   );
+}
 
-  const created: PersistImportResult["created"] = [];
-  const skipped = [...wouldSkip];
-  const folderIdSet = new Set<string>();
-
-  for (const row of toInsert) {
-    let folderId: string | null = null;
-    if (row.folder) {
-      const key = row.folder.toLowerCase();
-      let folder = folderByName.get(key);
-      if (!folder) {
-        const [inserted] = await db
-          .insert(folders)
-          .values({ workspaceId: options.workspaceId, name: row.folder })
-          .returning();
-        folder = inserted;
-        folderByName.set(key, inserted);
-      }
-      folderId = folder.id;
-      folderIdSet.add(folder.id);
+async function persistRow(options: ImportOptions, row: MappedCase): Promise<ImportedCase | Skip> {
+  const { workspaceId, actorId } = options;
+  return db.transaction(async (tx) => {
+    // Serialize folder creation and source reconciliation across vendor imports.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`case-import:${workspaceId}`}, 0))`);
+    if (row.sourceId) {
+      const [existing] = await tx.select({ id: caseImportSources.caseId }).from(caseImportSources)
+        .where(and(sourceWhere(options), eq(caseImportSources.sourceId, row.sourceId)));
+      if (existing) return { key: row.key, reason: "existing_source" };
     }
+    const [existing] = await tx.select({ id: cases.id }).from(cases)
+      .where(and(eq(cases.workspaceId, workspaceId), eq(cases.key, row.key)));
+    if (existing) return { key: row.key, reason: "existing_key" };
 
-    const tags = row.tags
-      .split(/[;,]/)
-      .map((tag) => tag.trim())
-      .filter(Boolean);
-
-    try {
-      const duplicate = await db.query.cases.findFirst({
-        where: and(
-          eq(cases.key, row.key),
-          eq(cases.workspaceId, options.workspaceId),
-        ),
+    const folderId = row.folder ? await findFolder(tx, workspaceId, row.folder) : null;
+    const created = await persistCase(tx, workspaceId, actorId, {
+      key: row.key,
+      title: row.title,
+      description: row.description,
+      preconditions: row.preconditions,
+      steps: row.steps,
+      expectedResult: row.expectedResult,
+      priority: row.priority,
+      status: row.status,
+      folderId,
+      tags: row.tags.split(/[;,]/).map((tag) => tag.trim()).filter(Boolean),
+      structuredSteps: row.structuredSteps?.map((step) => ({
+        action: step.action, expected: step.expected ?? "", data: step.data ?? "",
+      })),
+    });
+    if (row.sourceId) {
+      await tx.insert(caseImportSources).values({
+        workspaceId, provider: options.provider, namespace: options.sourceNamespace,
+        sourceId: row.sourceId, caseId: created.id,
       });
-      if (duplicate) {
-        skipped.push(row.key);
-        continue;
-      }
-      const [createdRow] = await db
-        .insert(cases)
-        .values({
-          workspaceId: options.workspaceId,
-          key: row.key,
-          title: row.title,
-          description: row.description,
-          preconditions: row.preconditions,
-          steps: row.steps,
-          expectedResult: row.expectedResult,
-          priority: row.priority,
-          status: row.status,
-          folderId,
-          tags,
-          createdById: options.actorId,
-        })
-        .returning({
-          id: cases.id,
-          key: cases.key,
-          title: cases.title,
-          folderId: cases.folderId,
-        });
-      created.push(createdRow);
-      if (createdRow.folderId) folderIdSet.add(createdRow.folderId);
-    } catch {
-      skipped.push(row.key);
+    }
+    return { id: created.id, key: created.key, title: created.title, folderId: created.folderId };
+  });
+}
+
+export async function persistImportedCases(options: ImportOptions) {
+  const imported = new Set<string>();
+  const keys = new Set<string>();
+  const skipped: Skip[] = [];
+  const eligible: MappedCase[] = [];
+  const created: ImportedCase[] = [];
+  const distinctKeys = [...new Set(options.rows.map(({ key }) => key))];
+  const sourceIds = [...new Set(options.rows.flatMap(({ sourceId }) => sourceId ? [sourceId] : []))];
+
+  // Bound parameter counts for uploads with many rows.
+  for (let start = 0; start < distinctKeys.length; start += 500) {
+    const rows = await db.select({ key: cases.key }).from(cases).where(and(
+      eq(cases.workspaceId, options.workspaceId), inArray(cases.key, distinctKeys.slice(start, start + 500)),
+    ));
+    rows.forEach(({ key }) => keys.add(key));
+  }
+  for (let start = 0; start < sourceIds.length; start += 500) {
+    const rows = await db.select({ id: caseImportSources.sourceId }).from(caseImportSources)
+      .where(and(sourceWhere(options), inArray(caseImportSources.sourceId, sourceIds.slice(start, start + 500))));
+    rows.forEach(({ id }) => imported.add(id));
+  }
+
+  const seenKeys = new Set<string>();
+  const seenIds = new Set<string>();
+  for (const row of options.rows) {
+    const sourceId = row.sourceId;
+    if (sourceId && imported.has(sourceId)) skipped.push({ key: row.key, reason: "existing_source" });
+    else if (keys.has(row.key)) skipped.push({ key: row.key, reason: "existing_key" });
+    else if (seenKeys.has(row.key) || (sourceId && seenIds.has(sourceId))) {
+      skipped.push({ key: row.key, reason: "duplicate_input" });
+    } else {
+      seenKeys.add(row.key);
+      if (sourceId) seenIds.add(sourceId);
+      eligible.push(row);
     }
   }
 
-  const folderIds = [...folderIdSet];
+  if (!options.dryRun) {
+    for (const row of eligible) {
+      try {
+        const saved = await persistRow(options, row);
+        if ("reason" in saved) skipped.push(saved);
+        else created.push(saved);
+      } catch (error) {
+        skipped.push({ key: row.key, reason: isUniqueViolation(error) ? "existing_key" : "write_failed" });
+      }
+    }
+  }
+  const folderIds = [...new Set(created.flatMap(({ folderId }) => folderId ? [folderId] : []))];
+  const skippedKeys = skipped.map(({ key }) => key);
   return {
-    created,
-    skipped,
-    wouldCreate: created.length,
-    wouldSkip: skipped,
-    folderIds,
-    primaryFolderId: folderIds.length === 1 ? folderIds[0]! : null,
+    created, skipped: skippedKeys, skipDetails: skipped,
+    wouldCreate: options.dryRun ? eligible.length : created.length,
+    wouldSkip: skippedKeys, folderIds,
+    primaryFolderId: folderIds.length === 1 ? folderIds[0] : null,
   };
 }

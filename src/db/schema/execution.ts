@@ -1,6 +1,7 @@
 import {
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -22,7 +23,7 @@ import {
 } from "./enums";
 import { cases, caseSteps, folders, sharedSteps } from "./cases";
 import { users, workspaces } from "./identity";
-import { commits, pullRequests } from "./integrations";
+import { apiTokens, commits, pullRequests, repositories } from "./integrations";
 import { failureSignatures, testImplementations } from "./quality";
 
 export const environments = pgTable(
@@ -91,6 +92,43 @@ export const runs = pgTable("runs", {
   index("runs_environment_id_idx").on(table.environmentId),
 ]);
 
+export type RunnerCaseRevision = { id: string; key: string; intentId: string | null; revision: string };
+export type RunnerEvidenceMatch = "matched" | "unmapped" | "ambiguous" | "unselected" | "stale_revision";
+
+export const githubRunnerRequests = pgTable("github_runner_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  repositoryId: uuid("repository_id").notNull().references(() => repositories.id, { onDelete: "cascade" }),
+  pullRequestId: uuid("pull_request_id").notNull().references(() => pullRequests.id, { onDelete: "cascade" }),
+  reporterTokenId: uuid("reporter_token_id").references(() => apiTokens.id, { onDelete: "set null" }),
+  commitSha: text("commit_sha").notNull(),
+  workflow: text("workflow").notNull(),
+  ref: text("ref").notNull(),
+  environment: text("environment").notNull(),
+  status: text("status").$type<"queued" | "dispatching" | "dispatched" | "rejected" | "unknown" | "ingested">().notNull().default("queued"),
+  detail: text("detail"),
+  providerRunId: text("provider_run_id"),
+  topologyRunId: uuid("topology_run_id").references(() => runs.id, { onDelete: "set null" }),
+  reportHash: text("report_hash"),
+  caseRevisions: jsonb("case_revisions").$type<RunnerCaseRevision[]>().notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+}, (table) => [
+  index("github_runner_requests_workspace_idx").on(table.workspaceId),
+  unique("github_runner_requests_provider_unique").on(table.repositoryId, table.providerRunId),
+]);
+
+export const prReleaseSignoffs = pgTable("pr_release_signoffs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  pullRequestId: uuid("pull_request_id").notNull().references(() => pullRequests.id, { onDelete: "cascade" }),
+  actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+  commitSha: text("commit_sha").notNull(),
+  digest: text("digest").notNull(),
+  evidence: jsonb("evidence").notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+}, (table) => [unique("pr_release_signoffs_evidence_unique").on(table.pullRequestId, table.digest)]);
+
 export const runResults = pgTable(
   "run_results",
   {
@@ -107,6 +145,8 @@ export const runResults = pgTable(
     ),
     /** Browser/os (and similar) snapshot from the execution protocol. */
     environmentJson: text("environment_json"),
+    caseRevision: text("case_revision"),
+    evidenceMatch: text("evidence_match").$type<RunnerEvidenceMatch>(),
     externalKey: text("external_key"),
     classname: text("classname"),
     title: text("title"),

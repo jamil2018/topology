@@ -7,6 +7,7 @@ import { Button, Input } from "@heroui/react";
 import { abortCleanup, isAbortError } from "@/lib/abort";
 import { gapHref, gapLabel } from "./hub-widgets";
 import { useProjectActions } from "./project-actions";
+import { PrReleaseEvidence } from "./pr-release-evidence";
 import { StatusChip } from "./status-chip";
 
 type ImpactEntity = { id?: string; key: string; title?: string };
@@ -16,6 +17,8 @@ type AffectedResponse = {
   paths: string[];
   pathsSource?: string;
   caseIds?: string[];
+  rankedCases?: Array<{ id: string; title: string; key: string; priority: string; href: string }>;
+  pullRequestId?: string | null;
   summary: {
     components: number;
     requirements: number;
@@ -29,6 +32,7 @@ type AffectedResponse = {
     requirements: ImpactEntity[];
     gaps: GapHint[];
     components: ImpactEntity[];
+    unmappedPaths?: string[];
   };
   error?: string;
 };
@@ -38,7 +42,8 @@ type PullRequestRow = {
   number: number;
   title: string | null;
   status: string;
-  head: string | null;
+  repositoryId?: string;
+  head?: string | null;
 };
 
 function entityHref(
@@ -101,6 +106,7 @@ export function ImpactPanel() {
   const [draftPending, setDraftPending] = useState(false);
   const [commitSha, setCommitSha] = useState("");
   const [prNumber, setPrNumber] = useState("");
+  const [selectedPr, setSelectedPr] = useState<PullRequestRow | null>(null);
   const [pathsCsv, setPathsCsv] = useState("");
   const [result, setResult] = useState<AffectedResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +117,7 @@ export function ImpactPanel() {
   useEffect(() => {
     setResult(null);
     setRecentPrs([]);
+    setSelectedPr(null);
     setReposConnected(null);
     setError(null);
     setDraftMessage(null);
@@ -171,9 +178,12 @@ export function ImpactPanel() {
       .map((p) => p.trim())
       .filter(Boolean);
     if (paths.length > 0) body.paths = paths;
-    if (commitSha.trim()) body.commitSha = commitSha.trim();
+    if (commitSha.trim() && commitSha.trim() !== selectedPr?.head?.trim()) body.commitSha = commitSha.trim();
     const pr = Number(prNumber.trim());
-    if (prNumber.trim() && Number.isInteger(pr) && pr >= 1) body.pr = pr;
+    if (prNumber.trim() && Number.isInteger(pr) && pr >= 1) {
+      body.pr = pr;
+      if (selectedPr?.number === pr && selectedPr.repositoryId) body.repositoryId = selectedPr.repositoryId;
+    }
     if (!body.paths && !body.commitSha && body.pr == null) return null;
     return body;
   }
@@ -215,9 +225,9 @@ export function ImpactPanel() {
 
   function selectPullRequest(pr: PullRequestRow) {
     setPrNumber(String(pr.number));
-    if (pr.head?.trim()) {
-      setCommitSha(pr.head.trim());
-    }
+    setSelectedPr(pr);
+    setCommitSha(pr.head?.trim() ?? "");
+    setPathsCsv("");
   }
 
   async function draftMissingTests() {
@@ -268,7 +278,8 @@ export function ImpactPanel() {
     }
   }
 
-  const caseIds = result?.caseIds ?? [];
+  const evidencePrId = result?.pullRequestId ?? selectedPr?.id;
+  const caseIds = result?.rankedCases?.map(({ id }) => id) ?? result?.caseIds ?? [];
   const targetedRunHref =
     caseIds.length > 0
       ? `/runs/new?cases=${encodeURIComponent(caseIds.join(","))}`
@@ -294,7 +305,7 @@ export function ImpactPanel() {
           <Input
             placeholder="42"
             value={prNumber}
-            onChange={(e) => setPrNumber(e.target.value)}
+            onChange={(e) => { setSelectedPr(null); setPrNumber(e.target.value); }}
           />
         </label>
         <label className="space-y-1">
@@ -327,7 +338,7 @@ export function ImpactPanel() {
           </div>
           <ul className="flex flex-wrap gap-1.5">
             {recentPrs.map((pr) => {
-              const selected = prNumber.trim() === String(pr.number);
+              const selected = selectedPr?.id === pr.id;
               return (
                 <li key={pr.id}>
                   <Button
@@ -385,6 +396,15 @@ export function ImpactPanel() {
         </p>
       ) : null}
 
+      {evidencePrId && can("releases.view") ? (
+        <PrReleaseEvidence
+          key={`${projectId}:${evidencePrId}`}
+          pullRequestId={evidencePrId}
+          projectId={projectId}
+          canSign={can("releases.edit")}
+        />
+      ) : null}
+
       {result ? (
         <div className="space-y-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
           <div className="flex flex-wrap gap-2">
@@ -428,6 +448,25 @@ export function ImpactPanel() {
               </Button>
             ) : null}
           </div>
+
+          {result.impact.unmappedPaths?.length ? (
+            <p className="text-sm text-[color:var(--topo-muted)]">
+              Unmapped paths · <code>{result.impact.unmappedPaths.join(", ")}</code>
+            </p>
+          ) : null}
+          {result.rankedCases?.length ? (
+            <details>
+              <summary className="cursor-pointer text-sm">Ready cases ({result.rankedCases.length})</summary>
+              <ul className="mt-1 space-y-1 text-sm">
+                {result.rankedCases.map((entry) => (
+                  <li key={entry.id}>
+                    <Link href={entry.href} className="underline underline-offset-2">{entry.key}</Link>
+                    {" · "}{entry.title}{" · "}{entry.priority}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
 
           {result.paths.length > 0 ? (
             <p className="font-mono text-xs leading-relaxed text-[color:var(--topo-muted)]">

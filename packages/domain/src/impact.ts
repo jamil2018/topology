@@ -85,6 +85,13 @@ export type ImpactReport = {
   intents: ImpactIntent[];
   implementations: ImpactImplementation[];
   gaps: ImpactGapHint[];
+  pathMappings: Array<{
+    path: string;
+    components: Array<{ id: string; pattern: string }>;
+    implementationIds: string[];
+  }>;
+  unmappedPaths: string[];
+  links: ImpactEdge[];
 };
 
 function normalizePath(p: string): string {
@@ -164,29 +171,23 @@ export function computeImpact(input: ImpactInput): ImpactReport {
   const intentById = new Map(input.intents.map((i) => [i.id, i]));
   const implById = new Map(input.implementations.map((i) => [i.id, i]));
 
-  const changed = input.changedPaths.map(normalizePath).filter(Boolean);
-
-  const componentIds = new Set<string>();
-  for (const path of changed) {
-    for (const rule of input.pathRules) {
-      if (pathMatchesRule(path, rule.pattern)) {
-        componentIds.add(rule.componentId);
-      }
-    }
-  }
-
-  const implementationIds = new Set<string>();
-  const intentIds = new Set<string>();
+  const changed = [...new Set(input.changedPaths.map(normalizePath).filter(Boolean))];
+  const pathMappings = changed.map((path) => ({
+    path,
+    components: input.pathRules.filter((rule) =>
+      componentById.has(rule.componentId) && pathMatchesRule(path, rule.pattern),
+    ).map((rule) => ({ id: rule.componentId, pattern: rule.pattern })),
+    implementationIds: input.implementations.filter((impl) => impl.sourcePath &&
+      pathsOverlap(path, impl.sourcePath),
+    ).map((impl) => impl.id),
+  }));
+  const componentIds = new Set(pathMappings.flatMap((entry) => entry.components.map(({ id }) => id)));
+  const implementationIds = new Set(pathMappings.flatMap((entry) => entry.implementationIds));
+  const intentIds = new Set([...implementationIds].flatMap((id) => {
+    const intentId = implById.get(id)?.intentId;
+    return intentId ? [intentId] : [];
+  }));
   const requirementIds = new Set<string>();
-
-  // Direct sourcePath hits
-  for (const impl of input.implementations) {
-    if (!impl.sourcePath) continue;
-    if (changed.some((p) => pathsOverlap(p, impl.sourcePath!))) {
-      implementationIds.add(impl.id);
-      intentIds.add(impl.intentId);
-    }
-  }
 
   // Component → intent / requirement via edges
   const belongsRelations = new Set(["belongs_to", "covers", "mitigates"]);
@@ -328,5 +329,18 @@ export function computeImpact(input: ImpactInput): ImpactReport {
     }
   }
 
-  return { components, requirements, intents, implementations, gaps };
+  const affectedNodes = new Set([
+    ...components.map(({ id }) => `component:${id}`),
+    ...requirements.map(({ id }) => `requirement:${id}`),
+    ...intents.map(({ id }) => `intent:${id}`),
+    ...implementations.map(({ id }) => `implementation:${id}`),
+  ]);
+  const links = input.edges.filter((edge) =>
+    affectedNodes.has(`${edge.fromType}:${edge.fromId}`) &&
+    affectedNodes.has(`${edge.toType}:${edge.toId}`),
+  );
+  const unmappedPaths = pathMappings.filter((mapping) =>
+    mapping.components.length === 0 && mapping.implementationIds.length === 0,
+  ).map(({ path }) => path);
+  return { components, requirements, intents, implementations, gaps, pathMappings, unmappedPaths, links };
 }

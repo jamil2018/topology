@@ -1,3 +1,4 @@
+import { listCasesPage } from "@/lib/queries/list-cases";
 import { and, count, desc, eq, inArray, notInArray } from "drizzle-orm";
 import {
   assertPersistedIssueProvider,
@@ -471,18 +472,12 @@ export async function listRetestQueue(workspaceId: string) {
 
 export async function getScenarioContext(workspaceId: string, query: string) {
   const q = query.trim().toLowerCase();
-  const allCases = await db.query.cases.findMany({
-    where: eq(cases.workspaceId, workspaceId),
-    limit: 200,
+  const { items: matched, total, nextCursor } = await listCasesPage(workspaceId, {
+    search: q,
+    limit: 25,
+    sort: "key",
+    dir: "asc",
   });
-  const matched = allCases.filter(
-    (c) =>
-      c.key.toLowerCase().includes(q) ||
-      c.title.toLowerCase().includes(q) ||
-      c.tags.some((t) => t.toLowerCase().includes(q)) ||
-      c.description.toLowerCase().includes(q),
-  );
-
   const caseIds = matched.map((c) => c.id);
   const recentResults = [];
   for (const caseId of caseIds.slice(0, 20)) {
@@ -515,7 +510,9 @@ export async function getScenarioContext(workspaceId: string, query: string) {
 
   return {
     query,
-    cases: matched.slice(0, 25),
+    cases: matched,
+    totalCases: total,
+    nextCaseCursor: nextCursor,
     recentResults: recentResults.slice(0, 40).map((r) => ({
       id: r.id,
       status: r.status,

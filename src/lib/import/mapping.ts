@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { STRUCTURED_STEPS_FIELD } from "./steps";
 import { csvCaseRowSchema, type CsvCaseRow } from "@/lib/csv";
 import {
   SAMPLE_ROW_LIMIT,
@@ -179,11 +181,14 @@ export function joinTags(raw: string): string {
     .join(";");
 }
 
+const importedStepsSchema = z.array(z.object({ action: z.string(), expected: z.string().optional(), data: z.string().optional() })).max(1000);
+
 function mapOneRow(
   row: Record<string, string>,
   mapping: FieldMapping,
   index: number,
   prefix: string,
+  sourceId?: string,
 ): { row: MappedCase } | { error: string } {
   const get = (field: TopologyCaseField) => {
     const source = mapping[field];
@@ -216,7 +221,16 @@ function mapOneRow(
       error: `Row ${index}: ${parsed.error.issues[0]?.message ?? "invalid"}`,
     };
   }
-  return { row: parsed.data };
+  let structuredSteps: MappedCase["structuredSteps"];
+  if (mapping.steps === "steps" && (!mapping.expectedResult || mapping.expectedResult === "expectedResult") && row[STRUCTURED_STEPS_FIELD]) {
+    try {
+      const payload = importedStepsSchema.safeParse(JSON.parse(row[STRUCTURED_STEPS_FIELD]));
+      if (payload.success) structuredSteps = payload.data;
+    } catch {
+      // Preserve the mapped text when a source column is not structured.
+    }
+  }
+  return { row: { ...parsed.data, ...(sourceId ? { sourceId } : {}), ...(structuredSteps?.length ? { structuredSteps } : {}) } };
 }
 
 export function applyMapping(
@@ -226,8 +240,10 @@ export function applyMapping(
   const prefix = PROVIDER_KEY_PREFIX[table.provider];
   const rows: MappedCase[] = [];
   const errors: string[] = [];
+  const sourceKeyField = suggestMapping(table.fields).key;
   table.rows.forEach((source, idx) => {
-    const result = mapOneRow(source, mapping, idx + 1, prefix);
+    const sourceId = sourceKeyField ? lookupField(source, sourceKeyField).trim() : undefined;
+    const result = mapOneRow(source, mapping, idx + 1, prefix, sourceId);
     if ("error" in result) {
       errors.push(result.error);
       return;

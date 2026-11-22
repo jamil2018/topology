@@ -26,7 +26,7 @@ function formatWhen(value: string | Date | null | undefined) {
 export function ApiTokensPanel() {
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [name, setName] = useState("");
-  const [scope, setScope] = useState<ApiTokenScope>("ci-write");
+  const [scope, setScope] = useState<ApiTokenScope | "qa-agent">("ci-write");
   const [expiresAt, setExpiresAt] = useState("");
   const [plaintext, setPlaintext] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export function ApiTokensPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          scope,
+          scope: scope === "qa-agent" ? ["agent-read", "agent-run", "agent-observe"] : scope,
           expiresAt: expiresAt
             ? new Date(expiresAt).toISOString()
             : null,
@@ -112,9 +112,7 @@ export function ApiTokensPanel() {
         </h2>
         <p className="mt-0.5 text-xs text-[color:var(--topo-muted)]">
           Bearer tokens for CLI, CI ingest, and the agent. Hashed at rest.
-          Choose a scope: <span className="font-mono">read</span>,{" "}
-          <span className="font-mono">ci-write</span>, or{" "}
-          <span className="font-mono">agent</span>.
+          Choose the narrowest scope for the client. Agent scopes grant read, proposal, observation, or run access.
         </p>
       </div>
 
@@ -189,11 +187,11 @@ export function ApiTokensPanel() {
           label="Scope"
           className="w-full"
           value={scope}
-          onChange={(value) => setScope(value as ApiTokenScope)}
-          options={API_TOKEN_SCOPES.map((value) => ({
-            id: value,
-            label: value,
-          }))}
+          onChange={(value) => setScope(value as ApiTokenScope | "qa-agent")}
+          options={[
+            ...API_TOKEN_SCOPES.map((value) => ({ id: value, label: value })),
+            { id: "qa-agent", label: "QA agent · read, run, observe" },
+          ]}
           compact
         />
         <label className="space-y-1 sm:col-span-2">

@@ -111,6 +111,9 @@ That runs `src/db/migrate.ts`, which applies `drizzle/meta/_journal.json`. Curre
 | 7 | `0007_collab_and_integrations` |
 | 8 | `0008_triage_resolution` |
 | 9 | `0009_scm_feedback` |
+| 10 | `0010_agent_operations` |
+| 11 | `0011_github_runner_requests` |
+| 12 | `0012_vendor_case_sources` |
 
 `0000_baseline` is the full schema dump through the Phase 1 security tables (`api_tokens` scopes, `login_rate_limits`, `audit_events`, per-repo `webhook_secret`). Later entries are additive.
 
@@ -144,7 +147,7 @@ Restore order: database first, then attachment blobs. A DB without blobs yields 
 3. Start the new container. Boot applies any new journal entries, then serves traffic.
 4. If the app is unhealthy, roll back the image tag. Do not roll back a migration that already expanded schema unless you also restore the dump taken in step 1.
 
-Upgrade guarantee: **additive SQL only** lands as new journal files after `0009_scm_feedback`. Destructive changes will be called out in [CHANGELOG.md](../CHANGELOG.md). The `0000_baseline` replacement was a one-time break from the unjournaled SQL folder.
+Upgrade guarantee: **additive SQL only** lands as new journal files after `0012_vendor_case_sources`. Destructive changes will be called out in [CHANGELOG.md](../CHANGELOG.md). The `0000_baseline` replacement was a one-time break from the unjournaled SQL folder.
 
 ## Sizing
 

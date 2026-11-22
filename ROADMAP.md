@@ -14,8 +14,16 @@ Topology is pre-1.0. Implementation and release qualification are separate: a fe
 
 The current cycle adds capability-aware controls, mutation recovery, accessible overlays, responsive cases/execution, private/team views, run templates, reviewed retests with immutable source lineage, and assignment notifications. See [the implementation and verification record](docs/refinement.md) for evidence and open gates. These changes are not yet a published release.
 
-## Remaining adoption work
+## Agent workflow increment
 
-Qualify production deployment, backups/restores, S3-compatible providers, and actual issue-provider installations. Continue large-data and cross-browser measurement using isolated fixtures. Publish and validate versioned CLI/MCP/reporter distributions, evaluate additional runner reporters, and decide the supported plugin SDK surface before a public resettable demo.
+Project-scoped agent credentials, transactional proposal review, assigned manual observations, explained PR impact, approved GitHub Actions dispatch, and current-commit release evidence are implemented. Vendor imports preserve supported structured steps, hierarchy, and source IDs. See [agent workflows](docs/agent-workflows.md) for configuration and project cutover.
+
+## Remaining adoption and workflow work
+
+- Extend agent authoring and execution to reusable baselines, plans, artifact upload, and exploratory sessions.
+- Qualify the approved GitHub Actions path on a live sandbox, then add GitLab CI. Run the reference journeys in connected Codex and Claude Code sessions and measure the pilot.
+- Migrate historical runs and attachments, sync Jira requirement revisions, add first-class Gherkin and Cucumber mapping, and reconcile Playwright source discovery.
+- Add cross-project dashboards and sharing, scheduled reports, integration administration, and remotely hosted OAuth-backed MCP.
+- Qualify self-hosted deployments, vendor and issue providers, and CLI/MCP/reporter installs in clean consumer projects.
 
 Shipped release history remains in [CHANGELOG.md](CHANGELOG.md).

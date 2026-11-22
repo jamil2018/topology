@@ -39,20 +39,43 @@ export class TopologyClient {
     return data;
   }
 
-  listCases(q?: string) {
+  listCases(q?: string, page?: { cursor?: string; limit?: number; status?: string }) {
     const qs = new URLSearchParams({ resource: "cases" });
     if (q) qs.set("q", q);
+    if (page?.cursor) qs.set("cursor", page.cursor);
+    if (page?.limit != null) qs.set("limit", String(page.limit));
+    if (page?.status) qs.set("status", page.status);
     return this.request(`/api/agent?${qs}`);
   }
 
-  listRuns() {
-    return this.request(`/api/agent?resource=runs`);
+  listRuns(page?: { cursor?: string; limit?: number; status?: string }) {
+    const qs = new URLSearchParams({ resource: "runs" });
+    if (page?.cursor) qs.set("cursor", page.cursor);
+    if (page?.limit != null) qs.set("limit", String(page.limit));
+    if (page?.status) qs.set("status", page.status);
+    return this.request(`/api/v1/agent?${qs}`);
   }
 
-  listResults(opts?: { runId?: string; status?: string }) {
+  getCase(args: { id?: string; key?: string }) {
+    const qs = new URLSearchParams({ resource: "case" });
+    if (args.id) qs.set("id", args.id);
+    if (args.key) qs.set("key", args.key);
+    return this.request(`/api/v1/agent?${qs}`);
+  }
+
+  listCatalog(args: { resource: string; cursor?: string; limit?: number }) {
+    const qs = new URLSearchParams({ resource: args.resource });
+    if (args.cursor) qs.set("cursor", args.cursor);
+    if (args.limit != null) qs.set("limit", String(args.limit));
+    return this.request(`/api/v1/agent?${qs}`);
+  }
+
+  listResults(opts?: { runId?: string; status?: string; cursor?: string; limit?: number }) {
     const qs = new URLSearchParams({ resource: "results" });
     if (opts?.runId) qs.set("runId", opts.runId);
     if (opts?.status) qs.set("status", opts.status);
+    if (opts?.cursor) qs.set("cursor", opts.cursor);
+    if (opts?.limit != null) qs.set("limit", String(opts.limit));
     return this.request(`/api/agent?${qs}`);
   }
 
@@ -124,11 +147,37 @@ export class TopologyClient {
   }
 
   getAffectedTests(body: {
-    paths: string[];
+    paths?: string[];
+    commitSha?: string;
+    pr?: number;
+    repositoryId?: string;
     rules?: { pattern: string; componentKey: string }[];
   }) {
     return this.request(`/api/affected`, {
       method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  getResult(id: string) {
+    const qs = new URLSearchParams({ resource: "result", id });
+    return this.request(`/api/v1/agent?${qs}`);
+  }
+
+  getReleaseEvidence(pullRequestId: string) {
+    const qs = new URLSearchParams({ pullRequestId });
+    return this.request(`/api/releases/evidence?${qs}`);
+  }
+
+  getWorkflowRequest(id: string) {
+    const qs = new URLSearchParams({ resource: "workflow_request", id });
+    return this.request(`/api/v1/agent?${qs}`);
+  }
+
+  runOperation(key: string, body: Record<string, unknown>) {
+    return this.request("/api/v1/agent", {
+      method: "POST",
+      headers: { "Idempotency-Key": key },
       body: JSON.stringify(body),
     });
   }

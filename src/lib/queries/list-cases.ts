@@ -31,6 +31,7 @@ import {
 import {
   buildPaginatedList,
   containsPattern,
+  encodeListCursor,
   resolveListPagination,
   type PaginatedList,
 } from "@/lib/list-pagination";
@@ -62,6 +63,7 @@ function caseSearchSql(search: string | undefined): SQL | undefined {
   const pattern = containsPattern(q);
   return or(
     ilike(cases.title, pattern),
+    ilike(cases.description, pattern),
     ilike(cases.key, pattern),
     sql`${cases.id}::text ilike ${pattern} escape '\\'`,
     sql`${cases.priority}::text ilike ${pattern} escape '\\'`,
@@ -260,23 +262,28 @@ export async function listCasesPage(
 
   const rows = query.all
     ? await selectQuery
-    : paging.useCursor
-      ? await selectQuery.limit(paging.limit)
-      : await selectQuery.limit(paging.limit).offset(paging.offset);
+    : await selectQuery.limit(paging.limit + 1).offset(paging.offset);
 
-  const items = rows.map(mapCaseRow);
+  const items = (query.all ? rows : rows.slice(0, paging.limit)).map(mapCaseRow);
   if (query.all) {
     return buildPaginatedList(items, items.length, 1, items.length || 1, (row) =>
       caseSortValue(row, sort),
     );
   }
-  return buildPaginatedList(
+  const page = buildPaginatedList(
     items,
     total,
     paging.useCursor ? 1 : paging.page,
     paging.limit,
     (row) => caseSortValue(row, sort),
   );
+  const last = items.at(-1);
+  return {
+    ...page,
+    nextCursor: rows.length > paging.limit && last
+      ? encodeListCursor({ sortValue: caseSortValue(last, sort), id: last.id })
+      : null,
+  };
 }
 
 export async function listCases(

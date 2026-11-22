@@ -27,6 +27,7 @@ const bodySchema = z
         title: z.string().optional(),
         base: z.string().optional(),
         head: z.string().optional(),
+        headSha: z.string().regex(/^[0-9a-f]{40}$/i).optional(),
         status: z.enum(["open", "closed", "merged", "draft"]).optional(),
         paths: z.array(z.string()).optional(),
       })
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
       title: pr.title,
       base: pr.base,
       head: pr.head,
+      headSha: pr.headSha,
       status: (pr.status ?? "open") as PullRequestStatus,
       changedPaths: pr.paths,
     });

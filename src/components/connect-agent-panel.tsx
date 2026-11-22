@@ -91,7 +91,7 @@ export function formatRelativeWhen(value: string | Date | null | undefined): str
 export function latestAgentTokenUse(tokens: TokenRow[]): Date | null {
   let latest: Date | null = null;
   for (const token of tokens) {
-    if (!token.scope.split(",").map((s) => s.trim()).includes("agent")) {
+    if (!token.scope.split(",").some((scope) => /^agent(?:-|$)/.test(scope.trim()))) {
       continue;
     }
     if (!token.lastUsedAt) continue;
@@ -162,7 +162,7 @@ export function ConnectAgentPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: `MCP agent ${new Date().toISOString().slice(0, 10)}`,
-          scope: "agent",
+          scope: ["agent-read", "agent-propose"],
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -190,7 +190,7 @@ export function ConnectAgentPanel({
       }
       setToken(data.plaintext);
       setTokenMsg(
-        "Agent-scoped token created and filled below. Copy the snippet now — the plaintext is only shown once.",
+        "Agent token created with read and proposal access. Copy the snippet now. The plaintext is shown once.",
       );
       await refreshLastAgentCall();
     } finally {
@@ -399,7 +399,7 @@ export function ConnectAgentPanel({
         <code className="font-mono">.env.local</code> (see{" "}
         <code className="font-mono">.env.example</code>). Default issue provider
         is <code className="font-mono">mock</code> so create/link/status works
-        offline. Prefer an <code className="font-mono">agent</code>-scoped token
+        offline. Use an <code className="font-mono">agent-read</code> token for discovery and add the capabilities your agent needs
         for MCP.
       </p>
     </div>

@@ -39,10 +39,14 @@ export async function POST(request: Request) {
     const ingested = await submitExecutionReport({
       workspaceId: authResult.workspaceId,
       userId: authResult.userId,
+      tokenId: authResult.tokenId,
       report: parsed.report,
       runId: topologyRunId,
     });
 
+    if (ingested.replayed) {
+      return NextResponse.json({ ok: true, runId: ingested.runId, resultIds: ingested.resultIds, replayed: true });
+    }
     try {
       await openTriageForFailures(ingested.runId);
     } catch {

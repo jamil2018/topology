@@ -38,3 +38,5 @@ Each test result needs `intentKey` and/or `externalKey` (protocol requirement).
 3. **Fallback `externalKey`**: `<relativeFile>::<title path>` (e.g. `e2e/auth.spec.ts::suite › login`).
 
 CLI equivalent: `topology run upload report.json`.
+
+Set `TOPOLOGY_REPORT_FILE` to write the execution JSON locally. Combine it with `TOPOLOGY_DRY_RUN=1` to pass a report from an unprivileged test job to a separate upload job.

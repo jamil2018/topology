@@ -2,6 +2,8 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
+  primaryKey,
   pgTable,
   text,
   timestamp,
@@ -69,6 +71,7 @@ export const pullRequests = pgTable(
     title: text("title").notNull(),
     base: text("base").notNull(),
     head: text("head").notNull(),
+    headSha: text("head_sha"),
     status: pullRequestStatusEnum("status").default("open").notNull(),
     /** JSON array of changed file paths for impact analysis. */
     changedPathsJson: text("changed_paths_json").default("[]").notNull(),
@@ -94,6 +97,16 @@ export const apiTokens = pgTable("api_tokens", {
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   lastUsedAt: timestamp("last_used_at", { mode: "date" }),
 });
+
+/** Successful operations and retry receipts are committed with their effects. */
+export const agentOperations = pgTable("agent_operations", {
+  tokenId: uuid("token_id").notNull().references(() => apiTokens.id, { onDelete: "cascade" }),
+  key: text("key").notNull(),
+  requestHash: text("request_hash").notNull(),
+  status: integer("status").notNull(),
+  response: jsonb("response").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+}, (table) => [primaryKey({ columns: [table.tokenId, table.key] })]);
 
 export const webhookEndpoints = pgTable("webhook_endpoints", {
   id: uuid("id").defaultRandom().primaryKey(),

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
 import { assertOwnedDatabase, redact } from "./safety";
@@ -52,7 +52,9 @@ export async function evaluateContainer(options: {
     assert.equal(docker(["exec", container, "cat", "/data/attachments/persistence.txt"]), "container persistence");
     const [{ n }] = await sql`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`;
     const [{ admins }] = await sql`SELECT count(*)::int AS admins FROM users WHERE email = 'container@validation.test'`;
-    assert.equal(n, 7); assert.equal(admins, 1);
+    const journal = JSON.parse(readFileSync("drizzle/meta/_journal.json", "utf8")) as { entries: unknown[] };
+    assert.equal(n, journal.entries.length);
+    assert.equal(admins, 1);
     console.log(JSON.stringify({ operation: "production image fresh install, first admin, non-root runtime, unstamped reconciliation and attachment persistence", status: "passed", imageBytes: Number(docker(["image", "inspect", image, "--format", "{{.Size}}"])), migrations: n }));
   } finally {
     try {

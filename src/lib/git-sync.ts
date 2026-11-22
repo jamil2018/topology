@@ -67,6 +67,7 @@ function withParsedPullRequestPaths(row: PullRequest): PullRequestWithPaths {
 export async function getCommitBySha(
   workspaceId: string,
   sha: string,
+  repositoryId?: string,
 ): Promise<CommitWithPaths | null> {
   const normalized = sha.trim();
   if (!normalized) return null;
@@ -79,6 +80,7 @@ export async function getCommitBySha(
       and(
         eq(repositories.workspaceId, workspaceId),
         eq(commits.sha, normalized),
+        repositoryId ? eq(commits.repositoryId, repositoryId) : undefined,
       ),
     )
     .limit(1);
@@ -87,26 +89,25 @@ export async function getCommitBySha(
   return withParsedCommitPaths(row);
 }
 
-export async function getPullRequestByNumber(
+export async function findPullRequestsByNumber(
   workspaceId: string,
   number: number,
-): Promise<PullRequestWithPaths | null> {
-  if (!Number.isInteger(number) || number < 1) return null;
-
-  const rows = await db
-    .select({ pullRequest: pullRequests })
-    .from(pullRequests)
+  repositoryId?: string,
+): Promise<PullRequestWithPaths[]> {
+  if (!Number.isInteger(number) || number < 1) return [];
+  const rows = await db.select({ pullRequest: pullRequests }).from(pullRequests)
     .innerJoin(repositories, eq(pullRequests.repositoryId, repositories.id))
-    .where(
-      and(
-        eq(repositories.workspaceId, workspaceId),
-        eq(pullRequests.number, number),
-      ),
-    )
-    .limit(1);
-  const row = rows[0]?.pullRequest;
-  if (!row) return null;
-  return withParsedPullRequestPaths(row);
+    .where(and(
+      eq(repositories.workspaceId, workspaceId),
+      eq(pullRequests.number, number),
+      repositoryId ? eq(pullRequests.repositoryId, repositoryId) : undefined,
+    )).limit(2);
+  return rows.map(({ pullRequest }) => withParsedPullRequestPaths(pullRequest));
+}
+
+export async function getPullRequestByNumber(workspaceId: string, number: number) {
+  const rows = await findPullRequestsByNumber(workspaceId, number);
+  return rows.length === 1 ? rows[0] : null;
 }
 
 /**
@@ -224,6 +225,7 @@ export async function ensurePullRequest(
     title?: string;
     base?: string;
     head?: string;
+    headSha?: string;
     status?: PullRequestStatus;
     changedPaths?: string[];
   },
@@ -244,6 +246,7 @@ export async function ensurePullRequest(
       title?: string;
       base?: string;
       head?: string;
+      headSha?: string | null;
       status?: PullRequestStatus;
       changedPathsJson?: string;
       updatedAt: Date;
@@ -252,7 +255,11 @@ export async function ensurePullRequest(
     };
     if (input.title != null) patch.title = input.title;
     if (input.base != null) patch.base = input.base;
-    if (input.head != null) patch.head = input.head;
+    if (input.head != null && (input.headSha != null || !existing.headSha)) patch.head = input.head;
+    if (input.headSha != null) {
+      patch.headSha = input.headSha.toLowerCase();
+      if (existing.headSha !== patch.headSha && input.changedPaths == null) patch.changedPathsJson = "[]";
+    }
     if (input.status != null) patch.status = input.status;
     if (input.changedPaths != null) {
       patch.changedPathsJson = serializeChangedPaths(input.changedPaths);
@@ -274,6 +281,7 @@ export async function ensurePullRequest(
       title: input.title ?? `PR #${input.number}`,
       base: input.base ?? "main",
       head: input.head ?? "",
+      headSha: input.headSha?.toLowerCase(),
       status: input.status ?? "open",
       changedPathsJson:
         input.changedPaths != null

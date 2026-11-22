@@ -1,4 +1,6 @@
-export const API_TOKEN_SCOPES = ["read", "ci-write", "agent"] as const;
+export const API_TOKEN_SCOPES = [
+  "read", "ci-write", "agent", "agent-read", "agent-propose", "agent-observe", "agent-run",
+] as const;
 export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[number];
 
 export function isApiTokenScope(value: string): value is ApiTokenScope {
@@ -20,7 +22,7 @@ export function tokenHasScope(
   const scopes = parseTokenScopes(raw);
   if (required === "read") {
     return scopes.some(
-      (scope) => scope === "read" || scope === "ci-write" || scope === "agent",
+      (scope) => scope === "read" || scope === "ci-write" || scope === "agent" || scope === "agent-read",
     );
   }
   return scopes.includes(required);

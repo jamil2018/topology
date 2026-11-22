@@ -1,6 +1,6 @@
 import { parseCsvTable } from "@/lib/csv";
 import { suggestMapping } from "./mapping";
-import { formatSteps, mergeStepRows, uniqueFields } from "./steps";
+import { STRUCTURED_STEPS_FIELD, formatSteps, mergeStepRows, uniqueFields } from "./steps";
 import type { ImportParseResult, SourceTable } from "./types";
 
 function sniff(raw: string): "json" | "csv" {
@@ -36,7 +36,7 @@ function str(value: unknown): string {
     : "";
 }
 
-function flattenSteps(raw: unknown): { steps: string; expectedResult: string } {
+function flattenSteps(raw: unknown): ReturnType<typeof formatSteps> {
   const list = Array.isArray(raw) ? raw : [];
   return formatSteps(
     list.map((item) => {
@@ -66,6 +66,7 @@ function flattenTest(raw: Record<string, unknown>): Record<string, string> {
     summary: str(fields.summary ?? raw.summary ?? raw.name ?? fields.title),
     description: str(fields.description ?? raw.description),
     preconditions,
+    ...(formatted[STRUCTURED_STEPS_FIELD] ? { [STRUCTURED_STEPS_FIELD]: formatted[STRUCTURED_STEPS_FIELD] } : {}),
     steps: formatted.steps,
     expectedResult: formatted.expectedResult,
     priority: str(fields.priority ?? raw.priority),

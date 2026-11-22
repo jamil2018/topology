@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type {
   ExecutionEnvironment,
@@ -7,7 +8,9 @@ import type {
 } from "@topology/domain";
 import { db } from "@/db";
 import {
+  auditEvents,
   environments,
+  githubRunnerRequests,
   runs,
   runResults,
   testImplementations,
@@ -15,12 +18,14 @@ import {
   type Environment,
   type EnvironmentKind,
   type Run,
+  type RunnerEvidenceMatch,
 } from "@/db/schema";
 import {
   CiIngestError,
   clampDurationMs,
   ciFailureResponse,
 } from "@/lib/ci-ingest";
+import { currentCaseRevisions } from "@/lib/case-revision";
 import { refreshImplementationStatsForRun } from "@/lib/implementation-stats";
 import { syncIssuesOnPassingRetest } from "@/lib/issues";
 import { immutableMessageFor, isRunFrozen } from "@/lib/run-immutability";
@@ -137,12 +142,15 @@ export function extractTopologyRunId(body: unknown): {
 type ResolvedIdentity = {
   caseId: string | null;
   implementationId: string | null;
+  intentId?: string;
+  ambiguous?: boolean;
 };
 
 async function resolveResultIdentity(
   tx: IngestTx,
   workspaceId: string,
   result: ExecutionResult,
+  strict = false,
 ): Promise<ResolvedIdentity> {
   if (result.implementationId) {
     if (!UUID_RE.test(result.implementationId)) {
@@ -157,23 +165,29 @@ async function resolveResultIdentity(
     if (!impl) {
       throw new CiIngestError(404, { error: "Implementation not found" });
     }
-    return { caseId: impl.caseId ?? null, implementationId: impl.id };
+    return { caseId: impl.caseId ?? null, implementationId: impl.id, intentId: impl.intentId };
   }
 
   if (result.externalKey) {
-    const byExternal = await tx.query.testImplementations.findFirst({
+    const matches = await tx.query.testImplementations.findMany({
+      limit: 2,
       where: and(
         eq(testImplementations.workspaceId, workspaceId),
         eq(testImplementations.externalKey, result.externalKey),
       ),
     });
-    if (byExternal) {
+    const [byExternal] = matches;
+    if (byExternal && (!strict || matches.length === 1)) {
       return {
         caseId: byExternal.caseId ?? null,
         implementationId: byExternal.id,
+        intentId: byExternal.intentId,
       };
     }
+    if (matches.length > 1) return { caseId: null, implementationId: null, ambiguous: true };
   }
+
+  if (strict) return { caseId: null, implementationId: null };
 
   if (result.intentKey) {
     const intent = await tx.query.testIntents.findFirst({
@@ -381,17 +395,46 @@ async function resolveAutomationRun(
 export async function submitExecutionReport(input: {
   workspaceId: string;
   userId: string | null;
+  tokenId?: string | null;
   report: ExecutionReport;
   /** Topology run UUID from request envelope (not part of protocol schema). */
   runId?: string;
-}): Promise<{ ok: true; runId: string; resultIds: string[] }> {
-  const runEnv = input.report.run?.environment;
+}): Promise<{ ok: true; runId: string; resultIds: string[]; replayed?: boolean }> {
+  const runMeta = input.report.run;
+  const requestId = runMeta?.runnerRequestId;
+  const reportHash = requestId ? createHash("sha256").update(JSON.stringify(input.report)).digest("hex") : null;
+  const runEnv = runMeta?.environment;
   const envLabel = formatEnvironmentSuffix(runEnv) ?? "ci";
   const envKind = inferEnvironmentKind(envLabel);
   const envName = environmentNameForReport(runEnv, envKind);
   const envMetadata = serializeEnvironmentJson(runEnv);
 
   const outcome = await db.transaction(async (tx) => {
+    const [request] = requestId ? await tx.select().from(githubRunnerRequests).where(and(
+      eq(githubRunnerRequests.id, requestId),
+      eq(githubRunnerRequests.workspaceId, input.workspaceId),
+    )).for("update") : [];
+    if (requestId) {
+      if (!request || !input.tokenId || request.reporterTokenId !== input.tokenId) {
+        throw new CiIngestError(403, { error: "Runner evidence credential does not match the request" });
+      }
+      if (!request.providerRunId || request.providerRunId !== runMeta?.externalId ||
+          request.commitSha !== runMeta.commitSha || request.environment !== runMeta.configuration ||
+          runMeta.runnerAttempt !== 1 || input.runId) {
+        throw new CiIngestError(409, { error: "Runner evidence does not match the confirmed run, commit, configuration, and attempt" });
+      }
+      if (request.status === "ingested") {
+        if (!request.topologyRunId || request.reportHash !== reportHash) {
+          throw new CiIngestError(409, { error: "This runner request already has a different evidence report" });
+        }
+        const rows = await tx.select({ id: runResults.id }).from(runResults).where(eq(runResults.runId, request.topologyRunId));
+        return { ok: true as const, runId: request.topologyRunId, resultIds: rows.map(({ id }) => id).sort(), replayed: true };
+      }
+      if (request.status !== "dispatched") {
+        throw new CiIngestError(409, { error: "Runner dispatch is unconfirmed" });
+      }
+    }
+
     const environment = await findOrCreateEnvironment(tx, {
       workspaceId: input.workspaceId,
       name: envName,
@@ -403,13 +446,17 @@ export async function submitExecutionReport(input: {
       workspaceId: input.workspaceId,
       userId: input.userId,
       runId: input.runId,
-      externalId: input.report.run?.externalId,
+      externalId: request ? undefined : runMeta?.externalId,
       branch: input.report.run?.branch,
       commitSha: input.report.run?.commitSha,
       environmentLabel: envLabel,
       environmentId: environment.id,
     });
 
+    const expectedRevisions = request?.caseRevisions ?? [];
+    const liveRevisions = new Map((await currentCaseRevisions(
+      input.workspaceId, expectedRevisions.map(({ id }) => id), tx,
+    )).map((item) => [item.id, item.revision]));
     const resultIds: string[] = [];
 
     for (const result of input.report.results) {
@@ -417,13 +464,27 @@ export async function submitExecutionReport(input: {
         tx,
         input.workspaceId,
         result,
+        Boolean(request),
       );
+      const related = expectedRevisions.filter((entry) => identity.caseId
+        ? entry.id === identity.caseId
+        : identity.intentId && entry.intentId === identity.intentId,
+      );
+      const [expected] = related;
+      const evidenceMatch: RunnerEvidenceMatch | null = !request ? null
+        : identity.ambiguous || related.length > 1 ? "ambiguous"
+        : !identity.implementationId ? "unmapped"
+        : !expected ? "unselected"
+        : expected.revision !== liveRevisions.get(expected.id) ? "stale_revision"
+        : "matched";
       const resultEnv = result.environment ?? runEnv;
       const [row] = await tx
         .insert(runResults)
         .values({
           runId: run.id,
-          caseId: identity.caseId,
+          caseId: request ? (related.length === 1 ? expected.id : null) : identity.caseId,
+          caseRevision: evidenceMatch === "matched" ? expected.revision : null,
+          evidenceMatch,
           implementationId: identity.implementationId,
           environmentJson: serializeEnvironmentJson(resultEnv),
           externalKey: result.externalKey ?? result.intentKey ?? null,
@@ -453,15 +514,37 @@ export async function submitExecutionReport(input: {
         environmentId: run.environmentId ?? environment.id,
         environment: envLabel,
         branch: input.report.run?.branch ?? run.branch,
-        commitSha: input.report.run?.commitSha ?? run.commitSha,
+        commitSha: runMeta?.commitSha ?? run.commitSha,
+        ...(request ? {
+          pullRequestId: request.pullRequestId,
+          source: "github-workflow",
+        } : {}),
         ...(input.report.run?.externalId
           ? { externalId: input.report.run.externalId }
           : {}),
       })
       .where(eq(runs.id, run.id));
 
-    return { ok: true as const, runId: run.id, resultIds };
+    if (request) {
+      await tx.update(githubRunnerRequests).set({
+        status: "ingested",
+        topologyRunId: run.id,
+        reportHash,
+        updatedAt: new Date(),
+      }).where(eq(githubRunnerRequests.id, request.id));
+      await tx.insert(auditEvents).values({
+        action: "runner.github.ingest",
+        actorId: input.userId,
+        workspaceId: input.workspaceId,
+        targetType: "run",
+        targetId: run.id,
+        metadataJson: JSON.stringify({ requestId, tokenId: input.tokenId, sourceRefs: [request.providerRunId, request.commitSha], attempt: runMeta?.runnerAttempt }),
+      });
+    }
+    return { ok: true as const, runId: run.id, resultIds: request ? resultIds.sort() : resultIds };
   });
+
+  if ("replayed" in outcome && outcome.replayed) return outcome;
 
   try {
     await refreshImplementationStatsForRun(outcome.runId);
@@ -480,6 +563,7 @@ export async function submitExecutionReport(input: {
         continue;
       }
       seen.add(row.caseId);
+      if (requestId) continue;
       await syncIssuesOnPassingRetest({
         workspaceId: input.workspaceId,
         caseId: row.caseId,

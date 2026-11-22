@@ -711,6 +711,9 @@ export async function publishScmFeedbackForRun(
 
   const prNumber = run.pullRequest?.number ?? null;
   const commitSha = run.commitSha?.trim() || run.commit?.sha || null;
+  if (run.pullRequest?.headSha && commitSha !== run.pullRequest.headSha) {
+    return { skipped: true, reason: "superseded_head" };
+  }
   if (!commitSha && prNumber == null) {
     return { skipped: true, reason: "not_pr_linked" };
   }

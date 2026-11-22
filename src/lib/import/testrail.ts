@@ -1,6 +1,6 @@
 import { parseCsvTable } from "@/lib/csv";
 import { suggestMapping } from "./mapping";
-import { formatSteps, uniqueFields } from "./steps";
+import { STRUCTURED_STEPS_FIELD, formatSteps, mergeStepRows, uniqueFields } from "./steps";
 import type { ImportParseResult, SourceTable } from "./types";
 import {
   parseXml,
@@ -63,6 +63,7 @@ function flattenCase(
         xmlChild(custom, "preconditions") ??
         xmlChild(node, "preconds"),
     ),
+    ...(formatted[STRUCTURED_STEPS_FIELD] ? { [STRUCTURED_STEPS_FIELD]: formatted[STRUCTURED_STEPS_FIELD] } : {}),
     steps: formatted.steps || textSteps,
     expectedResult:
       formatted.expectedResult ||
@@ -164,6 +165,7 @@ function flattenApiCase(
     title: str(raw.title),
     description: str(raw.custom_description ?? raw.description ?? raw.comment),
     preconditions: str(raw.custom_preconds ?? raw.custom_preconditions),
+    ...(formatted[STRUCTURED_STEPS_FIELD] ? { [STRUCTURED_STEPS_FIELD]: formatted[STRUCTURED_STEPS_FIELD] } : {}),
     steps: formatted.steps || (typeof raw.custom_steps === "string" ? textSteps : ""),
     expectedResult: formatted.expectedResult || str(raw.custom_expected),
     priority: str(raw.priority ?? raw.priority_id),
@@ -238,7 +240,12 @@ export function parseTestRail(raw: string): ImportParseResult {
   try {
     if (format === "xml") rows = parseTestRailXml(raw);
     else if (format === "json") rows = parseJsonPayload(raw);
-    else rows = parseCsvTable(raw).rows;
+    else {
+      const table = parseCsvTable(raw);
+      rows = table.rows.some((row) => Object.keys(row).some((key) => key.toLowerCase() === "steps (step)"))
+        ? mergeStepRows(table.rows, { groupKeys: ["ID", "Case ID"], stepKeys: ["Steps (Step)"], expectedKeys: ["Steps (Expected Result)"] })
+        : table.rows;
+    }
   } catch (err) {
     errors.push(err instanceof Error ? err.message : "Failed to parse TestRail file");
   }

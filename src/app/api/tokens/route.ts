@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { apiTokens } from "@/db/schema";
 import { recordAuditEvent } from "@/lib/audit";
 import {
+  API_TOKEN_SCOPES,
   generateApiToken,
   isApiTokenScope,
   serializeTokenScopes,
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ tokens: rows.map(publicToken) });
 }
 
-const tokenScopeEnum = z.enum(["read", "ci-write", "agent"]);
+const tokenScopeEnum = z.enum(API_TOKEN_SCOPES);
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(120),

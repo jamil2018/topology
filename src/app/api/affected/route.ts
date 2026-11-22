@@ -11,6 +11,7 @@ const bodySchema = z
     paths: z.array(z.string().min(1)).optional(),
     commitSha: z.string().min(1).optional(),
     pr: z.number().int().positive().optional(),
+    repositoryId: z.uuid().optional(),
     /** When omitted, path_component_rules are loaded from the workspace DB. */
     rules: z
       .array(
@@ -78,11 +79,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const { rules, commitSha, pr, paths } = parsed.data;
+  const { rules, commitSha, pr, paths, repositoryId } = parsed.data;
   const resolved = await resolveAffectedPaths(access.workspaceId, {
     paths,
     commitSha,
     pr,
+    repositoryId,
   });
   if (!resolved.ok) {
     return NextResponse.json(
@@ -95,6 +97,7 @@ export async function POST(request: Request) {
   const {
     impact,
     caseIds,
+    rankedCases,
     pathRulesApplied,
     unknownComponentKeys,
     rulesSource,
@@ -103,10 +106,13 @@ export async function POST(request: Request) {
   return NextResponse.json({
     paths: impactPaths,
     pathsSource: resolved.pathsSource,
-    commitSha: commitSha ?? null,
+    commitSha: resolved.headSha ?? commitSha ?? null,
+    repositoryId: resolved.repositoryId ?? null,
+    pullRequestId: resolved.pullRequestId ?? null,
     pr: pr ?? null,
     impact,
     caseIds,
+    rankedCases,
     summary: {
       components: impact.components.length,
       requirements: impact.requirements.length,

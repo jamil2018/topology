@@ -110,6 +110,17 @@ export const cases = pgTable(
   ],
 );
 
+export const caseImportSources = pgTable("case_import_sources", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  namespace: text("namespace").notNull(),
+  sourceId: text("source_id").notNull(),
+  caseId: uuid("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }),
+}, (table) => [
+  unique("case_import_sources_identity_unique").on(table.workspaceId, table.provider, table.namespace, table.sourceId),
+  index("case_import_sources_case_idx").on(table.caseId),
+]);
+
 export const savedViews = pgTable("saved_views", {
   visibility: text("visibility").$type<"private" | "team">().notNull().default("private"),
   id: uuid("id").defaultRandom().primaryKey(),

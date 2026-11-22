@@ -91,3 +91,25 @@ test("quality graph authoring persists into coverage, release snapshots and comp
   expect(frozen.status()).toBe(200);
   expect((await frozen.json()).snapshot.payload.requirement.covered).toBe(0);
 });
+
+
+test("Impact opens release evidence for the selected repository and pull request", async ({ page, isolatedProject }) => {
+  const pr = await isolatedProject.admin.post("/api/pull-requests", {
+    data: { number: 842, title: "Evidence fixture", head: "fixture-head",
+      remoteUrl: "https://github.com/validation/evidence-fixture" },
+  });
+  expect(pr.status()).toBe(201);
+  const { pullRequest } = await pr.json();
+  expect((await page.request.post("/api/projects", {
+    data: { action: "select", id: isolatedProject.id },
+  })).status()).toBe(200);
+  await page.goto("/impact");
+  await page.getByRole("button", { name: /#842.*Evidence fixture/ }).click();
+  const response = page.waitForResponse((res) =>
+    res.url().includes(`/api/releases/evidence?pullRequestId=${pullRequest.id}`) && res.ok(),
+  );
+  await page.getByRole("button", { name: "View release evidence" }).click();
+  await response;
+  await expect(page.getByRole("region", { name: "Release evidence" })).toContainText("Release policy unavailable");
+  await expect(page.getByRole("button", { name: "Sign off this evidence" })).toHaveCount(0);
+});

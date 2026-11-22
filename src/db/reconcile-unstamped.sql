@@ -444,3 +444,76 @@ CREATE INDEX IF NOT EXISTS "notification_channels_workspace_id_idx" ON "notifica
 ALTER TABLE "triage_items" ADD COLUMN IF NOT EXISTS "resolution" text;
 ALTER TABLE "repositories" ADD COLUMN IF NOT EXISTS "post_pr_status_checks" boolean DEFAULT false NOT NULL;
 ALTER TABLE "repositories" ADD COLUMN IF NOT EXISTS "post_pr_summary_comment" boolean DEFAULT false NOT NULL;
+
+-- Preserve any project that already completed the legacy credential cutover.
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'workspaces' AND column_name = 'legacy_agent_writes'
+  ) THEN
+    ALTER TABLE "workspaces" ADD COLUMN "legacy_agent_writes" boolean DEFAULT false NOT NULL;
+    UPDATE "workspaces" SET "legacy_agent_writes" = true
+    WHERE EXISTS (
+      SELECT 1 FROM "api_tokens"
+      WHERE "api_tokens"."workspace_id" = "workspaces"."id"
+        AND 'agent' = ANY(regexp_split_to_array("api_tokens"."scope", '\s*,\s*'))
+        AND "api_tokens"."revoked_at" IS NULL
+        AND ("api_tokens"."expires_at" IS NULL OR "api_tokens"."expires_at" > now())
+    );
+  END IF;
+END $$;
+CREATE TABLE IF NOT EXISTS "agent_operations" (
+  "token_id" uuid NOT NULL REFERENCES "api_tokens"("id") ON DELETE cascade,
+  "key" text NOT NULL,
+  "request_hash" text NOT NULL,
+  "status" integer NOT NULL,
+  "response" jsonb NOT NULL,
+  "created_at" timestamp DEFAULT now() NOT NULL,
+  PRIMARY KEY ("token_id", "key")
+);
+ALTER TABLE "pull_requests" ADD COLUMN IF NOT EXISTS "head_sha" text;
+
+CREATE TABLE IF NOT EXISTS "github_runner_requests" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "workspace_id" uuid NOT NULL REFERENCES "workspaces"("id") ON DELETE cascade,
+  "repository_id" uuid NOT NULL REFERENCES "repositories"("id") ON DELETE cascade,
+  "pull_request_id" uuid NOT NULL REFERENCES "pull_requests"("id") ON DELETE cascade,
+  "reporter_token_id" uuid REFERENCES "api_tokens"("id") ON DELETE set null,
+  "commit_sha" text NOT NULL,
+  "workflow" text NOT NULL,
+  "ref" text NOT NULL,
+  "environment" text NOT NULL,
+  "status" text NOT NULL DEFAULT 'queued',
+  "detail" text,
+  "provider_run_id" text,
+  "topology_run_id" uuid REFERENCES "runs"("id") ON DELETE set null,
+  "report_hash" text,
+  "case_revisions" jsonb NOT NULL,
+  "created_at" timestamp DEFAULT now() NOT NULL,
+  "updated_at" timestamp NOT NULL DEFAULT now(),
+  CONSTRAINT "github_runner_requests_provider_unique" UNIQUE ("repository_id", "provider_run_id")
+);
+CREATE INDEX IF NOT EXISTS "github_runner_requests_workspace_idx" ON "github_runner_requests" ("workspace_id");
+ALTER TABLE "run_results" ADD COLUMN IF NOT EXISTS "case_revision" text;
+ALTER TABLE "run_results" ADD COLUMN IF NOT EXISTS "evidence_match" text;
+CREATE TABLE IF NOT EXISTS "pr_release_signoffs" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "workspace_id" uuid NOT NULL REFERENCES "workspaces"("id") ON DELETE cascade,
+  "pull_request_id" uuid NOT NULL REFERENCES "pull_requests"("id") ON DELETE cascade,
+  "actor_id" uuid REFERENCES "users"("id") ON DELETE set null,
+  "commit_sha" text NOT NULL,
+  "digest" text NOT NULL,
+  "evidence" jsonb NOT NULL,
+  "created_at" timestamp DEFAULT now() NOT NULL,
+  CONSTRAINT "pr_release_signoffs_evidence_unique" UNIQUE ("pull_request_id", "digest")
+);
+
+CREATE TABLE IF NOT EXISTS "case_import_sources" (
+  "workspace_id" uuid NOT NULL REFERENCES "workspaces"("id") ON DELETE cascade,
+  "provider" text NOT NULL,
+  "namespace" text NOT NULL,
+  "source_id" text NOT NULL,
+  "case_id" uuid NOT NULL REFERENCES "cases"("id") ON DELETE cascade,
+  CONSTRAINT "case_import_sources_identity_unique" UNIQUE ("workspace_id", "provider", "namespace", "source_id")
+);
+CREATE INDEX IF NOT EXISTS "case_import_sources_case_idx" ON "case_import_sources" ("case_id");

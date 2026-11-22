@@ -61,21 +61,22 @@ function parseValuesJson(raw: string | null | undefined): Record<string, string>
 export async function loadCaseTcm(
   workspaceId: string,
   caseId: string,
+  executor: Pick<typeof db, "query"> = db,
 ): Promise<CaseTcmPayload> {
   const [steps, parameters, datasets, defs] = await Promise.all([
-    db.query.caseSteps.findMany({
+    executor.query.caseSteps.findMany({
       where: eq(caseSteps.caseId, caseId),
       orderBy: [asc(caseSteps.position)],
     }),
-    db.query.caseParameters.findMany({
+    executor.query.caseParameters.findMany({
       where: eq(caseParameters.caseId, caseId),
       orderBy: [asc(caseParameters.position)],
     }),
-    db.query.caseDatasetRows.findMany({
+    executor.query.caseDatasetRows.findMany({
       where: eq(caseDatasetRows.caseId, caseId),
       orderBy: [asc(caseDatasetRows.position)],
     }),
-    db.query.customFieldDefs.findMany({
+    executor.query.customFieldDefs.findMany({
       where: and(
         eq(customFieldDefs.workspaceId, workspaceId),
         eq(customFieldDefs.entity, "case"),
@@ -87,7 +88,7 @@ export async function loadCaseTcm(
   const values =
     defs.length === 0
       ? []
-      : await db.query.customFieldValues.findMany({
+      : await executor.query.customFieldValues.findMany({
           where: and(
             eq(customFieldValues.entityType, "case"),
             eq(customFieldValues.entityId, caseId),
@@ -180,13 +181,13 @@ export async function replaceCaseParameters(input: {
   caseId: string;
   parameters: readonly { name: string; defaultValue?: string }[];
   datasets?: readonly { values: Record<string, string> }[];
-}) {
-  await db.delete(caseParameters).where(eq(caseParameters.caseId, input.caseId));
+}, executor: Pick<typeof db, "delete" | "insert"> = db) {
+  await executor.delete(caseParameters).where(eq(caseParameters.caseId, input.caseId));
   const params = input.parameters
     .map((p) => ({ name: p.name.trim(), defaultValue: (p.defaultValue ?? "").trim() }))
     .filter((p) => p.name);
   if (params.length > 0) {
-    await db.insert(caseParameters).values(
+    await executor.insert(caseParameters).values(
       params.map((p, position) => ({
         caseId: input.caseId,
         name: p.name,
@@ -196,10 +197,10 @@ export async function replaceCaseParameters(input: {
     );
   }
   if (input.datasets) {
-    await db.delete(caseDatasetRows).where(eq(caseDatasetRows.caseId, input.caseId));
+    await executor.delete(caseDatasetRows).where(eq(caseDatasetRows.caseId, input.caseId));
     const rows = input.datasets.filter((row) => Object.keys(row.values ?? {}).length > 0);
     if (rows.length > 0) {
-      await db.insert(caseDatasetRows).values(
+      await executor.insert(caseDatasetRows).values(
         rows.map((row, position) => ({
           caseId: input.caseId,
           position,
@@ -215,8 +216,8 @@ export async function upsertCustomFieldValues(input: {
   entityType: "case" | "result";
   entityId: string;
   values: Record<string, unknown>;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const defs = await db.query.customFieldDefs.findMany({
+}, executor: Pick<typeof db, "query" | "insert"> = db): Promise<{ ok: true } | { ok: false; error: string }> {
+  const defs = await executor.query.customFieldDefs.findMany({
     where: and(
       eq(customFieldDefs.workspaceId, input.workspaceId),
       eq(customFieldDefs.entity, input.entityType),
@@ -237,7 +238,7 @@ export async function upsertCustomFieldValues(input: {
   for (const [key, value] of Object.entries(checked.normalized)) {
     const def = defByKey.get(key);
     if (!def) continue;
-    await db
+    await executor
       .insert(customFieldValues)
       .values({
         fieldId: def.id,
@@ -260,12 +261,13 @@ export async function upsertCustomFieldValues(input: {
 export async function buildCaseVersionSnapshot(
   workspaceId: string,
   caseId: string,
+  executor: Pick<typeof db, "query"> = db,
 ): Promise<CaseVersionSnapshot | null> {
-  const row = await db.query.cases.findFirst({
+  const row = await executor.query.cases.findFirst({
     where: and(eq(cases.id, caseId), eq(cases.workspaceId, workspaceId)),
   });
   if (!row) return null;
-  const tcm = await loadCaseTcm(workspaceId, caseId);
+  const tcm = await loadCaseTcm(workspaceId, caseId, executor);
   return {
     title: row.title,
     description: row.description,
@@ -295,10 +297,10 @@ export async function snapshotCaseVersion(input: {
   caseId: string;
   actorId?: string | null;
   summary?: string;
-}): Promise<typeof caseVersions.$inferSelect | null> {
-  const snapshot = await buildCaseVersionSnapshot(input.workspaceId, input.caseId);
+}, executor: Pick<typeof db, "query" | "select" | "insert"> = db): Promise<typeof caseVersions.$inferSelect | null> {
+  const snapshot = await buildCaseVersionSnapshot(input.workspaceId, input.caseId, executor);
   if (!snapshot) return null;
-  const [latest] = await db
+  const [latest] = await executor
     .select({ version: max(caseVersions.version) })
     .from(caseVersions)
     .where(eq(caseVersions.caseId, input.caseId));
@@ -311,8 +313,8 @@ export async function snapshotCaseVersion(input: {
     fromValue: version === 1 ? null : version - 1,
     toValue: version,
     summary: input.summary ?? `Snapshot v${version}`,
-  });
-  const [row] = await db
+  }, executor);
+  const [row] = await executor
     .insert(caseVersions)
     .values({
       caseId: input.caseId,

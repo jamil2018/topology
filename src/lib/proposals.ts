@@ -7,8 +7,19 @@ import {
   type ProposalPayload,
 } from "@topology/domain";
 import { db } from "@/db";
+import { recordCaseActivity } from "@/lib/case-activity";
+import { readCaseRevision } from "@/lib/case-revision";
+import { buildCasePatch, updateCaseSchema } from "@/lib/case-update";
+import { replaceCaseParameters, replaceCaseSteps, snapshotCaseVersion, upsertCustomFieldValues } from "@/lib/tcm/case-tcm";
+import { createCaseSchema, persistCase } from "@/lib/case-create";
+import { isUuid } from "@/lib/queries/ids";
 import {
+  auditEvents,
+  cases,
+  folders,
+  sharedSteps,
   components,
+  journeys,
   proposals,
   qualityEdges,
   requirements,
@@ -31,6 +42,7 @@ const CASE_STATUSES = new Set([
   "deprecated",
 ]);
 const ENTITY_TYPES = new Set([
+  "case",
   "intent",
   "requirement",
   "risk",
@@ -220,6 +232,7 @@ export type CreateProposalInput = {
 
 export async function createProposal(
   input: CreateProposalInput,
+  tx?: ProposalTransaction,
 ): Promise<ProposalRow> {
   const actorType = isProposalActorType(input.actorType)
     ? input.actorType
@@ -229,7 +242,7 @@ export async function createProposal(
     input.payload.diffs[0]?.entityType ||
     "intent";
 
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .insert(proposals)
     .values({
       workspaceId: input.workspaceId,
@@ -243,32 +256,34 @@ export async function createProposal(
     })
     .returning();
 
+  if (!tx) notifyProposalCreated(row, input.payload.diffs.length);
+  return row;
+}
+
+export function notifyProposalCreated(row: ProposalRow, diffCount: number) {
   const proposalPayload = {
     proposalId: row.id,
     entityType: row.entityType,
     status: row.status,
     actorType: row.actorType,
     model: row.model,
-    diffCount: input.payload.diffs.length,
+    diffCount,
   };
-  const { dispatchWebhook } = await import("@/lib/webhooks");
-  void dispatchWebhook(
-    "proposal.created",
-    proposalPayload,
-    input.workspaceId,
+  void import("@/lib/webhooks").then(({ dispatchWebhook }) =>
+    dispatchWebhook("proposal.created", proposalPayload, row.workspaceId),
   ).catch(() => {});
   void import("@/lib/notification-channels")
     .then(({ dispatchNotificationChannels }) =>
       dispatchNotificationChannels(
         "proposal.created",
         proposalPayload,
-        input.workspaceId,
+        row.workspaceId,
       ),
     )
     .catch(() => {});
-
-  return row;
 }
+
+type ProposalTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 type ApplyResult = {
   applied: Array<{
@@ -280,13 +295,56 @@ type ApplyResult = {
   provenance?: ProposalApplyProvenance;
 };
 
+const proposalEntities = {
+  case: cases,
+  folder: folders,
+  shared_step: sharedSteps,
+  intent: testIntents,
+  requirement: requirements,
+  risk: risks,
+  component: components,
+  implementation: testImplementations,
+  journey: journeys,
+} as const;
+
+async function requireProjectEntity(
+  tx: ProposalTransaction,
+  workspaceId: string,
+  type: string,
+  id: string,
+) {
+  const table = proposalEntities[type as keyof typeof proposalEntities];
+  if (!table || !isUuid(id)) {
+    throw new ProposalApplyError("Proposal references an invalid entity");
+  }
+  const [row] = await tx.select({ id: table.id }).from(table)
+    .where(and(eq(table.id, id), eq(table.workspaceId, workspaceId)))
+    .for("key share");
+  if (!row) throw new ProposalApplyError("Proposal entity not found in project", 404);
+}
+
+function assertCurrentRevision(
+  row: Record<string, unknown> | undefined,
+  diff: ProposalDiff,
+) {
+  if (!row) throw new ProposalApplyError("Proposal entity not found in project", 404);
+  for (const [field, expected] of Object.entries(diff.before ?? {})) {
+    const current = row[field];
+    const actual = current instanceof Date ? current.toISOString() : current;
+    if (!Object.hasOwn(row, field) || JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new ProposalApplyError("Proposal is stale. Refresh the entity and submit a new proposal", 409);
+    }
+  }
+}
+
 async function resolveEntityIdByKey(
+  tx: ProposalTransaction,
   workspaceId: string,
   entityType: string,
   key: string,
 ): Promise<string | null> {
   if (entityType === "intent") {
-    const row = await db.query.testIntents.findFirst({
+    const row = await tx.query.testIntents.findFirst({
       where: and(
         eq(testIntents.workspaceId, workspaceId),
         eq(testIntents.key, key),
@@ -295,7 +353,7 @@ async function resolveEntityIdByKey(
     return row?.id ?? null;
   }
   if (entityType === "requirement") {
-    const row = await db.query.requirements.findFirst({
+    const row = await tx.query.requirements.findFirst({
       where: and(
         eq(requirements.workspaceId, workspaceId),
         eq(requirements.key, key),
@@ -304,13 +362,13 @@ async function resolveEntityIdByKey(
     return row?.id ?? null;
   }
   if (entityType === "risk") {
-    const row = await db.query.risks.findFirst({
+    const row = await tx.query.risks.findFirst({
       where: and(eq(risks.workspaceId, workspaceId), eq(risks.key, key)),
     });
     return row?.id ?? null;
   }
   if (entityType === "component") {
-    const row = await db.query.components.findFirst({
+    const row = await tx.query.components.findFirst({
       where: and(
         eq(components.workspaceId, workspaceId),
         eq(components.key, key),
@@ -322,13 +380,32 @@ async function resolveEntityIdByKey(
 }
 
 async function applyCreateDiff(
+  tx: ProposalTransaction,
   workspaceId: string,
   diff: ProposalDiff,
   applied: ApplyResult["applied"],
   keyToId: Map<string, string>,
+  authorId: string | null,
 ): Promise<void> {
   const after = diff.after ?? {};
   const key = asString(after.key);
+
+  if (diff.entityType === "case") {
+    const proposed = createCaseSchema.safeParse({ ...after, status: "ready", assigneeId: null });
+    if (!proposed.success) throw new ProposalApplyError("Invalid proposed case fields");
+    if (proposed.data.folderId) {
+      await requireProjectEntity(tx, workspaceId, "folder", proposed.data.folderId);
+    }
+    const sharedIds = new Set(proposed.data.structuredSteps?.flatMap(
+      (step) => step.sharedStepId ? [step.sharedStepId] : [],
+    ));
+    for (const id of sharedIds) await requireProjectEntity(tx, workspaceId, "shared_step", id);
+    const created = await persistCase(tx, workspaceId, authorId, proposed.data);
+    keyToId.set(`case:${created.key}`, created.id);
+    keyToId.set(`intent:${created.key}`, created.intentId);
+    applied.push({ action: "create", entityType: "case", id: created.id, key: created.key });
+    return;
+  }
 
   if (diff.entityType === "intent") {
     const title = asString(after.title);
@@ -337,7 +414,7 @@ async function applyCreateDiff(
         "create intent requires after.key and after.title",
       );
     }
-    const [created] = await db
+    const [created] = await tx
       .insert(testIntents)
       .values({
         workspaceId,
@@ -365,7 +442,7 @@ async function applyCreateDiff(
         "create requirement requires after.key and after.title",
       );
     }
-    const [created] = await db
+    const [created] = await tx
       .insert(requirements)
       .values({
         workspaceId,
@@ -392,7 +469,7 @@ async function applyCreateDiff(
         "create risk requires after.key and after.title",
       );
     }
-    const [created] = await db
+    const [created] = await tx
       .insert(risks)
       .values({
         workspaceId,
@@ -419,7 +496,7 @@ async function applyCreateDiff(
         "create component requires after.key and after.title",
       );
     }
-    const [created] = await db
+    const [created] = await tx
       .insert(components)
       .values({
         workspaceId,
@@ -445,6 +522,7 @@ async function applyCreateDiff(
       (asString(after.intentKey)
         ? (keyToId.get(`intent:${asString(after.intentKey)}`) ??
           (await resolveEntityIdByKey(
+            tx,
             workspaceId,
             "intent",
             asString(after.intentKey)!,
@@ -456,7 +534,8 @@ async function applyCreateDiff(
         "create implementation requires intentId/intentKey and a valid type",
       );
     }
-    const [created] = await db
+    await requireProjectEntity(tx, workspaceId, "intent", intentId);
+    const [created] = await tx
       .insert(testImplementations)
       .values({
         workspaceId,
@@ -487,6 +566,7 @@ async function applyCreateDiff(
 }
 
 async function applyLinkDiff(
+  tx: ProposalTransaction,
   workspaceId: string,
   diff: ProposalDiff,
   applied: ApplyResult["applied"],
@@ -517,12 +597,12 @@ async function applyLinkDiff(
   if (!fromId && fromKey) {
     fromId =
       keyToId.get(`${fromType}:${fromKey}`) ??
-      (await resolveEntityIdByKey(workspaceId, fromType, fromKey));
+      (await resolveEntityIdByKey(tx, workspaceId, fromType, fromKey));
   }
   if (!toId && toKey) {
     toId =
       keyToId.get(`${toType}:${toKey}`) ??
-      (await resolveEntityIdByKey(workspaceId, toType, toKey));
+      (await resolveEntityIdByKey(tx, workspaceId, toType, toKey));
   }
 
   if (!fromId || !toId) {
@@ -531,7 +611,9 @@ async function applyLinkDiff(
     );
   }
 
-  const existing = await db.query.qualityEdges.findFirst({
+  await requireProjectEntity(tx, workspaceId, fromType, fromId);
+  await requireProjectEntity(tx, workspaceId, toType, toId);
+  const existing = await tx.query.qualityEdges.findFirst({
     where: and(
       eq(qualityEdges.workspaceId, workspaceId),
       eq(
@@ -578,7 +660,7 @@ async function applyLinkDiff(
     return;
   }
 
-  const [created] = await db
+  const [created] = await tx
     .insert(qualityEdges)
     .values({
       workspaceId,
@@ -615,18 +697,98 @@ async function applyLinkDiff(
   });
 }
 
+async function applyReviewedCaseEdit(
+  tx: ProposalTransaction,
+  workspaceId: string,
+  caseId: string,
+  diff: ProposalDiff,
+  provenance: ProposalApplyProvenance,
+) {
+  const [row] = await tx.select().from(cases).where(and(
+    eq(cases.workspaceId, workspaceId), eq(cases.id, caseId),
+  )).for("update");
+  if (!row) throw new ProposalApplyError("Case not found in project", 404);
+  const current = await readCaseRevision(workspaceId, caseId, tx);
+  if (!current || current.revision !== diff.before?.revision) {
+    throw new ProposalApplyError("Case revision changed. Refresh the case and submit a new proposal", 409);
+  }
+  const parsed = updateCaseSchema.safeParse({
+    ...diff.after,
+    reviewerId: undefined,
+    reviewComment: undefined,
+  });
+  if (!parsed.success || (parsed.data.status && !["ready", "deprecated"].includes(parsed.data.status))) {
+    throw new ProposalApplyError("Invalid reviewed case edit");
+  }
+  const planned = parsed.data;
+  if (planned.folderId) await requireProjectEntity(tx, workspaceId, "folder", planned.folderId);
+  if (planned.structuredSteps) {
+    const ids = new Set(planned.structuredSteps.flatMap(({ sharedStepId }) => sharedStepId ? [sharedStepId] : []));
+    for (const id of ids) await requireProjectEntity(tx, workspaceId, "shared_step", id);
+  }
+
+  const { patch } = buildCasePatch(row, planned);
+  await tx.update(cases).set({
+    ...patch,
+    priority: planned.priority ?? row.priority,
+    status: planned.status ?? row.status,
+    reviewerId: provenance.approvedById,
+    reviewedAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(cases.id, caseId));
+
+  if (planned.structuredSteps) await replaceCaseSteps({ workspaceId, caseId, steps: planned.structuredSteps }, tx);
+  if (planned.parameters || planned.datasets) {
+    await replaceCaseParameters({
+      caseId,
+      parameters: planned.parameters ?? current.definition.parameters,
+      datasets: planned.datasets,
+    }, tx);
+  }
+  if (planned.customFields) {
+    const fields = await upsertCustomFieldValues({ workspaceId, entityType: "case", entityId: caseId, values: planned.customFields }, tx);
+    if (!fields.ok) throw new ProposalApplyError(fields.error);
+  }
+  await recordCaseActivity({
+    caseId,
+    actorId: provenance.approvedById,
+    approvedById: provenance.approvedById,
+    generatedBy: provenance.generatedBy,
+    model: provenance.model,
+    action: "approved",
+    summary: "Applied reviewed case changes",
+  }, tx);
+  await snapshotCaseVersion({
+    workspaceId, caseId, actorId: provenance.approvedById, summary: "Reviewed case revision",
+  }, tx);
+  return row.key;
+}
+
 async function applyUpdateDiff(
+  tx: ProposalTransaction,
   workspaceId: string,
   diff: ProposalDiff,
   applied: ApplyResult["applied"],
+  provenance: ProposalApplyProvenance,
 ): Promise<void> {
   const entityId = asString(diff.entityId);
-  if (!entityId) {
-    throw new ProposalApplyError("update requires entityId");
+  if (!entityId || !isUuid(entityId)) {
+    throw new ProposalApplyError("update requires a valid entityId");
   }
   const after = diff.after ?? {};
 
+  if (diff.entityType === "case") {
+    const key = await applyReviewedCaseEdit(tx, workspaceId, entityId, diff, provenance);
+    applied.push({ action: "update", entityType: "case", id: entityId, key });
+    return;
+  }
+
   if (diff.entityType === "intent") {
+    const [current] = await tx.select().from(testIntents).where(and(
+      eq(testIntents.id, entityId),
+      eq(testIntents.workspaceId, workspaceId),
+    )).for("update");
+    assertCurrentRevision(current, diff);
     const patch: Partial<typeof testIntents.$inferInsert> = {
       updatedAt: new Date(),
     };
@@ -638,7 +800,7 @@ async function applyUpdateDiff(
       patch.criticality = asPriority(after.criticality);
     }
     if (after.status !== undefined) patch.status = asCaseStatus(after.status);
-    const [updated] = await db
+    const [updated] = await tx
       .update(testIntents)
       .set(patch)
       .where(
@@ -661,6 +823,11 @@ async function applyUpdateDiff(
   }
 
   if (diff.entityType === "requirement") {
+    const [current] = await tx.select().from(requirements).where(and(
+      eq(requirements.id, entityId),
+      eq(requirements.workspaceId, workspaceId),
+    )).for("update");
+    assertCurrentRevision(current, diff);
     const patch: Partial<typeof requirements.$inferInsert> = {
       updatedAt: new Date(),
     };
@@ -671,7 +838,7 @@ async function applyUpdateDiff(
     if (after.criticality !== undefined) {
       patch.criticality = asPriority(after.criticality);
     }
-    const [updated] = await db
+    const [updated] = await tx
       .update(requirements)
       .set(patch)
       .where(
@@ -693,6 +860,24 @@ async function applyUpdateDiff(
     return;
   }
 
+  if (diff.entityType === "implementation") {
+    const newIntentId = asString(after.intentId);
+    if (!newIntentId || !diff.before?.intentId) {
+      throw new ProposalApplyError("Relinking requires the current and proposed intent IDs");
+    }
+    const [current] = await tx.select().from(testImplementations).where(and(
+      eq(testImplementations.id, entityId),
+      eq(testImplementations.workspaceId, workspaceId),
+    )).for("update");
+    assertCurrentRevision(current, diff);
+    await requireProjectEntity(tx, workspaceId, "intent", newIntentId);
+    if (current.caseId) throw new ProposalApplyError("Case-backed implementations follow their case intent", 409);
+    await tx.update(testImplementations).set({ intentId: newIntentId, updatedAt: new Date() })
+      .where(eq(testImplementations.id, entityId));
+    applied.push({ action: "update", entityType: "implementation", id: entityId });
+    return;
+  }
+
   throw new ProposalApplyError(
     `Unsupported update entityType: ${diff.entityType}`,
   );
@@ -702,27 +887,29 @@ async function applyUpdateDiff(
  * Apply a validated proposal payload to the quality graph.
  * Only call after an explicit human accept.
  */
-export async function applyProposalPayload(
+async function applyProposalPayload(
+  tx: ProposalTransaction,
   workspaceId: string,
   payload: ProposalPayload,
-  provenance?: ProposalApplyProvenance,
+  authorId: string | null,
+  provenance: ProposalApplyProvenance,
 ): Promise<ApplyResult> {
   const applied: ApplyResult["applied"] = [];
   const keyToId = new Map<string, string>();
 
   for (const diff of payload.diffs) {
     if (diff.action === "create") {
-      await applyCreateDiff(workspaceId, diff, applied, keyToId);
+      await applyCreateDiff(tx, workspaceId, diff, applied, keyToId, authorId);
     } else if (diff.action === "link") {
-      await applyLinkDiff(workspaceId, diff, applied, keyToId);
+      await applyLinkDiff(tx, workspaceId, diff, applied, keyToId);
     } else if (diff.action === "update") {
-      await applyUpdateDiff(workspaceId, diff, applied);
+      await applyUpdateDiff(tx, workspaceId, diff, applied, provenance);
     } else {
       throw new ProposalApplyError(`Unknown action: ${String(diff.action)}`);
     }
   }
 
-  return provenance ? { applied, provenance } : { applied };
+  return { applied, provenance };
 }
 
 export async function reviewProposal(opts: {
@@ -735,65 +922,48 @@ export async function reviewProposal(opts: {
   applied?: ApplyResult["applied"];
   provenance?: ProposalApplyProvenance;
 }> {
-  const row = await db.query.proposals.findFirst({
-    where: and(
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select().from(proposals).where(and(
       eq(proposals.id, opts.proposalId),
       eq(proposals.workspaceId, opts.workspaceId),
-    ),
-  });
-  if (!row) {
-    throw new ProposalApplyError("Proposal not found", 404);
-  }
-  if (!isProposalStatus(row.status) || row.status !== "pending") {
-    throw new ProposalApplyError("Only pending proposals can be reviewed", 409);
-  }
+    )).for("update");
 
-  if (opts.decision === "rejected") {
-    const [updated] = await db
-      .update(proposals)
-      .set({
-        status: "rejected",
-        approvedById: opts.approvedById,
-        updatedAt: new Date(),
-      })
-      .where(eq(proposals.id, row.id))
-      .returning();
-    return { proposal: toProposalListItem(updated) };
-  }
+    if (!row) throw new ProposalApplyError("Proposal not found", 404);
+    if (row.status === opts.decision && row.approvedById === opts.approvedById) {
+      return { proposal: toProposalListItem(row) };
+    }
+    if (!isProposalStatus(row.status) || row.status !== "pending") {
+      throw new ProposalApplyError("Only pending proposals can be reviewed", 409);
+    }
 
-  const payload = parseProposalPayload(row.payloadJson);
-  const provenance = proposalApplyProvenance(row, opts.approvedById);
-  let applied: ApplyResult["applied"];
-  let applyMeta: ProposalApplyProvenance | undefined;
-  try {
-    const result = await applyProposalPayload(
-      opts.workspaceId,
-      payload,
-      provenance,
-    );
-    applied = result.applied;
-    applyMeta = result.provenance;
-  } catch (err) {
-    if (err instanceof ProposalApplyError) throw err;
-    throw new ProposalApplyError(
-      err instanceof Error ? err.message : "Failed to apply proposal",
-      400,
-    );
-  }
+    const result = opts.decision === "accepted"
+      ? await applyProposalPayload(
+          tx,
+          opts.workspaceId,
+          parseProposalPayload(row.payloadJson),
+          row.createdById,
+          proposalApplyProvenance(row, opts.approvedById),
+        )
+      : undefined;
 
-  const [updated] = await db
-    .update(proposals)
-    .set({
-      status: "accepted",
+    const [updated] = await tx.update(proposals).set({
+      status: opts.decision,
       approvedById: opts.approvedById,
       updatedAt: new Date(),
-    })
-    .where(eq(proposals.id, row.id))
-    .returning();
+    }).where(eq(proposals.id, row.id)).returning();
 
-  return {
-    proposal: toProposalListItem(updated),
-    applied,
-    provenance: applyMeta,
-  };
+    await tx.insert(auditEvents).values({
+      action: `proposal.${opts.decision}`,
+      actorId: opts.approvedById,
+      workspaceId: opts.workspaceId,
+      targetType: "proposal",
+      targetId: row.id,
+      metadataJson: JSON.stringify({
+        inputRefs: parseInputRefs(row.inputRefs),
+        applied: result?.applied ?? [],
+      }),
+    });
+
+    return { proposal: toProposalListItem(updated), ...result };
+  });
 }

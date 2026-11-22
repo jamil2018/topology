@@ -36,7 +36,9 @@ test("content-first case creation and run setup preserve data and recover from e
   const runOptions = page.getByRole('button', { name: /Run options/ });
   await expect(runOptions).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByRole('status').filter({ hasText: 'Enter a run name to continue.' }).first()).toBeVisible();
-  await page.getByLabel('Run name',{exact:true}).fill('UX review run');
+  const runName = page.getByRole('textbox', { name: 'Run name', exact: true });
+  await expect(runName).toBeEditable();
+  await runName.fill('UX review run');
   await runOptions.click();
   await expect(runOptions).toHaveAttribute('aria-expanded', 'true');
   const environment = page.getByLabel('Environment',{exact:true}).locator('visible=true');
@@ -50,7 +52,7 @@ test("content-first case creation and run setup preserve data and recover from e
   await page.route('**/api/runs', route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Temporary test outage. Try again.'})}));
   await page.getByRole('button',{name:/Create run ·/}).click();
   await expect(page.getByRole('alert').filter({hasText:'Temporary test outage'})).toBeVisible();
-  await expect(page.getByLabel('Run name',{exact:true})).toHaveValue('UX review run');
+  await expect(runName).toHaveValue('UX review run');
   await page.unroute('**/api/runs');
   const runResponse = page.waitForResponse(r=>r.url().endsWith('/api/runs') && r.request().method()==='POST');
   await page.getByRole('button',{name:/Create run ·/}).click();

@@ -203,6 +203,7 @@ export async function POST(request: Request) {
       title: pr.title,
       base: pr.base.ref,
       head: pr.head.sha ?? pr.head.ref,
+      headSha: pr.head.sha && /^[0-9a-f]{40}$/i.test(pr.head.sha) ? pr.head.sha : undefined,
       status,
       ...(headerPaths.length > 0 ? { changedPaths: headerPaths } : {}),
     });

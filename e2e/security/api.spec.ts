@@ -19,6 +19,42 @@ test("real HTTP rejects revoked credentials and enforces disjoint token scopes",
   expect(cases.some((row: { key: string }) => row.key === "FOR-1")).toBe(false);
 });
 
+test("scoped agent HTTP creates one auditable proposal and preserves legacy reads across cutover", async ({ page, api }) => {
+  const projects = await (await page.request.get("/api/projects")).json();
+  const projectId = projects.activeProjectId;
+  expect(projectId).toBeTruthy();
+  const generated = await page.request.post("/api/tokens", {
+    data: { name: "Scoped agent HTTP", scope: ["agent-read", "agent-propose"] },
+  });
+  expect(generated.status()).toBe(200);
+  const { plaintext } = await generated.json();
+  const client = await api(plaintext);
+  const list = await client.get("/api/v1/agent?resource=cases&limit=1", { maxRedirects: 0 });
+  expect(list.status()).toBe(200);
+  expect((await list.json()).nextCursor).toBeTruthy();
+
+  const data = {
+    action: "propose_coverage", payload: { diffs: [
+      { entityType: "case", action: "create", before: null, after: { key: "SCOPE-NEW", title: "Agent-proposed case" } },
+    ] },
+  };
+  const headers = { "Idempotency-Key": "scoped-e2e-test" };
+  const first = await client.post("/api/v1/agent", { data, headers, maxRedirects: 0 });
+  const retry = await client.post("/api/v1/agent", { data, headers, maxRedirects: 0 });
+  expect(first.status()).toBe(201);
+  expect(retry.status()).toBe(201);
+  expect(await retry.json()).toEqual(await first.json());
+  expect((await (await client.get("/api/v1/agent?resource=cases&q=SCOPE-NEW")).json()).cases).toEqual([]);
+
+  const cutover = await page.request.patch("/api/projects", { data: { id: projectId, legacyAgentWrites: false } });
+  expect(cutover.status()).toBe(200);
+  const legacy = await api(TOKENS.agent);
+  expect((await legacy.get("/api/agent?resource=cases")).status()).toBe(200);
+  const rejected = await legacy.post("/api/agent", { data: { action: "create_case", title: "Legacy write" } });
+  expect(rejected.status()).toBe(403);
+  expect((await rejected.json()).code).toBe("LEGACY_WRITE_DISABLED");
+});
+
 test("real HTTP revocation invalidates a newly issued token immediately", async ({ page, api }) => {
   const response = await page.request.post("/api/tokens", { data: { name: `HTTP token ${randomUUID()}`, scope: "read" } });
   expect(response.status()).toBe(200);

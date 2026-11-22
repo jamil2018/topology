@@ -70,6 +70,14 @@ export async function getWorkspaceImpact(
 ): Promise<{
   impact: ImpactReport;
   caseIds: string[];
+  rankedCases: Array<{
+    id: string;
+    key: string;
+    title: string;
+    priority: string;
+    intentIds: string[];
+    href: string;
+  }>;
   pathRulesApplied: number;
   unknownComponentKeys: string[];
   rulesSource: "request" | "database";
@@ -151,9 +159,30 @@ export async function getWorkspaceImpact(
     impact.intents.map((i) => i.id),
   );
 
+  const caseRows = caseIds.length ? await db.select({
+    id: cases.id, key: cases.key, title: cases.title, priority: cases.priority, intentId: cases.intentId,
+  }).from(cases).where(and(eq(cases.workspaceId, workspaceId), eq(cases.status, "ready"), inArray(cases.id, caseIds))) : [];
+  const impactedIntentIds = new Set(impact.intents.map(({ id }) => id));
+  const caseIntents = new Map<string, string[]>();
+  for (const implementation of implRows) {
+    if (!implementation.caseId || !impactedIntentIds.has(implementation.intentId)) continue;
+    const related = caseIntents.get(implementation.caseId) ?? [];
+    related.push(implementation.intentId);
+    caseIntents.set(implementation.caseId, related);
+  }
+  const rankedCases = caseRows.map(({ intentId, ...row }) => ({
+    ...row,
+    intentIds: [...new Set([
+      ...(intentId && impactedIntentIds.has(intentId) ? [intentId] : []),
+      ...(caseIntents.get(row.id) ?? []),
+    ])].sort(),
+    href: `/cases/${encodeURIComponent(row.key)}`,
+  })).sort((a, b) => a.priority.localeCompare(b.priority) || a.key.localeCompare(b.key));
+
   return {
     impact,
     caseIds,
+    rankedCases,
     pathRulesApplied: pathRules.length,
     unknownComponentKeys: unknownKeys,
     rulesSource,

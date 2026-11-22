@@ -1,6 +1,6 @@
 import { parseCsvTable } from "@/lib/csv";
 import { suggestMapping } from "./mapping";
-import { formatSteps, mergeStepRows, uniqueFields } from "./steps";
+import { STRUCTURED_STEPS_FIELD, formatSteps, mergeStepRows, uniqueFields } from "./steps";
 import type { ImportParseResult, SourceTable } from "./types";
 
 function sniff(raw: string): "json" | "csv" {
@@ -56,6 +56,7 @@ function flattenCase(raw: Record<string, unknown>): Record<string, string> {
     name: str(raw.name ?? raw.title),
     objective: str(raw.objective ?? raw.description),
     precondition: str(raw.precondition ?? raw.preconditions),
+    ...(formatted[STRUCTURED_STEPS_FIELD] ? { [STRUCTURED_STEPS_FIELD]: formatted[STRUCTURED_STEPS_FIELD] } : {}),
     steps: formatted.steps || plain,
     expectedResult: formatted.expectedResult,
     priority: str(raw.priority),

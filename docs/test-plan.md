@@ -17,7 +17,7 @@ Prove that a self-hosted Topology 0.1.x instance can be set up, signed into, and
 - Workspace roles and the action catalog in `src/lib/permissions.ts`.
 - API token scopes `read`, `ci-write`, and `agent`.
 - CLI (`packages/cli`), MCP (`packages/mcp`), reporters (`@topology/playwright`, `@topology/jest`, `@topology/cypress`, pytest in `packages/pytest-topology`), issue providers (`@topology/issue-providers`), outbound webhooks, and S3-compatible attachments.
-- Docker image, `docker-compose.prod.yml`, journaled migrations `0000_baseline` through `0009_scm_feedback`, backup and restore, and the performance budgets in [OPS](#8-ops-deploy-and-data).
+- Docker image, `docker-compose.prod.yml`, journaled migrations `0000_baseline` through `0012_vendor_case_sources`, backup and restore, and the performance budgets in [OPS](#8-ops-deploy-and-data).
 - Comprehensive Chromium plus required Firefox/WebKit core journeys. Release evaluation includes responsive/accessibility, visual and scale checks. See [Environments](#2-environments-and-setup).
 
 ### Out of scope
@@ -2812,6 +2812,9 @@ Journal files:
 | 7 | `0007_collab_and_integrations` |
 | 8 | `0008_triage_resolution` |
 | 9 | `0009_scm_feedback` |
+| 10 | `0010_agent_operations` |
+| 11 | `0011_github_runner_requests` |
+| 12 | `0012_vendor_case_sources` |
 
 `src/db/reconcile-unstamped.sql` is for databases that were created before the journal. Do not replay retired pre-journal SQL as if it were the migrator.
 
@@ -2837,7 +2840,7 @@ Journal files:
   2. Wait for the healthcheck.
   3. `GET http://127.0.0.1:4317/api/health` and `GET /health`.
   4. Open `/setup` and create the first admin (production does not seed demo users).
-  5. `docker compose --env-file .env.prod -f docker-compose.prod.yml exec` the app process and confirm migrations ran (log line or `__drizzle_migrations` has ten rows).
+  5. `docker compose --env-file .env.prod -f docker-compose.prod.yml exec` the app process and confirm migrations ran (log line or `__drizzle_migrations` has thirteen rows).
 - **Expected:** Health is 200. Postgres is not published on the host port (54329 is the dev Compose file, not prod). The app listens on 4317. Demo login `demo@topology.local` does not exist until someone creates it. A second `up` does not reapply migrations as new work.
 - **Automation:** `tests/ops/compose.test.ts`
 
@@ -2849,7 +2852,7 @@ Journal files:
 - **Steps:**
   1. `npm run db:migrate`
   2. Query `__drizzle_migrations` and a known table (`cases`, `api_tokens`).
-- **Expected:** Exit 0. Journal tags `0000_baseline` through `0009_scm_feedback` are applied in order. Tables exist. The command does not call `drizzle-kit push`.
+- **Expected:** Exit 0. Journal tags `0000_baseline` through `0012_vendor_case_sources` are applied in order. Tables exist. The command does not call `drizzle-kit push`.
 - **Automation:** `tests/ops/migrate.test.ts`
 
 ### OPS-MIG-002 — Upgrade from baseline to current
@@ -2859,7 +2862,7 @@ Journal files:
 - **Preconditions:** A database that has had only `0000_baseline` applied (apply that SQL, stamp only that hash).
 - **Steps:**
   1. `npm run db:migrate`
-  2. Confirm `0001` through `0009_scm_feedback` applied and existing baseline rows remain.
+  2. Confirm `0001` through `0012_vendor_case_sources` applied and existing baseline rows remain.
 - **Expected:** Upgrade is additive. A row inserted before the upgrade is still there. Intermediate tags remain meaningful (`0003_quality_graph_pref` for the quality-graph preference; later tags for productivity, share generation, collab, triage, SCM feedback). The app boots against the upgraded database.
 - **Automation:** `tests/ops/migrate.test.ts`
 
@@ -3205,7 +3208,7 @@ Manual-only cases, which automation must not mark passed on its own: **A11Y-SR-0
 
 The current implementation checklist and evidence take precedence over historical command descriptions above: [plan](../tasks/plan.md), [checklist](../tasks/todo.md), [commands and limitations](../tasks/validation/README.md), [coverage inventory](../tasks/validation/coverage-matrix.md), [findings](../tasks/validation/findings.md). Existing case IDs remain unchanged.
 
-`test:e2e` now selects comprehensive Chromium after authentication setup; `test:e2e:smoke` preserves the previous two-spec selection. All release browser commands build and start production by default, with retries disabled and no server reuse. Firefox/WebKit core checks are required in CI. The harness provisions its own disposable services; never drop or reset the developer database. Migrations now include through `0009_scm_feedback` (report share generation, collab/integrations, triage resolution, and SCM feedback). Report share links can be revoked per report; generation zero covers legacy links.
+`test:e2e` now selects comprehensive Chromium after authentication setup; `test:e2e:smoke` preserves the previous two-spec selection. All release browser commands build and start production by default, with retries disabled and no server reuse. Firefox/WebKit core checks are required in CI. The harness provisions its own disposable services; never drop or reset the developer database. Migrations now include through `0012_vendor_case_sources` (report share generation, collab/integrations, triage resolution, and SCM feedback). Report share links can be revoked per report; generation zero covers legacy links.
 
 A successful test command alone does not satisfy the full release acceptance criteria. Unreviewed inventory entries, manual qualifications, skipped tests, visual baseline inspection, and missing operational/performance evidence remain open until explicitly evaluated. Require three clean retry-free sanity runs and one full release evaluation on the final revision.
 

@@ -179,6 +179,8 @@ describe("ImpactPanel", () => {
         String(input).includes("/api/affected") && init?.method === "POST",
     );
     expect(headerProjectId(affectedCall?.[1])).toBe("test-project");
+    expect(JSON.parse(String(affectedCall?.[1]?.body))).toMatchObject({ pr: 42 });
+    expect(JSON.parse(String(affectedCall?.[1]?.body))).not.toHaveProperty("commitSha");
   });
 
   it("links to repository settings when none are connected", async () => {

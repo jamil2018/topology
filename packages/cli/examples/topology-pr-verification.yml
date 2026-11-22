@@ -1,0 +1,73 @@
+# Copy into .github/workflows/verify.yml on the repository's protected ref.
+# Configure @topology/playwright as one of this project's Playwright reporters.
+name: Verify a Topology test plan
+
+on:
+  workflow_dispatch:
+    inputs:
+      topology_request_id:
+        type: string
+        required: true
+      topology_commit_sha:
+        type: string
+        required: true
+      topology_environment:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_PROJECT: ${{ inputs.topology_environment }}
+      EXPECTED_SHA: ${{ inputs.topology_commit_sha }}
+      TOPOLOGY_DRY_RUN: "1"
+      TOPOLOGY_REPORT_FILE: ${{ runner.temp }}/topology-execution.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.topology_commit_sha }}
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --project="$PLAYWRIGHT_PROJECT"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: topology-execution
+          path: ${{ runner.temp }}/topology-execution.json
+          if-no-files-found: error
+
+  report:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: topology-execution
+      - name: Submit execution evidence
+        env:
+          TOPOLOGY_URL: ${{ vars.TOPOLOGY_URL }}
+          TOPOLOGY_REPORT_TOKEN: ${{ secrets.TOPOLOGY_REPORT_TOKEN }}
+          REQUEST_ID: ${{ inputs.topology_request_id }}
+          COMMIT_SHA: ${{ inputs.topology_commit_sha }}
+          CONFIGURATION: ${{ inputs.topology_environment }}
+        run: |
+          jq --arg request "$REQUEST_ID" --arg sha "$COMMIT_SHA" \
+            --arg configuration "$CONFIGURATION" --arg runId "$GITHUB_RUN_ID" \
+            --argjson attempt "$GITHUB_RUN_ATTEMPT" \
+            '.run = ((.run // {}) + {runnerRequestId: $request, commitSha: $sha,
+              configuration: $configuration, externalId: $runId, runnerAttempt: $attempt})' \
+            topology-execution.json > topology-evidence.json
+          curl --fail-with-body --silent --show-error --retry 2 --retry-all-errors \
+            --max-time 30 -H "Authorization: Bearer $TOPOLOGY_REPORT_TOKEN" \
+            -H "Content-Type: application/json" --data-binary @topology-evidence.json \
+            "${TOPOLOGY_URL%/}/api/executions"

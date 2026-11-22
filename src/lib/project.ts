@@ -4,6 +4,7 @@ import { db } from "@/db";
 import {
   workspaceMembers,
   workspaces,
+  auditEvents,
   type Workspace,
   type WorkspaceCustomRole,
   type WorkspaceMember,
@@ -332,7 +333,7 @@ export async function createProject(input: {
 
 export async function updateProject(
   projectId: string,
-  patch: { name?: string; archived?: boolean },
+  patch: { name?: string; archived?: boolean; legacyAgentWrites?: boolean; actorId?: string },
 ) {
   const updates: Partial<typeof workspaces.$inferInsert> = {
     updatedAt: new Date(),
@@ -341,12 +342,22 @@ export async function updateProject(
   if (patch.archived === true) updates.archivedAt = new Date();
   if (patch.archived === false) updates.archivedAt = null;
 
-  const [updated] = await db
-    .update(workspaces)
-    .set(updates)
-    .where(eq(workspaces.id, projectId))
-    .returning();
-  return updated ?? null;
+  if (patch.legacyAgentWrites !== undefined) updates.legacyAgentWrites = patch.legacyAgentWrites;
+  return db.transaction(async (tx) => {
+    const [updated] = await tx.update(workspaces).set(updates)
+      .where(eq(workspaces.id, projectId)).returning();
+    if (updated && patch.legacyAgentWrites !== undefined) {
+      await tx.insert(auditEvents).values({
+        action: "project.agent_policy.update",
+        workspaceId: projectId,
+        actorId: patch.actorId,
+        targetType: "project",
+        targetId: projectId,
+        metadataJson: JSON.stringify({ legacyAgentWrites: patch.legacyAgentWrites }),
+      });
+    }
+    return updated ?? null;
+  });
 }
 
 export async function deleteProject(projectId: string) {

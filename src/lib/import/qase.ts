@@ -1,6 +1,6 @@
 import { parseCsvTable } from "@/lib/csv";
 import { suggestMapping } from "./mapping";
-import { formatSteps, uniqueFields } from "./steps";
+import { STRUCTURED_STEPS_FIELD, formatSteps, uniqueFields } from "./steps";
 import type { ImportParseResult, SourceTable } from "./types";
 
 function sniff(raw: string): "json" | "csv" {
@@ -31,7 +31,7 @@ function str(value: unknown): string {
   return rec ? str(rec.title ?? rec.name ?? rec.value) : "";
 }
 
-function parseStepsField(raw: unknown): { steps: string; expectedResult: string } {
+function parseStepsField(raw: unknown): ReturnType<typeof formatSteps> {
   if (typeof raw === "string") {
     const trimmed = raw.trim();
     if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
@@ -85,6 +85,7 @@ function flattenCase(raw: Record<string, unknown>): Record<string, string> {
     title: str(raw.title ?? raw.name),
     description: str(raw.description),
     preconditions: str(raw.preconditions ?? raw.precondition),
+    ...(formatted[STRUCTURED_STEPS_FIELD] ? { [STRUCTURED_STEPS_FIELD]: formatted[STRUCTURED_STEPS_FIELD] } : {}),
     steps: formatted.steps,
     expectedResult: formatted.expectedResult,
     priority: namedEnum(str(raw.priority), QASE_PRIORITY),
@@ -126,6 +127,7 @@ function parseQaseCsv(raw: string): Record<string, string>[] {
     const formatted = parseStepsField(row.steps ?? row.Steps ?? "");
     return {
       ...row,
+      ...(formatted[STRUCTURED_STEPS_FIELD] ? { [STRUCTURED_STEPS_FIELD]: formatted[STRUCTURED_STEPS_FIELD] } : {}),
       steps: formatted.steps || row.steps || "",
       expectedResult: formatted.expectedResult || row.expectedResult || "",
     };

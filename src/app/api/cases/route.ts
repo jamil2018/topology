@@ -6,12 +6,9 @@ import { db } from "@/db";
 import { cases, folders, sharedSteps } from "@/db/schema";
 import { requireWorkspaceAssignee } from "@/lib/assignee";
 import {
-  recordCaseActivity,
   recordCaseFieldChanges,
 } from "@/lib/case-activity";
-import { replaceCaseSteps } from "@/lib/tcm/case-tcm";
 import {
-  structuredStepInputSchema,
   subtractTags,
   unionTags,
 } from "@/lib/case-update";
@@ -19,24 +16,7 @@ import { caseWriteError, isLockFailure } from "@/lib/pg-error";
 import { requireProjectAccess } from "@/lib/project";
 import { caseListQueryFromSearchParams } from "@/lib/case-list";
 import { listCasesPage } from "@/lib/queries";
-
-const createCaseSchema = z.object({
-  structuredSteps: z.array(structuredStepInputSchema).max(500).optional(),
-  key: z.string().min(1).max(64),
-  title: z.string().min(1).max(240),
-  description: z.string().optional().default(""),
-  preconditions: z.string().optional().default(""),
-  steps: z.string().optional().default(""),
-  expectedResult: z.string().optional().default(""),
-  priority: z.enum(["P0", "P1", "P2", "P3"]).optional().default("P2"),
-  status: z
-    .enum(["draft", "in_review", "ready", "blocked", "deprecated"])
-    .optional()
-    .default("draft"),
-  folderId: z.string().uuid().nullable().optional(),
-  tags: z.array(z.string()).optional().default([]),
-  assigneeId: z.string().uuid().nullable().optional(),
-});
+import { createCaseSchema, persistCase } from "@/lib/case-create";
 
 const bulkUpdateSchema = z.object({
   caseIds: z.array(z.string().uuid()).min(1).max(500),
@@ -210,16 +190,9 @@ export async function POST(request: Request) {
     if (available.length !== sharedIds.length) return NextResponse.json({ error: "Shared steps unavailable in this project" }, { status: 400 });
   }
   try {
-    const withIntent = await db.transaction(async (tx) => {
-      const { structuredSteps, ...fields } = parsed.data;
-      const [created] = await tx.insert(cases).values({ ...fields, workspaceId, createdById: session.user.id }).returning();
-      if (structuredSteps) await replaceCaseSteps({ workspaceId, caseId: created.id, steps: structuredSteps }, tx);
-      const { ensureIntentForCase } = await import("@/lib/quality-graph");
-      const { intentId } = await ensureIntentForCase(created, tx);
-      await recordCaseActivity({ caseId: created.id, actorId: session.user.id, action: "created", summary: `Created case ${created.key}` }, tx);
-      const current = await tx.query.cases.findFirst({ where: eq(cases.id, created.id) });
-      return { ...current!, intentId };
-    });
+    const withIntent = await db.transaction((tx) =>
+      persistCase(tx, workspaceId, session.user.id, parsed.data),
+    );
     return NextResponse.json({ case: withIntent }, { status: 201 });
   } catch (err) {
     const mapped = caseWriteError(err);

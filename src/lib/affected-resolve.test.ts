@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/git-sync", () => ({
   getCommitBySha: vi.fn(),
-  getPullRequestByNumber: vi.fn(),
+  findPullRequestsByNumber: vi.fn(),
   parseChangedPaths: (json: string) => {
     try {
       return JSON.parse(json) as string[];
@@ -30,6 +30,8 @@ describe("resolveAffectedPaths", () => {
     const gitSync = await import("@/lib/git-sync");
     vi.mocked(gitSync.getCommitBySha).mockResolvedValue({
       id: "c1",
+      sha: "deadbeef",
+      repositoryId: "repo-1",
       changedPathsJson: '["src/b.ts"]',
     } as never);
 
@@ -39,6 +41,8 @@ describe("resolveAffectedPaths", () => {
       ok: true,
       paths: ["src/b.ts"],
       pathsSource: "commit",
+      headSha: "deadbeef",
+      repositoryId: "repo-1",
     });
   });
 

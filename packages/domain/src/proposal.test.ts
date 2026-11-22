@@ -117,7 +117,7 @@ describe("validateProposalPayload", () => {
     const result = validateProposalPayload({
       diffs: [
         {
-          entityType: "case",
+          entityType: "unknown-entity",
           action: "delete",
           before: null,
           after: {},

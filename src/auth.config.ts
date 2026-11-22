@@ -21,7 +21,7 @@ export const authConfig = {
         /^\/api\/share\/reports\/[^/]+\/attachments\/[^/]+$/.test(pathname);
       const isBearerApi = ["/api/affected", "/api/coverage", "/api/query", "/api/git/ingest"].includes(pathname);
       const isCiApi = pathname.startsWith("/api/ci");
-      const isAgentApi = pathname.startsWith("/api/agent");
+      const isAgentApi = pathname.startsWith("/api/agent") || pathname === "/api/v1/agent";
       const isExecutionsApi = pathname.startsWith("/api/executions");
       const isReleasesApi = pathname.startsWith("/api/releases");
       const isHealth = pathname === "/api/health" || pathname === "/health";

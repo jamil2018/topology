@@ -303,13 +303,13 @@ function isTriageResultStatus(status: string) {
   return status === "failed" || status === "blocked";
 }
 
-export async function openTriageForResult(resultId: string) {
-  const failure = await db.query.runResults.findFirst({
+export async function openTriageForResult(resultId: string, executor: IngestTx | typeof db = db) {
+  const failure = await executor.query.runResults.findFirst({
     where: eq(runResults.id, resultId),
     with: { case: true, run: true },
   });
   if (!failure || !failure.run || !isTriageResultStatus(failure.status)) return;
-  await upsertTriageItem(failure, failure.runId, failure.run.workspaceId);
+  await upsertTriageItem(failure, failure.runId, failure.run.workspaceId, executor);
 }
 
 async function upsertTriageItem(
@@ -325,6 +325,7 @@ async function upsertTriageItem(
   },
   runId: string,
   workspaceId: string,
+  executor: IngestTx | typeof db = db,
 ) {
   const caseKey = failure.case?.key ?? failure.externalKey ?? failure.id;
   const fingerprint = failureFingerprint({
@@ -336,17 +337,17 @@ async function upsertTriageItem(
     errorMessage: failure.errorMessage,
     stack: failure.stack,
     notes: failure.notes,
-  });
+  }, executor);
 
   const existing =
-    (await db.query.triageItems.findFirst({
+    (await executor.query.triageItems.findFirst({
       where: and(
         eq(triageItems.workspaceId, workspaceId),
         eq(triageItems.fingerprint, fingerprint),
         inArray(triageItems.status, ["open", "snoozed"]),
       ),
     })) ??
-    (await db.query.triageItems.findFirst({
+    (await executor.query.triageItems.findFirst({
       where: and(
         eq(triageItems.workspaceId, workspaceId),
         eq(triageItems.resultId, failure.id),
@@ -355,7 +356,7 @@ async function upsertTriageItem(
     }));
 
   if (existing) {
-    await db
+    await executor
       .update(triageItems)
       .set({
         fingerprint,
@@ -370,7 +371,7 @@ async function upsertTriageItem(
       })
       .where(eq(triageItems.id, existing.id));
   } else {
-    await db.insert(triageItems).values({
+    await executor.insert(triageItems).values({
       workspaceId,
       fingerprint,
       signatureId: signature.id,

@@ -24,6 +24,7 @@ const patchSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(120).optional(),
   archived: z.boolean().optional(),
+  legacyAgentWrites: z.boolean().optional(),
 });
 
 const selectSchema = z.object({
@@ -179,6 +180,8 @@ export async function PATCH(request: Request) {
     updated = await updateProject(parsed.data.id, {
       name: parsed.data.name,
       archived: parsed.data.archived,
+      legacyAgentWrites: parsed.data.legacyAgentWrites,
+      actorId: session.user.id,
     });
   } catch (err) {
     return dbErrorResponse(err, "Update failed");
@@ -193,6 +196,7 @@ export async function PATCH(request: Request) {
       name: updated.name,
       slug: updated.slug,
       archivedAt: updated.archivedAt,
+      legacyAgentWrites: updated.legacyAgentWrites,
     },
   });
 }

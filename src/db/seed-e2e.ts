@@ -33,6 +33,8 @@ export async function seedE2eFixtures(input: {
 }) {
   assertE2eCatalog();
   const { workspaceId, user } = input;
+  // This disposable fixture also exercises clients during legacy migration.
+  await db.update(workspaces).set({ legacyAgentWrites: true }).where(eq(workspaces.id, workspaceId));
 
   const memberRole = await getSystemRole(workspaceId, "member");
   const viewerRole = await getSystemRole(workspaceId, "viewer");

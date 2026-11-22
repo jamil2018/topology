@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -6,6 +7,9 @@ import { TopologyClient, requireEnv } from "./client.js";
 function jsonText(data: unknown) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
+    ...(data && typeof data === "object" && !Array.isArray(data)
+      ? { structuredContent: data as Record<string, unknown> }
+      : {}),
   };
 }
 
@@ -18,8 +22,30 @@ export function createTopologyMcpServer(client: TopologyClient) {
   server.tool(
     "list_cases",
     "List or search Topology test cases",
-    { q: z.string().optional() },
-    async ({ q }) => jsonText(await client.listCases(q)),
+    {
+      q: z.string().optional(),
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+      status: z.enum(["draft", "in_review", "ready", "blocked", "deprecated"]).optional(),
+    },
+    async ({ q, ...page }) => jsonText(await client.listCases(q, page)),
+  );
+
+  server.tool(
+    "get_case",
+    "Read a case and its structured steps, datasets, custom fields and version history",
+    { id: z.uuid().optional(), key: z.string().optional() },
+    async (args) => jsonText(await client.getCase(args)),
+  );
+  server.tool(
+    "list_catalog",
+    "List folders, shared steps, custom field definitions, plans, or run templates",
+    {
+      resource: z.enum(["folders", "shared_steps", "custom_fields", "plans", "run_templates"]),
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    },
+    async (args) => jsonText(await client.listCatalog(args)),
   );
 
   server.tool(
@@ -39,8 +65,13 @@ export function createTopologyMcpServer(client: TopologyClient) {
 
   server.tool(
     "list_runs",
-    "List recent test runs",
-    async () => jsonText(await client.listRuns()),
+    "List test runs with optional status and cursor",
+    {
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+      status: z.enum(["planned", "in_progress", "completed", "aborted"]).optional(),
+    },
+    async (args) => jsonText(await client.listRuns(args)),
   );
 
   server.tool(
@@ -61,8 +92,105 @@ export function createTopologyMcpServer(client: TopologyClient) {
     {
       runId: z.string().optional(),
       status: z.string().optional(),
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional(),
     },
     async (args) => jsonText(await client.listResults(args)),
+  );
+
+  server.tool(
+    "get_result",
+    "Read an exact result, iteration and step snapshots",
+    { id: z.uuid() },
+    async ({ id }) => jsonText(await client.getResult(id)),
+  );
+
+  const operationKey = z.string().min(1).max(128).describe("Reuse this key when retrying the same operation");
+  server.tool(
+    "create_assigned_run",
+    "Create a manual run of approved cases and assign it to the credential owner",
+    {
+      idempotencyKey: operationKey,
+      name: z.string(),
+      caseIds: z.array(z.uuid()).min(1).max(500),
+      description: z.string().optional(),
+      environment: z.string().optional(),
+    },
+    async ({ idempotencyKey, ...args }) => jsonText(await client.runOperation(idempotencyKey, {
+      action: "create_run",
+      ...args,
+    })),
+  );
+  server.tool(
+    "request_pr_workflow",
+    "Ask an approved GitHub Actions workflow to test the current head of a pull request",
+    {
+      idempotencyKey: operationKey,
+      pullRequestId: z.uuid(),
+      commitSha: z.string().regex(/^[0-9a-f]{40}$/),
+      workflow: z.string(),
+      environment: z.string(),
+      caseIds: z.array(z.uuid()).min(1).max(50),
+    },
+    async ({ idempotencyKey, ...args }) => jsonText(await client.runOperation(idempotencyKey, {
+      action: "request_workflow",
+      ...args,
+    })),
+  );
+  server.tool(
+    "get_pr_release_evidence",
+    "Read the release policy matrix and human sign-off for a pull request",
+    { pullRequestId: z.uuid() },
+    async ({ pullRequestId }) => jsonText(await client.getReleaseEvidence(pullRequestId)),
+  );
+  server.tool(
+    "get_workflow_request",
+    "Read provider status, commit freshness, and the resulting report for a workflow request",
+    { id: z.uuid() },
+    async ({ id }) => jsonText(await client.getWorkflowRequest(id)),
+  );
+
+  server.tool(
+    "record_observation",
+    "Record an observation on one assigned result or step using its exact ID",
+    {
+      idempotencyKey: operationKey,
+      runId: z.uuid(),
+      resultId: z.uuid(),
+      stepResultId: z.uuid().optional(),
+      status: z.enum(["untested", "passed", "failed", "blocked", "skipped"]),
+      notes: z.string().optional(),
+      sourceRefs: z.array(z.string()).optional(),
+    },
+    async ({ idempotencyKey, ...args }) => jsonText(await client.runOperation(idempotencyKey, {
+      action: "record_result",
+      ...args,
+    })),
+  );
+
+  server.tool(
+    "create_retest",
+    "Create an assigned retest with lineage from explicitly selected failed or blocked results",
+    {
+      idempotencyKey: operationKey,
+      name: z.string(),
+      sourceResultIds: z.array(z.uuid()).min(1).max(500),
+      description: z.string().optional(),
+      environment: z.string().optional(),
+    },
+    async ({ idempotencyKey, ...args }) => jsonText(await client.runOperation(idempotencyKey, {
+      action: "create_retest",
+      ...args,
+    })),
+  );
+  server.tool(
+    "handoff_run",
+    "Hand an assigned manual run to another project member with a note",
+    { idempotencyKey: operationKey, runId: z.uuid(), assigneeId: z.uuid(), notes: z.string() },
+    async ({ idempotencyKey, ...args }) => jsonText(await client.runOperation(idempotencyKey, {
+      action: "handoff_run",
+      ...args,
+    })),
   );
 
   server.tool(
@@ -70,6 +198,7 @@ export function createTopologyMcpServer(client: TopologyClient) {
     "Record pass/fail/block/skip for a case in a run",
     {
       runId: z.string(),
+      resultId: z.uuid().optional(),
       caseId: z.string().optional(),
       caseKey: z.string().optional(),
       status: z.enum(["untested", "passed", "failed", "blocked", "skipped"]),
@@ -188,6 +317,7 @@ export function createTopologyMcpServer(client: TopologyClient) {
     "propose_coverage",
     "Queue a coverage proposal (create intent / link edge) for human review. Does NOT write to the graph until accepted.",
     {
+      idempotencyKey: operationKey.optional(),
       payload: z.object({
         diffs: z.array(z.record(z.string(), z.unknown())).min(1),
         rationale: z.string().optional(),
@@ -196,14 +326,19 @@ export function createTopologyMcpServer(client: TopologyClient) {
       model: z.string().optional(),
       inputRefs: z.array(z.string()).optional(),
     },
-    async (args) => jsonText(await client.proposeCoverage(args)),
+    async ({ idempotencyKey, ...args }) => jsonText(idempotencyKey
+      ? await client.runOperation(idempotencyKey, { action: "propose_coverage", ...args })
+      : await client.proposeCoverage(args)),
   );
 
   server.tool(
     "get_affected_tests",
     "Walk changed paths through path→component rules to list affected requirements, intents, implementations, and gaps",
     {
-      paths: z.array(z.string()).min(1),
+      paths: z.array(z.string()).min(1).optional(),
+      commitSha: z.string().optional(),
+      pr: z.number().int().positive().optional(),
+      repositoryId: z.uuid().optional(),
       rules: z
         .array(
           z.object({
@@ -291,11 +426,7 @@ export async function startTopologyMcpServer() {
 
 export { TopologyClient, requireEnv } from "./client.js";
 
-const isDirect =
-  process.argv[1] &&
-  (process.argv[1].endsWith("server.ts") ||
-    process.argv[1].endsWith("server.js") ||
-    process.argv[1].endsWith("topology-mcp.js"));
+const isDirect = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 
 if (isDirect) {
   startTopologyMcpServer().catch((err) => {

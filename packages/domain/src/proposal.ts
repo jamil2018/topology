@@ -6,6 +6,7 @@
  */
 
 export const proposalEntityTypes = [
+  "case",
   "intent",
   "requirement",
   "risk",

@@ -51,7 +51,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const api = parsed.body.content ? null : parsed.body.api;
+  const base = api?.baseUrl.trim() ? new URL(api.baseUrl) : null;
+  const sourceUrl = base ? base.origin + base.pathname.replace(/\/$/, "") : "";
+  const namespace = parsed.body.sourceNamespace ?? (api
+    ? JSON.stringify([sourceUrl, api.project?.trim() ?? ""])
+    : "file");
   const result = await persistImportedCases({
+    provider: parsed.body.provider,
+    sourceNamespace: namespace,
     workspaceId: access.workspaceId,
     actorId,
     rows: built.rows,
@@ -79,6 +87,7 @@ export async function POST(request: Request) {
     provider: parsed.body.provider,
     created: result.created.length,
     skipped: result.skipped,
+    skipDetails: result.skipDetails,
     wouldCreate: result.wouldCreate,
     wouldSkip: result.wouldSkip,
     errors: built.errors,

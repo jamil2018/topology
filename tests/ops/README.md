@@ -14,7 +14,7 @@ TOPOLOGY_ISSUE_PROVIDER=mock
 
 ## Migration idempotency
 
-Unit coverage, no database: `src/db/migrator.test.ts` checks the journal from `0000_baseline` through `0009_scm_feedback`, unstamped reconciliation (`src/db/reconcile-unstamped.sql`), and that `runMigrations` refuses an empty URL.
+Unit coverage, no database: `src/db/migrator.test.ts` checks the journal from `0000_baseline` through `0012_vendor_case_sources`, unstamped reconciliation (`src/db/reconcile-unstamped.sql`), and that `runMigrations` refuses an empty URL.
 
 Apply twice against a live database. The second run is a no-op once `drizzle.__drizzle_migrations` has the journal hashes.
 
@@ -31,7 +31,7 @@ TOPOLOGY_OPS_E2E=1 npx tsx --env-file=.env.local --test tests/ops/migrate-idempo
 
 ### Fresh database vs upgrade from 0000
 
-Fresh volume: point `DATABASE_URL` at an empty database and run `npm run db:migrate` once. Expect journal entries `0000_baseline` through `0009_scm_feedback` (ten rows).
+Fresh volume: point `DATABASE_URL` at an empty database and run `npm run db:migrate` once. Expect journal entries `0000_baseline` through `0012_vendor_case_sources` (thirteen rows).
 
 Upgrade: start from a database whose journal contains only `0000_baseline`, then run `npm run db:migrate`. Expect `0001` through `0009` to apply, and a second run to change nothing.
 

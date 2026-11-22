@@ -59,8 +59,9 @@ export async function requireWorkspaceAssignee(
   workspaceId: string,
   assigneeId: string,
   requiredAction: Action,
+  executor: Pick<typeof db, "query"> = db,
 ): Promise<AssigneeDecision> {
-  const member = await db.query.workspaceMembers.findFirst({
+  const member = await executor.query.workspaceMembers.findFirst({
     where: and(
       eq(workspaceMembers.workspaceId, workspaceId),
       eq(workspaceMembers.userId, assigneeId),

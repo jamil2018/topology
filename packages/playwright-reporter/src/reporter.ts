@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import {
   EXECUTION_PROTOCOL_VERSION,
   type ExecutionReport,
@@ -91,6 +92,10 @@ export class TopologyReporter implements Reporter {
     }
 
     const report = this.buildReport();
+    const reportFile = process.env.TOPOLOGY_REPORT_FILE?.trim();
+    if (reportFile) {
+      await writeFile(reportFile, JSON.stringify(report), { encoding: "utf8", mode: 0o600 });
+    }
     const dryRun =
       this.options.dryRun === true ||
       process.env.TOPOLOGY_DRY_RUN === "1" ||
@@ -151,10 +156,17 @@ export class TopologyReporter implements Reporter {
       env.GITHUB_RUN_ID?.trim() ||
       undefined;
 
+    const runnerRequestId = env.TOPOLOGY_RUNNER_REQUEST_ID?.trim();
+    const configuration = env.TOPOLOGY_RUNNER_CONFIGURATION?.trim();
+    const runnerAttempt = Number(env.GITHUB_RUN_ATTEMPT);
+
     const runMeta =
       commitSha || branch || externalId
         ? {
             ...(externalId ? { externalId } : {}),
+            ...(runnerRequestId ? { runnerRequestId } : {}),
+            ...(configuration ? { configuration } : {}),
+            ...(runnerRequestId && runnerAttempt > 0 ? { runnerAttempt } : {}),
             ...(commitSha ? { commitSha } : {}),
             ...(branch ? { branch } : {}),
             environment: {

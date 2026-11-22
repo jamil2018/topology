@@ -145,7 +145,7 @@ describe("ConnectAgentPanel", () => {
         (screen.getByLabelText("API token") as HTMLInputElement).value,
       ).toBe("topo_generated_agent_token");
     });
-    expect(screen.getByText(/Agent-scoped token created/i)).toBeTruthy();
+    expect(screen.getByText(/Agent token created with read and proposal access/i)).toBeTruthy();
   });
 
   it("tests the agent connection and shows status", async () => {

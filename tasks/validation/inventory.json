@@ -2910,7 +2910,7 @@
       "title": "Production Compose boots and migrates",
       "source": "docs/test-plan.md",
       "priority": "P0",
-      "expectedBehavior": "- **Priority:** P0\n- **Area:** Ops\n- **Preconditions:** `docker-compose.prod.yml`. `.env.prod` with `AUTH_SECRET`, `AUTH_URL`, and `POSTGRES_PASSWORD`. No `TOPOLOGY_ALLOW_DEMO_SEED`. Fresh volumes.\n- **Steps:**\n  1. `docker compose -f docker-compose.prod.yml up --build -d`\n  2. Wait for the healthcheck.\n  3. `GET http://127.0.0.1:4317/api/health` and `GET /health`.\n  4. Open `/setup` and create the first admin (production does not seed demo users).\n  5. `docker compose -f docker-compose.prod.yml exec` the app process and confirm migrations ran (log line or `__drizzle_migrations` has four rows).\n- **Expected:** Health is 200. Postgres is not published on the host port (54329 is the dev Compose file, not prod). The app listens on 4317. Demo login `demo@topology.local` does not exist until someone creates it. A second `up` does not reapply migrations as new work.\n- **Automation:** `tests/ops/compose.test.ts`",
+      "expectedBehavior": "- **Priority:** P0\n- **Area:** Ops\n- **Preconditions:** `docker-compose.prod.yml`. `.env.prod` with `AUTH_SECRET`, `AUTH_URL`, and `POSTGRES_PASSWORD`. No `TOPOLOGY_ALLOW_DEMO_SEED`. Fresh volumes.\n- **Steps:**\n  1. `docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d`\n  2. Wait for the healthcheck.\n  3. `GET http://127.0.0.1:4317/api/health` and `GET /health`.\n  4. Open `/setup` and create the first admin (production does not seed demo users).\n  5. `docker compose --env-file .env.prod -f docker-compose.prod.yml exec` the app process and confirm migrations ran (log line or `__drizzle_migrations` has thirteen rows).\n- **Expected:** Health is 200. Postgres is not published on the host port (54329 is the dev Compose file, not prod). The app listens on 4317. Demo login `demo@topology.local` does not exist until someone creates it. A second `up` does not reapply migrations as new work.\n- **Automation:** `tests/ops/compose.test.ts`",
       "automatedChecks": [],
       "assertionScope": null,
       "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
@@ -2922,7 +2922,7 @@
       "title": "Fresh database migration",
       "source": "docs/test-plan.md",
       "priority": "P0",
-      "expectedBehavior": "- **Priority:** P0\n- **Area:** Ops\n- **Preconditions:** Empty Postgres database `topology_fresh`. `DATABASE_URL` pointed at it.\n- **Steps:**\n  1. `npm run db:migrate`\n  2. Query `__drizzle_migrations` and a known table (`cases`, `api_tokens`).\n- **Expected:** Exit 0. Journal tags `0000_baseline`, `0001_tcm_parity`, `0002_scale`, and `0003_quality_graph_pref` are applied in order. Tables exist. The command does not call `drizzle-kit push`.\n- **Automation:** `tests/ops/migrate.test.ts`",
+      "expectedBehavior": "- **Priority:** P0\n- **Area:** Ops\n- **Preconditions:** Empty Postgres database `topology_fresh`. `DATABASE_URL` pointed at it.\n- **Steps:**\n  1. `npm run db:migrate`\n  2. Query `__drizzle_migrations` and a known table (`cases`, `api_tokens`).\n- **Expected:** Exit 0. Journal tags `0000_baseline` through `0012_vendor_case_sources` are applied in order. Tables exist. The command does not call `drizzle-kit push`.\n- **Automation:** `tests/ops/migrate.test.ts`",
       "automatedChecks": [],
       "assertionScope": null,
       "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
@@ -2934,7 +2934,7 @@
       "title": "Upgrade from baseline to current",
       "source": "docs/test-plan.md",
       "priority": "P0",
-      "expectedBehavior": "- **Priority:** P0\n- **Area:** Ops\n- **Preconditions:** A database that has had only `0000_baseline` applied (apply that SQL, stamp only that hash).\n- **Steps:**\n  1. `npm run db:migrate`\n  2. Confirm `0001`, `0002`, and `0003` applied and existing baseline rows remain.\n- **Expected:** Upgrade is additive. A row inserted before the upgrade is still there. `0003_quality_graph_pref` adds the preference column or table the app reads for the quality graph toggle. The app boots against the upgraded database.\n- **Automation:** `tests/ops/migrate.test.ts`",
+      "expectedBehavior": "- **Priority:** P0\n- **Area:** Ops\n- **Preconditions:** A database that has had only `0000_baseline` applied (apply that SQL, stamp only that hash).\n- **Steps:**\n  1. `npm run db:migrate`\n  2. Confirm `0001` through `0012_vendor_case_sources` applied and existing baseline rows remain.\n- **Expected:** Upgrade is additive. A row inserted before the upgrade is still there. Intermediate tags remain meaningful (`0003_quality_graph_pref` for the quality-graph preference; later tags for productivity, share generation, collab, triage, SCM feedback). The app boots against the upgraded database.\n- **Automation:** `tests/ops/migrate.test.ts`",
       "automatedChecks": [],
       "assertionScope": {
         "checks": [
@@ -3343,6 +3343,18 @@
       "priority": "P1"
     },
     {
+      "id": "ROUTE:PAGE:/milestones/[id]",
+      "file": "src/app/(app)/milestones/[id]/page.tsx",
+      "method": "PAGE",
+      "url": "/milestones/[id]",
+      "expectedBehavior": "Render authorized content and persist applicable interactions; review owning page and release cases.",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise PAGE /milestones/[id] using the owning src/app/(app)/milestones/[id]/page.tsx input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P1"
+    },
+    {
       "id": "ROUTE:PAGE:/milestones",
       "file": "src/app/(app)/milestones/page.tsx",
       "method": "PAGE",
@@ -3684,6 +3696,20 @@
         "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
       ],
       "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise GET /api/cases/[id]/activity using the owning src/app/api/cases/[id]/activity/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/cases/[id]/clone",
+      "file": "src/app/api/cases/[id]/clone/route.ts",
+      "method": "POST",
+      "url": "/api/cases/[id]/clone",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/cases/[id]/clone using the owning src/app/api/cases/[id]/clone/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
       "assertionReview": "not reviewed",
       "status": "not run",
       "priority": "P0"
@@ -4585,6 +4611,62 @@
       "priority": "P0"
     },
     {
+      "id": "ROUTE:DELETE:/api/notification-channels",
+      "file": "src/app/api/notification-channels/route.ts",
+      "method": "DELETE",
+      "url": "/api/notification-channels",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise DELETE /api/notification-channels using the owning src/app/api/notification-channels/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:GET:/api/notification-channels",
+      "file": "src/app/api/notification-channels/route.ts",
+      "method": "GET",
+      "url": "/api/notification-channels",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise GET /api/notification-channels using the owning src/app/api/notification-channels/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:PATCH:/api/notification-channels",
+      "file": "src/app/api/notification-channels/route.ts",
+      "method": "PATCH",
+      "url": "/api/notification-channels",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise PATCH /api/notification-channels using the owning src/app/api/notification-channels/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/notification-channels",
+      "file": "src/app/api/notification-channels/route.ts",
+      "method": "POST",
+      "url": "/api/notification-channels",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/notification-channels using the owning src/app/api/notification-channels/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
       "id": "ROUTE:GET:/api/notifications/[id]/open",
       "file": "src/app/api/notifications/[id]/open/route.ts",
       "method": "GET",
@@ -4972,6 +5054,34 @@
         "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
       ],
       "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/releases/compare using the owning src/app/api/releases/compare/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:GET:/api/releases/evidence",
+      "file": "src/app/api/releases/evidence/route.ts",
+      "method": "GET",
+      "url": "/api/releases/evidence",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise GET /api/releases/evidence using the owning src/app/api/releases/evidence/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/releases/evidence",
+      "file": "src/app/api/releases/evidence/route.ts",
+      "method": "POST",
+      "url": "/api/releases/evidence",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/releases/evidence using the owning src/app/api/releases/evidence/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
       "assertionReview": "not reviewed",
       "status": "not run",
       "priority": "P0"
@@ -5607,6 +5717,20 @@
       "priority": "P0"
     },
     {
+      "id": "ROUTE:GET:/api/share/reports/[token]/attachments/[attachmentId]",
+      "file": "src/app/api/share/reports/[token]/attachments/[attachmentId]/route.ts",
+      "method": "GET",
+      "url": "/api/share/reports/[token]/attachments/[attachmentId]",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise GET /api/share/reports/[token]/attachments/[attachmentId] using the owning src/app/api/share/reports/[token]/attachments/[attachmentId]/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
       "id": "ROUTE:GET:/api/share/reports/[token]/export",
       "file": "src/app/api/share/reports/[token]/export/route.ts",
       "method": "GET",
@@ -5747,6 +5871,34 @@
       "priority": "P0"
     },
     {
+      "id": "ROUTE:GET:/api/v1/agent",
+      "file": "src/app/api/v1/agent/route.ts",
+      "method": "GET",
+      "url": "/api/v1/agent",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise GET /api/v1/agent using the owning src/app/api/v1/agent/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/v1/agent",
+      "file": "src/app/api/v1/agent/route.ts",
+      "method": "POST",
+      "url": "/api/v1/agent",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/v1/agent using the owning src/app/api/v1/agent/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
       "id": "ROUTE:DELETE:/api/views/[id]",
       "file": "src/app/api/views/[id]/route.ts",
       "method": "DELETE",
@@ -5803,6 +5955,34 @@
       "priority": "P0"
     },
     {
+      "id": "ROUTE:GET:/api/webhooks/[id]/deliveries",
+      "file": "src/app/api/webhooks/[id]/deliveries/route.ts",
+      "method": "GET",
+      "url": "/api/webhooks/[id]/deliveries",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise GET /api/webhooks/[id]/deliveries using the owning src/app/api/webhooks/[id]/deliveries/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/webhooks/[id]/replay",
+      "file": "src/app/api/webhooks/[id]/replay/route.ts",
+      "method": "POST",
+      "url": "/api/webhooks/[id]/replay",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/webhooks/[id]/replay using the owning src/app/api/webhooks/[id]/replay/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
       "id": "ROUTE:POST:/api/webhooks/github",
       "file": "src/app/api/webhooks/github/route.ts",
       "method": "POST",
@@ -5812,6 +5992,34 @@
         "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
       ],
       "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/webhooks/github using the owning src/app/api/webhooks/github/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/webhooks/issues/[provider]",
+      "file": "src/app/api/webhooks/issues/[provider]/route.ts",
+      "method": "POST",
+      "url": "/api/webhooks/issues/[provider]",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/webhooks/issues/[provider] using the owning src/app/api/webhooks/issues/[provider]/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:GET:/api/webhooks/issues",
+      "file": "src/app/api/webhooks/issues/route.ts",
+      "method": "GET",
+      "url": "/api/webhooks/issues",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise GET /api/webhooks/issues using the owning src/app/api/webhooks/issues/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
       "assertionReview": "not reviewed",
       "status": "not run",
       "priority": "P0"
@@ -6239,7 +6447,7 @@
     {
       "id": "README:19",
       "source": "README.md:19",
-      "expectedBehavior": "| Issue trackers | Jira, Linear, GitHub | Broad | Broad | Broad |",
+      "expectedBehavior": "| Issue trackers | Jira, Linear, GitHub, GitLab | Broad | Broad | Broad |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:19, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6249,7 +6457,7 @@
     {
       "id": "README:20",
       "source": "README.md:20",
-      "expectedBehavior": "| Agents | MCP plugin | — | — | — |",
+      "expectedBehavior": "| Agent workflows | Scoped stdio MCP, reviewed proposals, PR release evidence | [MCP for test context](https://www.testrail.com/mcp/) | [Read/write MCP](https://github.com/qase-tms/qase-mcp-server) | API integration |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:20, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6287,11 +6495,11 @@
       "status": "not run"
     },
     {
-      "id": "README:33",
-      "source": "README.md:33",
-      "expectedBehavior": "`setup.sh` installs packages, starts Postgres via `docker compose`, writes `.env.local`, applies the journaled baseline migration, and seeds a demo workspace.",
+      "id": "README:28",
+      "source": "README.md:28",
+      "expectedBehavior": "### macOS / Linux",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:33, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:28, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
@@ -6299,7 +6507,7 @@
     {
       "id": "README:35",
       "source": "README.md:35",
-      "expectedBehavior": "The same steps by hand:",
+      "expectedBehavior": "`setup.sh` installs packages, starts Postgres via `docker compose`, writes `.env.local`, applies journaled migrations (`0000_baseline` through `0012_vendor_case_sources`), and seeds a demo workspace.",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:35, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6307,11 +6515,11 @@
       "status": "not run"
     },
     {
-      "id": "README:46",
-      "source": "README.md:46",
-      "expectedBehavior": "Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Health: [http://127.0.0.1:4317/api/health](http://127.0.0.1:4317/api/health).",
+      "id": "README:37",
+      "source": "README.md:37",
+      "expectedBehavior": "### Windows (PowerShell)",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:46, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:37, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
@@ -6319,7 +6527,7 @@
     {
       "id": "README:48",
       "source": "README.md:48",
-      "expectedBehavior": "- **Preferred login:** set `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` and/or the Google pair in `.env.local`, restart, then **Continue with GitHub/Google**.",
+      "expectedBehavior": "### Same steps by hand (any shell)",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:48, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6327,51 +6535,21 @@
       "status": "not run"
     },
     {
-      "id": "README:49",
-      "source": "README.md:49",
-      "expectedBehavior": "- **Air-gap / unset OAuth:** **Use email instead**. Demo: `demo@topology.local` / `topology-demo`. Force air-gap copy with `TOPOLOGY_AIR_GAP=1`.",
+      "id": "README:59",
+      "source": "README.md:59",
+      "expectedBehavior": "Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Health: [http://127.0.0.1:4317/api/health](http://127.0.0.1:4317/api/health).",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:49, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:59, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
     },
     {
-      "id": "README:50",
-      "source": "README.md:50",
-      "expectedBehavior": "- **Invite a teammate:** Settings → Members (admin). Invitee signs in with OAuth or the invited email.",
+      "id": "README:61",
+      "source": "README.md:61",
+      "expectedBehavior": "- **Preferred login:** set `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, the Google pair, and/or `AUTH_OIDC_*` in `.env.local`, restart, then **Continue with GitHub/Google/OIDC**.",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:50, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
-      "id": "README:51",
-      "source": "README.md:51",
-      "expectedBehavior": "- **MCP:** Settings → Connections; see [`packages/mcp/README.md`](packages/mcp/README.md). After seed, `TOPOLOGY_API_TOKEN` is `topo_demo_token_local_dev_only`.",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:51, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
-      "id": "README:52",
-      "source": "README.md:52",
-      "expectedBehavior": "- **CI ingest:**",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:52, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
-      "id": "README:60",
-      "source": "README.md:60",
-      "expectedBehavior": "Examples: `packages/cli/examples/github-actions.yml`, `packages/cli/examples/Jenkinsfile`. File issues from a failed result (**Create issue**; default `TOPOLOGY_ISSUE_PROVIDER=mock`).",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:60, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:61, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
@@ -6379,7 +6557,7 @@
     {
       "id": "README:62",
       "source": "README.md:62",
-      "expectedBehavior": "## Auth",
+      "expectedBehavior": "- **Air-gap / unset OAuth:** **Use email instead**. Demo: `demo@topology.local` / `topology-demo`. Force air-gap copy with `TOPOLOGY_AIR_GAP=1`.",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:62, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6387,9 +6565,19 @@
       "status": "not run"
     },
     {
+      "id": "README:63",
+      "source": "README.md:63",
+      "expectedBehavior": "- **Invite a teammate:** Settings → Members (admin). Invitee signs in with OAuth, OIDC, or the invited email.",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:63, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
       "id": "README:64",
       "source": "README.md:64",
-      "expectedBehavior": "| Mode | Behavior |",
+      "expectedBehavior": "- **MCP:** Settings → Connections; see [agent workflows](docs/agent-workflows.md) for scoped credentials and setup.",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:64, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6397,41 +6585,11 @@
       "status": "not run"
     },
     {
-      "id": "README:66",
-      "source": "README.md:66",
-      "expectedBehavior": "| OAuth configured | Login leads with GitHub/Google; email is behind **Use email instead** |",
+      "id": "README:65",
+      "source": "README.md:65",
+      "expectedBehavior": "- **CI ingest:**",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:66, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
-      "id": "README:67",
-      "source": "README.md:67",
-      "expectedBehavior": "| OAuth unset or `TOPOLOGY_AIR_GAP=1` | Email/password is the primary path |",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:67, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
-      "id": "README:69",
-      "source": "README.md:69",
-      "expectedBehavior": "Workspace roles: `admin` / `member` / `viewer`. Assign runs and individual results from the run executor.",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:69, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
-      "id": "README:71",
-      "source": "README.md:71",
-      "expectedBehavior": "## What you get",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:71, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:65, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
@@ -6439,7 +6597,7 @@
     {
       "id": "README:73",
       "source": "README.md:73",
-      "expectedBehavior": "- Work-first home with assigned work, Continue testing, active runs, and failure/retest queues; aggregate quality metrics live in Overview",
+      "expectedBehavior": "Examples: `packages/cli/examples/github-actions.yml`, `packages/cli/examples/Jenkinsfile`. File issues from a failed result (**Create issue**; default `TOPOLOGY_ISSUE_PROVIDER=mock`).",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:73, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6447,19 +6605,9 @@
       "status": "not run"
     },
     {
-      "id": "README:74",
-      "source": "README.md:74",
-      "expectedBehavior": "- Cases and folders (CRUD, CSV import/export, TestRail/Qase/Zephyr/Xray import), saved views, bulk edit, case history",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:74, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
       "id": "README:75",
       "source": "README.md:75",
-      "expectedBehavior": "- Manual runs with structured step results, assignment, notes, comments, attachments, and pass/fail",
+      "expectedBehavior": "## Auth",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:75, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6467,19 +6615,9 @@
       "status": "not run"
     },
     {
-      "id": "README:76",
-      "source": "README.md:76",
-      "expectedBehavior": "- Private/team saved views, reusable run templates, reviewed retests with source lineage, and in-app assignment handoffs",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:76, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
       "id": "README:77",
       "source": "README.md:77",
-      "expectedBehavior": "- Paginated cases/runs with URL filters and history; per-user/project/run execution context",
+      "expectedBehavior": "| Mode | Behavior |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:77, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6487,19 +6625,9 @@
       "status": "not run"
     },
     {
-      "id": "README:78",
-      "source": "README.md:78",
-      "expectedBehavior": "- Shared steps, case versions, custom fields, and plans with configuration-matrix launches",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:78, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
       "id": "README:79",
       "source": "README.md:79",
-      "expectedBehavior": "- Command palette (`⌘K` / `Ctrl+K`) to create a case, start a run, file an issue, or jump",
+      "expectedBehavior": "| OAuth configured | Login leads with GitHub and/or Google; email is behind **Use email instead** |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:79, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6509,7 +6637,7 @@
     {
       "id": "README:80",
       "source": "README.md:80",
-      "expectedBehavior": "- CI JUnit ingest and shard merge (CLI + `/api/ci/*`), automation browser with flake signals",
+      "expectedBehavior": "| OIDC configured | Login also shows **Continue with OIDC** (or `AUTH_OIDC_NAME`) when `AUTH_OIDC_ISSUER`, `AUTH_OIDC_ID`, and `AUTH_OIDC_SECRET` are set |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:80, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6519,7 +6647,7 @@
     {
       "id": "README:81",
       "source": "README.md:81",
-      "expectedBehavior": "- Failure triage, issue create/link (Jira / Linear / GitHub), outbound webhooks",
+      "expectedBehavior": "| OAuth/OIDC unset or `TOPOLOGY_AIR_GAP=1` | Email/password is the primary path |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:81, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6527,31 +6655,31 @@
       "status": "not run"
     },
     {
-      "id": "README:82",
-      "source": "README.md:82",
-      "expectedBehavior": "- MCP agent plugin; `/api/health`",
+      "id": "README:83",
+      "source": "README.md:83",
+      "expectedBehavior": "Workspace roles: `admin` / `member` / `viewer`. Assign runs and individual results from the run executor.",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:82, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:83, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
     },
     {
-      "id": "README:84",
-      "source": "README.md:84",
-      "expectedBehavior": "Result attachments store under `ATTACHMENTS_DIR` (default `./data/attachments`) when `ATTACHMENTS_DRIVER=local`. Set `ATTACHMENTS_DRIVER=s3` plus the `ATTACHMENTS_S3_*` vars for MinIO/R2. Compose defines `topology_attachments` for durable local files.",
+      "id": "README:85",
+      "source": "README.md:85",
+      "expectedBehavior": "## What you get",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:84, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:85, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
     },
     {
-      "id": "README:86",
-      "source": "README.md:86",
-      "expectedBehavior": "## Env",
+      "id": "README:87",
+      "source": "README.md:87",
+      "expectedBehavior": "- Work-first home with assigned work, Continue testing, active runs, and failure/retest queues; aggregate quality metrics live in Overview",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:86, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:87, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
@@ -6559,7 +6687,7 @@
     {
       "id": "README:88",
       "source": "README.md:88",
-      "expectedBehavior": "See [`.env.example`](.env.example):",
+      "expectedBehavior": "- Cases and folders (CRUD, CSV import/export, TestRail/Qase/Zephyr/Xray import), saved views, bulk edit, case history",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:88, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6567,9 +6695,19 @@
       "status": "not run"
     },
     {
+      "id": "README:89",
+      "source": "README.md:89",
+      "expectedBehavior": "- Manual runs with structured step results, assignment, notes, comments, attachments, and pass/fail",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:89, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
       "id": "README:90",
       "source": "README.md:90",
-      "expectedBehavior": "- `AUTH_SECRET`, `AUTH_URL`",
+      "expectedBehavior": "- Private/team saved views, reusable run templates, reviewed retests with source lineage, and in-app assignment handoffs",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:90, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6579,7 +6717,7 @@
     {
       "id": "README:91",
       "source": "README.md:91",
-      "expectedBehavior": "- `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`",
+      "expectedBehavior": "- Paginated cases/runs with URL filters and history; per-user/project/run execution context",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:91, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6589,7 +6727,7 @@
     {
       "id": "README:92",
       "source": "README.md:92",
-      "expectedBehavior": "- `TOPOLOGY_AIR_GAP`, `ATTACHMENTS_DIR`, `ATTACHMENTS_DRIVER`",
+      "expectedBehavior": "- Shared steps, case versions, custom fields, and plans with configuration-matrix launches",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:92, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6599,7 +6737,7 @@
     {
       "id": "README:93",
       "source": "README.md:93",
-      "expectedBehavior": "- `TOPOLOGY_ISSUE_PROVIDER` plus Jira / Linear / GitHub credentials (commented)",
+      "expectedBehavior": "- Command palette (`⌘K` / `Ctrl+K`) to create a case, start a run, file an issue, or jump",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:93, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6607,9 +6745,19 @@
       "status": "not run"
     },
     {
+      "id": "README:94",
+      "source": "README.md:94",
+      "expectedBehavior": "- CI JUnit ingest and shard merge (CLI + `/api/ci/*`), automation browser with flake signals",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:94, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
       "id": "README:95",
       "source": "README.md:95",
-      "expectedBehavior": "Tracker tokens stay server-side. Do not put them in the browser or in the MCP process beyond Topology’s own API token.",
+      "expectedBehavior": "- Failure triage, issue create/link (Jira / Linear / GitHub / GitLab), outbound webhooks",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:95, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6617,31 +6765,31 @@
       "status": "not run"
     },
     {
-      "id": "README:97",
-      "source": "README.md:97",
-      "expectedBehavior": "## Scripts",
+      "id": "README:96",
+      "source": "README.md:96",
+      "expectedBehavior": "- MCP agent plugin; `/api/health`",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:97, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:96, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
     },
     {
-      "id": "README:99",
-      "source": "README.md:99",
-      "expectedBehavior": "| Script | Purpose |",
+      "id": "README:98",
+      "source": "README.md:98",
+      "expectedBehavior": "Result attachments store under `ATTACHMENTS_DIR` (default `./data/attachments`) when `ATTACHMENTS_DRIVER=local`. Set `ATTACHMENTS_DRIVER=s3` plus the `ATTACHMENTS_S3_*` vars for MinIO/R2. Compose defines `topology_attachments` for durable local files.",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:99, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:98, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
     },
     {
-      "id": "README:101",
-      "source": "README.md:101",
-      "expectedBehavior": "| `./scripts/setup.sh` | Install, start Postgres, migrate, and seed |",
+      "id": "README:100",
+      "source": "README.md:100",
+      "expectedBehavior": "## Packages",
       "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:101, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:100, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
@@ -6649,7 +6797,7 @@
     {
       "id": "README:102",
       "source": "README.md:102",
-      "expectedBehavior": "| `npm run dev` | Next.js on port 4317 |",
+      "expectedBehavior": "This repo is an npm workspaces monorepo. The hub app at the root stays **private**. Workspace packages under `packages/` are developed here via path aliases / `tsx`; public-ready packages (`@topology/domain`, `@topology/cli`, `@topology/playwright`, `@topology/jest`, `@topology/cypress`, `@topology/mcp`) publish compiled `dist/` to npm — see [`packages/PUBLISHING.md`](packages/PUBLISHING.md). `@topology/issue-providers` and `@topology/plugin-sdk` remain private until a separate release. `pytest-topology` installs via pip, not npm.",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:102, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6657,19 +6805,9 @@
       "status": "not run"
     },
     {
-      "id": "README:103",
-      "source": "README.md:103",
-      "expectedBehavior": "| `npm run build` | Production build |",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:103, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
       "id": "README:104",
       "source": "README.md:104",
-      "expectedBehavior": "| `npm run lint` | ESLint |",
+      "expectedBehavior": "## Env",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:104, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6677,19 +6815,9 @@
       "status": "not run"
     },
     {
-      "id": "README:105",
-      "source": "README.md:105",
-      "expectedBehavior": "| `npm run test:sanity` | Unit/component checks and critical Chromium journeys in disposable services |",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:105, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
       "id": "README:106",
       "source": "README.md:106",
-      "expectedBehavior": "| `npm run test:regression` / `test:all` | Deterministic unit/component, integration, Python and comprehensive Chromium |",
+      "expectedBehavior": "See [`.env.example`](.env.example):",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:106, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6697,19 +6825,9 @@
       "status": "not run"
     },
     {
-      "id": "README:107",
-      "source": "README.md:107",
-      "expectedBehavior": "| `npm run test:e2e` / `test:e2e:smoke` | Comprehensive Chromium / narrow smoke selection |",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:107, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
       "id": "README:108",
       "source": "README.md:108",
-      "expectedBehavior": "| `npm run test:release` | Regression, core Firefox/WebKit, responsive/a11y, visual, operational and measured scale gates |",
+      "expectedBehavior": "- `AUTH_SECRET`, `AUTH_URL`",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:108, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6719,7 +6837,7 @@
     {
       "id": "README:109",
       "source": "README.md:109",
-      "expectedBehavior": "| `npm run test:live` | Opt-in sandbox issue-provider read qualification |",
+      "expectedBehavior": "- `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:109, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6729,7 +6847,7 @@
     {
       "id": "README:110",
       "source": "README.md:110",
-      "expectedBehavior": "| `npm run typecheck` | `tsc --noEmit` |",
+      "expectedBehavior": "- `AUTH_OIDC_ISSUER` / `AUTH_OIDC_ID` / `AUTH_OIDC_SECRET` (optional `AUTH_OIDC_NAME`)",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:110, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6739,7 +6857,7 @@
     {
       "id": "README:111",
       "source": "README.md:111",
-      "expectedBehavior": "| `npm run db:migrate` | Apply journaled Drizzle migrations (`0000_baseline`) |",
+      "expectedBehavior": "- `TOPOLOGY_AIR_GAP`, `ATTACHMENTS_DIR`, `ATTACHMENTS_DRIVER`",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:111, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6749,7 +6867,7 @@
     {
       "id": "README:112",
       "source": "README.md:112",
-      "expectedBehavior": "| `npm run db:seed` | Seed demo user, workspace, cases, run, milestone, token |",
+      "expectedBehavior": "- `TOPOLOGY_ISSUE_PROVIDER` plus Jira / Linear / GitHub / GitLab credentials (commented)",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:112, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6757,19 +6875,9 @@
       "status": "not run"
     },
     {
-      "id": "README:113",
-      "source": "README.md:113",
-      "expectedBehavior": "| `npm run topology` | Topology CLI |",
-      "automatedChecks": [],
-      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:113, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
-      "priority": "P1",
-      "assertionReview": "not reviewed",
-      "status": "not run"
-    },
-    {
       "id": "README:114",
       "source": "README.md:114",
-      "expectedBehavior": "| `npm run mcp` | Start `@topology/mcp` stdio server |",
+      "expectedBehavior": "Tracker tokens stay server-side. Do not put them in the browser or in the MCP process beyond Topology’s own API token.",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:114, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6779,7 +6887,7 @@
     {
       "id": "README:116",
       "source": "README.md:116",
-      "expectedBehavior": "Production self-hosting: [docs/deploy.md](docs/deploy.md). Tests and the release gate: [CONTRIBUTING.md](CONTRIBUTING.md).",
+      "expectedBehavior": "## Scripts",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:116, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6789,7 +6897,7 @@
     {
       "id": "README:118",
       "source": "README.md:118",
-      "expectedBehavior": "## License",
+      "expectedBehavior": "| Script | Purpose |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:118, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6799,7 +6907,7 @@
     {
       "id": "README:120",
       "source": "README.md:120",
-      "expectedBehavior": "Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 Hasnat Jamil and Topology contributors.",
+      "expectedBehavior": "| `./scripts/setup.sh` | Install, start Postgres, migrate, and seed (macOS/Linux) |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:120, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6807,9 +6915,19 @@
       "status": "not run"
     },
     {
+      "id": "README:121",
+      "source": "README.md:121",
+      "expectedBehavior": "| `npm run dev` | Next.js on port 4317 |",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:121, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
       "id": "README:122",
       "source": "README.md:122",
-      "expectedBehavior": "[Contributing](CONTRIBUTING.md) · [Deploy](docs/deploy.md) · [Import](docs/import.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md)",
+      "expectedBehavior": "| `npm run build` | Production build |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:122, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6817,9 +6935,19 @@
       "status": "not run"
     },
     {
+      "id": "README:123",
+      "source": "README.md:123",
+      "expectedBehavior": "| `npm run lint` | ESLint |",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:123, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
       "id": "README:124",
       "source": "README.md:124",
-      "expectedBehavior": "Report owners can revoke all earlier share links from a report; new links remain usable. Apply database migrations before running the updated app. Public pages and exports check persisted revocation generations. XLSX downloads are Office Open XML workbooks; PDF reports paginate through all rows.",
+      "expectedBehavior": "| `npm run test:sanity` | Unit/component checks and critical Chromium journeys in disposable services |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:124, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -6827,11 +6955,141 @@
       "status": "not run"
     },
     {
+      "id": "README:125",
+      "source": "README.md:125",
+      "expectedBehavior": "| `npm run test:regression` / `test:all` | Deterministic unit/component, integration, Python and comprehensive Chromium |",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:125, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
       "id": "README:126",
       "source": "README.md:126",
-      "expectedBehavior": "The production app sends CSP, frame denial, nosniff and no-referrer headers. Configure AUTH_URL to the public HTTPS origin to enable runtime HSTS; TLS terminator configuration still needs deployment verification. Webhook secrets are write-only; configured HMAC signs each attempt. Transient webhook failures retry at most three times using the same delivery ID; delivery is best-effort in-process.",
+      "expectedBehavior": "| `npm run test:e2e` / `test:e2e:smoke` | Comprehensive Chromium / narrow smoke selection |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:126, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:127",
+      "source": "README.md:127",
+      "expectedBehavior": "| `npm run test:release` | Regression, core Firefox/WebKit, responsive/a11y, visual, operational and measured scale gates |",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:127, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:128",
+      "source": "README.md:128",
+      "expectedBehavior": "| `npm run test:live` | Opt-in sandbox issue-provider read qualification |",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:128, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:129",
+      "source": "README.md:129",
+      "expectedBehavior": "| `npm run typecheck` | `tsc --noEmit` |",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:129, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:130",
+      "source": "README.md:130",
+      "expectedBehavior": "| `npm run db:migrate` | Apply journaled Drizzle migrations (`0000_baseline` … `0012_vendor_case_sources`) |",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:130, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:131",
+      "source": "README.md:131",
+      "expectedBehavior": "| `npm run db:seed` | Seed demo user, workspace, cases, run, milestone, token |",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:131, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:132",
+      "source": "README.md:132",
+      "expectedBehavior": "| `npm run topology` | Topology CLI |",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:132, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:133",
+      "source": "README.md:133",
+      "expectedBehavior": "| `npm run mcp` | Start `@topology/mcp` stdio server |",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:133, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:135",
+      "source": "README.md:135",
+      "expectedBehavior": "Production self-hosting: [docs/deploy.md](docs/deploy.md). Tests and the release gate: [CONTRIBUTING.md](CONTRIBUTING.md).",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:135, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:137",
+      "source": "README.md:137",
+      "expectedBehavior": "## License",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:137, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:139",
+      "source": "README.md:139",
+      "expectedBehavior": "Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 Hasnat Jamil and Topology contributors.",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:139, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:141",
+      "source": "README.md:141",
+      "expectedBehavior": "[Contributing](CONTRIBUTING.md) · [Deploy](docs/deploy.md) · [Import](docs/import.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md)",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:141, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
+      "priority": "P1",
+      "assertionReview": "not reviewed",
+      "status": "not run"
+    },
+    {
+      "id": "README:143",
+      "source": "README.md:143",
+      "expectedBehavior": "Report share links are revocable per report. Apply migrations before upgrading the app. Shared pages and exports honor persisted revocation generations. XLSX downloads are Office Open XML; PDF reports paginate through all rows. Production responses send CSP, frame denial, nosniff, and no-referrer; set `AUTH_URL` to the public HTTPS origin for runtime HSTS (TLS termination still needs deploy verification). Webhook secrets are write-only; configured HMAC signs each attempt. Transient webhook failures retry at most three times with the same delivery ID (best-effort, in-process).",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:143, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
       "assertionReview": "not reviewed",
       "status": "not run"
@@ -6839,26 +7097,38 @@
   ],
   "assertionAudit": [
     {
-      "file": "src/components/run-executor.test.tsx",
-      "line": 461,
+      "file": "src/components/connect-agent-panel.test.tsx",
+      "line": 82,
+      "reason": "conditional assertion path",
+      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+    },
+    {
+      "file": "src/components/connect-agent-panel.test.tsx",
+      "line": 98,
       "reason": "conditional assertion path",
       "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
     },
     {
       "file": "src/components/run-executor.test.tsx",
-      "line": 463,
+      "line": 589,
+      "reason": "conditional assertion path",
+      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+    },
+    {
+      "file": "src/components/run-executor.test.tsx",
+      "line": 591,
       "reason": "conditional assertion path",
       "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
     },
     {
       "file": "src/lib/affected-resolve.test.ts",
-      "line": 68,
+      "line": 72,
       "reason": "conditional assertion path",
       "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
     },
     {
       "file": "src/lib/ai-draft.test.ts",
-      "line": 17,
+      "line": 19,
       "reason": "conditional assertion path",
       "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
     },
@@ -7092,13 +7362,13 @@
     },
     {
       "file": "packages/mcp/src/server.test.ts",
-      "line": 53,
+      "line": 63,
       "reason": "catch requires error-propagation review",
       "review": "Reviewed cleanup-only suppression (transport close/body cancellation), not mutation success; assertions run before cleanup."
     },
     {
       "file": "packages/mcp/src/server.test.ts",
-      "line": 54,
+      "line": 64,
       "reason": "catch requires error-propagation review",
       "review": "Reviewed cleanup-only suppression (transport close/body cancellation), not mutation success; assertions run before cleanup."
     },
@@ -7272,19 +7542,25 @@
     },
     {
       "file": "tests/integration/security/unauth-sweep.integration.test.ts",
-      "line": 62,
+      "line": 54,
       "reason": "conditional assertion path",
       "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
     },
     {
       "file": "tests/integration/security/unauth-sweep.integration.test.ts",
-      "line": 86,
+      "line": 66,
       "reason": "conditional assertion path",
       "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
     },
     {
       "file": "tests/integration/security/unauth-sweep.integration.test.ts",
-      "line": 160,
+      "line": 90,
+      "reason": "conditional assertion path",
+      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+    },
+    {
+      "file": "tests/integration/security/unauth-sweep.integration.test.ts",
+      "line": 164,
       "reason": "catch requires error-propagation review",
       "review": "Reviewed cleanup-only suppression (transport close/body cancellation), not mutation success; assertions run before cleanup."
     },

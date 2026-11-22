@@ -1,3 +1,4 @@
+import type { ImportStep } from "./steps";
 import type { CsvCaseRow } from "@/lib/csv";
 
 export const IMPORT_PROVIDERS = [
@@ -36,7 +37,7 @@ export type SourceTable = {
   rows: Record<string, string>[];
 };
 
-export type MappedCase = CsvCaseRow;
+export type MappedCase = CsvCaseRow & { sourceId?: string; structuredSteps?: ImportStep[] };
 
 export type ImportParseResult = {
   table: SourceTable;

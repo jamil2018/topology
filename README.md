@@ -17,7 +17,7 @@ Controlled light/dark regression snapshots are in [the visual baseline directory
 | Structured steps, plans | Structured/shared steps, versions, matrix plans | Yes | Yes | Yes |
 | CI | JUnit ingest + CLI | Yes | Yes | Yes |
 | Issue trackers | Jira, Linear, GitHub, GitLab | Broad | Broad | Broad |
-| Agents | MCP plugin | — | — | — |
+| Agent workflows | Scoped stdio MCP, reviewed proposals, PR release evidence | [MCP for test context](https://www.testrail.com/mcp/) | [Read/write MCP](https://github.com/qase-tms/qase-mcp-server) | API integration |
 
 Topology is pre-1.0. Use it when you want a self-hosted TCM you can read and run locally. Import from TestRail, Qase, Zephyr Scale, or Xray: [docs/import.md](docs/import.md).
 
@@ -32,7 +32,7 @@ Requires Node.js 20+ and Docker (or Colima) for Postgres. Local Compose (`docker
 npm run dev
 ```
 
-`setup.sh` installs packages, starts Postgres via `docker compose`, writes `.env.local`, applies journaled migrations (`0000_baseline` through `0009_scm_feedback`), and seeds a demo workspace.
+`setup.sh` installs packages, starts Postgres via `docker compose`, writes `.env.local`, applies journaled migrations (`0000_baseline` through `0012_vendor_case_sources`), and seeds a demo workspace.
 
 ### Windows (PowerShell)
 
@@ -61,7 +61,7 @@ Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Health: [http://127.0.0.1:4
 - **Preferred login:** set `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, the Google pair, and/or `AUTH_OIDC_*` in `.env.local`, restart, then **Continue with GitHub/Google/OIDC**.
 - **Air-gap / unset OAuth:** **Use email instead**. Demo: `demo@topology.local` / `topology-demo`. Force air-gap copy with `TOPOLOGY_AIR_GAP=1`.
 - **Invite a teammate:** Settings → Members (admin). Invitee signs in with OAuth, OIDC, or the invited email.
-- **MCP:** Settings → Connections; see [`packages/mcp/README.md`](packages/mcp/README.md). After seed, `TOPOLOGY_API_TOKEN` is `topo_demo_token_local_dev_only`.
+- **MCP:** Settings → Connections; see [agent workflows](docs/agent-workflows.md) for scoped credentials and setup.
 - **CI ingest:**
 
 ```bash
@@ -127,7 +127,7 @@ Tracker tokens stay server-side. Do not put them in the browser or in the MCP pr
 | `npm run test:release` | Regression, core Firefox/WebKit, responsive/a11y, visual, operational and measured scale gates |
 | `npm run test:live` | Opt-in sandbox issue-provider read qualification |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run db:migrate` | Apply journaled Drizzle migrations (`0000_baseline` … `0009_scm_feedback`) |
+| `npm run db:migrate` | Apply journaled Drizzle migrations (`0000_baseline` … `0012_vendor_case_sources`) |
 | `npm run db:seed` | Seed demo user, workspace, cases, run, milestone, token |
 | `npm run topology` | Topology CLI |
 | `npm run mcp` | Start `@topology/mcp` stdio server |

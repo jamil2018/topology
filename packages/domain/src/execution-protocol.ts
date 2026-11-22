@@ -87,6 +87,9 @@ export const executionReportSchema = z
     run: z
       .object({
         externalId: z.string().min(1).optional(),
+        runnerRequestId: z.uuid().optional(),
+        configuration: z.string().trim().min(1).max(120).optional(),
+        runnerAttempt: z.number().int().positive().optional(),
         commitSha: z.string().min(1).optional(),
         branch: z.string().min(1).optional(),
         environment: executionEnvironmentSchema.optional(),
