@@ -25,7 +25,6 @@ jobs:
       PLAYWRIGHT_PROJECT: ${{ inputs.topology_environment }}
       EXPECTED_SHA: ${{ inputs.topology_commit_sha }}
       TOPOLOGY_DRY_RUN: "1"
-      TOPOLOGY_REPORT_FILE: ${{ runner.temp }}/topology-execution.json
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,6 +37,8 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test --project="$PLAYWRIGHT_PROJECT"
+        env:
+          TOPOLOGY_REPORT_FILE: ${{ runner.temp }}/topology-execution.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -53,10 +54,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: topology-execution
-      - name: Submit execution evidence
+      - name: Bind execution evidence to this workflow run
         env:
-          TOPOLOGY_URL: ${{ vars.TOPOLOGY_URL }}
-          TOPOLOGY_REPORT_TOKEN: ${{ secrets.TOPOLOGY_REPORT_TOKEN }}
           REQUEST_ID: ${{ inputs.topology_request_id }}
           COMMIT_SHA: ${{ inputs.topology_commit_sha }}
           CONFIGURATION: ${{ inputs.topology_environment }}
@@ -67,6 +66,17 @@ jobs:
             '.run = ((.run // {}) + {runnerRequestId: $request, commitSha: $sha,
               configuration: $configuration, externalId: $runId, runnerAttempt: $attempt})' \
             topology-execution.json > topology-evidence.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: topology-evidence
+          path: topology-evidence.json
+          if-no-files-found: error
+      - name: Submit execution evidence
+        if: ${{ vars.TOPOLOGY_URL != '' }}
+        env:
+          TOPOLOGY_URL: ${{ vars.TOPOLOGY_URL }}
+          TOPOLOGY_REPORT_TOKEN: ${{ secrets.TOPOLOGY_REPORT_TOKEN }}
+        run: |
           curl --fail-with-body --silent --show-error --retry 2 --retry-all-errors \
             --max-time 30 -H "Authorization: Bearer $TOPOLOGY_REPORT_TOKEN" \
             -H "Content-Type: application/json" --data-binary @topology-evidence.json \
