@@ -86,6 +86,7 @@ function iconFor(href: string): NavIcon {
 const SUB_ROUTE_LABELS: Array<{ match: RegExp; label: string }> = [
   { match: /^\/cases\/import(?:\/|$)/, label: "Import" },
   { match: /^\/runs\/new(?:\/|$)/, label: "New run" },
+  { match: /^\/runs\/explore(?:\/|$)/, label: "Exploratory session" },
   { match: /^\/releases\/compare(?:\/|$)/, label: "Compare" },
   { match: /^\/milestones\/[^/]+$/, label: "Detail" },
   { match: /^\/runs\/[^/]+$/, label: "Run" },

@@ -78,14 +78,22 @@ export function createTopologyMcpServer(client: TopologyClient) {
 
   server.tool(
     "list_runs",
-    "List test runs, optionally filtered to work assigned to the credential owner",
+    "List test runs, optionally filtered to exploratory sessions or work assigned to the credential owner",
     {
       cursor: z.string().optional(),
       limit: z.number().int().min(1).max(100).optional(),
       status: z.enum(["planned", "in_progress", "completed", "aborted"]).optional(),
       assignee: z.literal("me").optional(),
+      source: z.literal("exploratory").optional(),
     },
     async (args) => jsonText(await client.listRuns(args)),
+  );
+
+  server.tool(
+    "get_exploratory_session",
+    "Read a session charter and the result ID for its findings",
+    { id: z.uuid() },
+    async ({ id }) => jsonText(await client.getExploratorySession(id)),
   );
 
   server.tool(
@@ -121,6 +129,19 @@ export function createTopologyMcpServer(client: TopologyClient) {
   );
 
   const operationKey = z.string().min(1).max(128).describe("Reuse this key when retrying the same operation");
+  server.tool(
+    "create_exploratory_session",
+    "Create a manual exploratory session assigned to the credential owner",
+    {
+      idempotencyKey: operationKey,
+      name: z.string().trim().min(1).max(200),
+      charter: z.string().trim().min(1).max(10_000),
+      environment: z.string().trim().min(1).max(120).optional(),
+    },
+    async ({ idempotencyKey, ...args }) => jsonText(await client.runOperation(idempotencyKey, {
+      action: "create_exploratory_session", ...args,
+    })),
+  );
   server.tool(
     "launch_assigned_baseline",
     "Create assigned manual runs from a saved regression baseline and its pinned revisions",
@@ -349,7 +370,7 @@ export function createTopologyMcpServer(client: TopologyClient) {
 
   server.tool(
     "propose_coverage",
-    "Queue a coverage proposal (create intent / link edge) for human review. Does NOT write to the graph until accepted.",
+    "Queue a coverage change for human review. Include exploration and an idempotency key to propose a case from a session finding.",
     {
       idempotencyKey: operationKey.optional(),
       payload: z.object({
@@ -359,10 +380,14 @@ export function createTopologyMcpServer(client: TopologyClient) {
       entityType: z.string().optional(),
       model: z.string().optional(),
       inputRefs: z.array(z.string()).optional(),
+      exploration: z.object({ runId: z.uuid(), resultId: z.uuid() }).optional(),
     },
-    async ({ idempotencyKey, ...args }) => jsonText(idempotencyKey
-      ? await client.runOperation(idempotencyKey, { action: "propose_coverage", ...args })
-      : await client.proposeCoverage(args)),
+    async ({ idempotencyKey, ...args }) => {
+      if (args.exploration && !idempotencyKey) throw new Error("An exploratory follow-up requires an idempotency key");
+      return jsonText(idempotencyKey
+        ? await client.runOperation(idempotencyKey, { action: "propose_coverage", ...args })
+        : await client.proposeCoverage(args));
+    },
   );
 
   server.tool(

@@ -210,13 +210,18 @@ export function StartRunWorkspace({
           </>
         }
         actions={
-          <Link
-            href="/runs"
-            className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
-          >
-            <CaretLeftIcon size={14} weight="bold" aria-hidden />
-            Test runs
-          </Link>
+          <>
+            {can("runs.create") && !initialTemplate && !retest ? (
+              <Link href="/runs/explore" className="button button--sm button--secondary">Exploratory session</Link>
+            ) : null}
+            <Link
+              href="/runs"
+              className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] transition active:scale-[0.98]"
+            >
+              <CaretLeftIcon size={14} weight="bold" aria-hidden />
+              Test runs
+            </Link>
+          </>
         }
       />
 

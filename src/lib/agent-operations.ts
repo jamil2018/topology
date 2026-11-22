@@ -34,6 +34,7 @@ import { isRunFrozen } from "@/lib/run-immutability";
 import { seedManualRunResults } from "@/lib/tcm/seed-run";
 import { launchPlan } from "@/lib/tcm/plans";
 import { BaselineError, launchRegressionBaseline } from "@/lib/tcm/baselines";
+import { createExploratorySession, exploratoryProposalRefs, exploratorySessionSchema, exploratorySourceSchema } from "@/lib/tcm/exploratory-session";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type AgentActor = {
@@ -50,7 +51,9 @@ const operationSchema = z.discriminatedUnion("action", [
     entityType: z.string().trim().min(1).max(64).optional(),
     model: z.string().max(120).optional(),
     inputRefs: z.array(z.string().max(1000)).max(50).optional(),
+    exploration: exploratorySourceSchema.optional(),
   }),
+  exploratorySessionSchema.extend({ action: z.literal("create_exploratory_session") }),
   z.object({
     action: z.literal("create_run"),
     name: z.string().trim().min(1).max(240),
@@ -104,6 +107,7 @@ const operationSchema = z.discriminatedUnion("action", [
 type Operation = z.infer<typeof operationSchema>;
 const capability = {
   propose_coverage: "agent-propose",
+  create_exploratory_session: "agent-run",
   create_run: "agent-run",
   create_retest: "agent-run",
   launch_plan: "agent-run",
@@ -141,9 +145,16 @@ async function applyOperation(
     if (!validated.ok) {
       throw new AgentOperationError(400, "INVALID_PROPOSAL", validated.issues.map(({ path, message }) => `${path} ${message}`).join(", "));
     }
+    let inputRefs = operation.inputRefs;
+    if (operation.exploration) {
+      const refs = await exploratoryProposalRefs(workspaceId, operation.exploration, validated.payload, tx);
+      if (!refs) throw new AgentOperationError(400, "INVALID_EXPLORATION", "Provide an exploratory finding in the current project and a proposed new case");
+      inputRefs = [...new Set([...refs, ...(inputRefs ?? [])])];
+    }
     const row = await createProposal({
       ...operation,
       workspaceId,
+      inputRefs,
       payload: validated.payload,
       actorType: "agent",
       createdById: userId,
@@ -153,8 +164,16 @@ async function applyOperation(
       body: { proposal: toProposalListItem(row), href: "/proposals" },
       targetType: "proposal",
       targetId: row.id,
-      sourceRefs: operation.inputRefs,
+      sourceRefs: inputRefs,
       proposal: row,
+    };
+  }
+
+  if (operation.action === "create_exploratory_session") {
+    const session = await createExploratorySession({ ...operation, workspaceId, actorId: userId }, tx);
+    return {
+      status: 201, body: session,
+      targetType: "run", targetId: session.run.id, sourceRefs: [session.resultId],
     };
   }
 

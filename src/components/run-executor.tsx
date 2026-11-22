@@ -25,6 +25,7 @@ import { useLiveUpdates } from "./use-live-updates";
 import { RunCaseDetail } from "./run-case-detail";
 import { RunCaseList } from "./run-case-list";
 import { RunProgressBar } from "./run-progress-bar";
+import { ExploratoryCaseProposal } from "./exploratory-case-proposal";
 import { TopoSelect } from "./ui/topo-select";
 import {
   applyAttachmentToRun,
@@ -75,6 +76,7 @@ export function RunExecutor({
     ? availableProviders
     : [defaultProvider];
   const { can, projectId, userId } = useProjectActions();
+  const exploratory = run.source === "exploratory";
   const router = useRouter();
   const mutationQueue = useRef<Promise<boolean>>(Promise.resolve(true));
   const mutationVersion = useRef(0);
@@ -132,7 +134,7 @@ export function RunExecutor({
     [optimisticRun.results],
   );
   const retestHref =
-    failureResults.length > 0
+    !exploratory && failureResults.length > 0
       ? `/runs/new?retest=${failureResults.map((row) => row.id).join(",")}`
       : null;
   const showRetestInHeader =
@@ -839,9 +841,9 @@ export function RunExecutor({
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        eyebrow="Manual run"
+        eyebrow={exploratory ? "Exploratory session" : "Manual run"}
         title={optimisticRun.name}
-        description={optimisticRun.description || "Select a case, follow its steps, and record the result."}
+        description={exploratory ? undefined : optimisticRun.description || "Select a case, follow its steps, and record the result."}
         meta={
           <>
             <StatusChip tone={statusToneForRun(optimisticRun.status)} mono>
@@ -967,6 +969,13 @@ export function RunExecutor({
         }
       />
 
+      {exploratory ? (
+        <section aria-labelledby="exploratory-charter" className="space-y-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-3">
+          <h2 id="exploratory-charter" className="text-sm font-semibold">Charter</h2>
+          <p className="whitespace-pre-wrap break-words text-sm">{optimisticRun.description}</p>
+        </section>
+      ) : null}
+
       {aborted ? (
         <p
           role="status"
@@ -983,6 +992,10 @@ export function RunExecutor({
           This run is completed and locked. Results and structure can no longer
           be edited. Comments and attachments are still allowed.
         </p>
+      ) : null}
+
+      {exploratory && focusedResult && can("proposals.create") ? (
+        <ExploratoryCaseProposal key={focusedResult.id} runId={run.id} resultId={focusedResult.id} />
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] px-3 py-2 text-xs">

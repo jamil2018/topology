@@ -69,6 +69,7 @@ export default async function RunDetailPage({ params }: Props) {
         availableProviders={availableProviders}
         run={{
           id: run.id,
+          source: run.source,
           name: run.name,
           environment: run.environment,
           status: run.status,

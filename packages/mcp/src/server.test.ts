@@ -12,6 +12,8 @@ const AGENT_TOOLS = [
   "list_catalog",
   "create_case",
   "list_runs",
+  "get_exploratory_session",
+  "create_exploratory_session",
   "create_run",
   "create_assigned_run",
   "launch_assigned_plan",

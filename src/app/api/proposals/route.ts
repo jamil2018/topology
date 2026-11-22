@@ -6,6 +6,7 @@ import {
 } from "@topology/domain";
 import { auth } from "@/auth";
 import { requireProjectAccess } from "@/lib/project";
+import { exploratoryProposalRefs, exploratorySourceSchema } from "@/lib/tcm/exploratory-session";
 import {
   createProposal,
   getAiProvider,
@@ -22,6 +23,7 @@ const createSchema = z.object({
   actorType: z.enum(["user", "agent", "model"]).optional(),
   model: z.string().max(120).nullable().optional(),
   inputRefs: z.array(z.string()).optional(),
+  exploration: exploratorySourceSchema.optional(),
 });
 
 const patchSchema = z.object({
@@ -104,13 +106,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid actorType" }, { status: 400 });
   }
 
+  let inputRefs = parsed.data.inputRefs;
+  if (parsed.data.exploration) {
+    const refs = await exploratoryProposalRefs(access.ctx.project.id, parsed.data.exploration, validated.payload);
+    if (!refs) return NextResponse.json({ error: "Provide an exploratory finding in this project and a proposed new case" }, { status: 400 });
+    inputRefs = [...new Set([...refs, ...(inputRefs ?? [])])];
+  }
   const row = await createProposal({
     workspaceId: access.ctx.project.id,
     payload: validated.payload,
     entityType: parsed.data.entityType,
     actorType,
     model: parsed.data.model ?? null,
-    inputRefs: parsed.data.inputRefs,
+    inputRefs,
     createdById: session.user.id,
   });
 

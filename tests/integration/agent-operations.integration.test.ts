@@ -139,6 +139,46 @@ describe("Scoped agent operations", () => {
     })).status).toBe(403);
   });
 
+  it("reuses scoped observations and review for a chartered exploratory session", async () => {
+    const input = { action: "create_exploratory_session", name: "Explore checkout", charter: "Look for recovery failures", environment: "smoke" };
+    expect((await post(readToken, "exploration-1", input)).status).toBe(403);
+    expect((await post(workToken, "exploration-invalid", { ...input, charter: " " })).status).toBe(400);
+    const [first, retry] = await Promise.all([post(workToken, "exploration-1", input), post(workToken, "exploration-1", input)]);
+    expect(first.status).toBe(201);
+    const session = await first.json();
+    expect(retry.status).toBe(201);
+    expect(await retry.json()).toEqual(session);
+    expect(session.run).toMatchObject({ assigneeId: ownerId, description: input.charter, source: "exploratory" });
+    const { id: runId } = session.run;
+    const { resultId } = session;
+    const detail = new URLSearchParams({ resource: "exploratory_session", id: runId });
+    expect(await (await GET(request(readToken, detail))).json()).toMatchObject({ result: { id: resultId }, href: session.href });
+    const listing = new URLSearchParams({ resource: "runs", source: "exploratory", assignee: "me", limit: "1" });
+    expect(await (await GET(request(readToken, listing))).json()).toMatchObject({ runs: [{ id: runId }], nextCursor: null });
+    const observation = await post(workToken, "exploration-result", {
+      action: "record_result", runId, resultId, status: "failed", notes: "Retry leaves a blank screen.",
+    });
+    expect(observation.status).toBe(200);
+    expect(await observation.json()).toMatchObject({ result: { id: resultId, executedById: ownerId, caseId: null } });
+
+    const followup = {
+      action: "propose_coverage",
+      exploration: { runId, resultId },
+      payload: { diffs: [{
+        entityType: "case", action: "create", before: null,
+        after: { key: "EXP-RECOVERY", title: "Restore interrupted checkout", steps: "Disconnect and retry", expectedResult: "Checkout opens" },
+      }] },
+    };
+    expect((await post(workToken, "exploration-bad-result", { ...followup, exploration: { runId, resultId: readyCaseId } })).status).toBe(400);
+    const proposed = await post(workToken, "exploration-followup", followup);
+    expect(proposed.status).toBe(201);
+    const { proposal } = await proposed.json();
+    expect(proposal).toMatchObject({ status: "pending", inputRefs: [session.href, `result:${resultId}`] });
+    expect(await db.query.cases.findFirst({ where: and(eq(cases.workspaceId, projectId), eq(cases.key, "EXP-RECOVERY")) })).toBeUndefined();
+    await reviewProposal({ workspaceId: projectId, proposalId: proposal.id, decision: "accepted", approvedById: ownerId });
+    expect(await db.query.cases.findFirst({ where: and(eq(cases.workspaceId, projectId), eq(cases.key, "EXP-RECOVERY")) })).toMatchObject({ status: "ready" });
+  });
+
   it("rolls back earlier edits if a later proposal diff fails", async () => {
     const key = "AGENT-ROLLBACK";
     const { id } = await createProposal({

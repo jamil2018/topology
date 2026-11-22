@@ -8,6 +8,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@heroui/react";
 import { motion } from "motion/react";
 import type { ProposalDiff } from "@topology/domain";
+import { isUuid } from "@/lib/queries/ids";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 
@@ -308,12 +309,33 @@ export function ProposalsWorkspace({
                   </p>
                   <ul className="space-y-0.5 font-mono text-xs text-[color:var(--topo-muted)]">
                     {item.diffs.map((diff, i) => (
-                      <li key={`${item.id}-${i}`}>{summarizeDiff(diff)}</li>
+                      <li key={`${item.id}-${i}`}>
+                        {diff.entityType === "case" ? (
+                          <details>
+                            <summary className="cursor-pointer">{summarizeDiff(diff)}</summary>
+                            {diff.before ? (
+                              <>
+                                <p className="mt-2 font-semibold">Before</p>
+                                <pre className="whitespace-pre-wrap break-words">{JSON.stringify(diff.before, null, 2)}</pre>
+                              </>
+                            ) : null}
+                            <p className="mt-2 font-semibold">Proposed</p>
+                            <pre className="whitespace-pre-wrap break-words">{JSON.stringify(diff.after, null, 2)}</pre>
+                          </details>
+                        ) : summarizeDiff(diff)}
+                      </li>
                     ))}
                   </ul>
                   {item.inputRefs.length > 0 ? (
                     <p className="text-xs text-[color:var(--topo-muted)]">
-                      Refs: {item.inputRefs.join(", ")}
+                      Refs: {item.inputRefs.map((ref, index) => (
+                        <span key={`${index}-${ref}`}>
+                          {index > 0 ? ", " : ""}
+                          {ref.startsWith("/runs/") && isUuid(ref.slice(6)) ? (
+                            <Link href={ref} className="underline">Open source run</Link>
+                          ) : ref}
+                        </span>
+                      ))}
                     </p>
                   ) : null}
                 </div>

@@ -48,12 +48,18 @@ export class TopologyClient {
     return this.request(`/api/agent?${qs}`);
   }
 
-  listRuns(page?: { cursor?: string; limit?: number; status?: string; assignee?: "me" }) {
+  listRuns(page?: { cursor?: string; limit?: number; status?: string; assignee?: "me"; source?: "exploratory" }) {
     const qs = new URLSearchParams({ resource: "runs" });
     if (page?.cursor) qs.set("cursor", page.cursor);
     if (page?.limit != null) qs.set("limit", String(page.limit));
     if (page?.status) qs.set("status", page.status);
     if (page?.assignee) qs.set("assignee", page.assignee);
+    if (page?.source) qs.set("source", page.source);
+    return this.request(`/api/v1/agent?${qs}`);
+  }
+
+  getExploratorySession(id: string) {
+    const qs = new URLSearchParams({ resource: "exploratory_session", id });
     return this.request(`/api/v1/agent?${qs}`);
   }
 

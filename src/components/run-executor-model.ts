@@ -62,6 +62,7 @@ export type ResultRow = {
 };
 
 export type RunDetail = {
+  source?: string;
   environment?: string;
   id: string;
   name: string;

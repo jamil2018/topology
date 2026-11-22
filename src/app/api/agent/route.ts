@@ -12,6 +12,7 @@ import { loadCaseTcm } from "@/lib/tcm/case-tcm";
 import { seedManualRunResults } from "@/lib/tcm/seed-run";
 import { parseMatrixJson } from "@/lib/tcm/matrix";
 import { listRegressionBaselines, readRegressionBaseline } from "@/lib/tcm/baselines";
+import { readExploratorySession } from "@/lib/tcm/exploratory-session";
 import {
   caseStatusEnum, caseVersions, cases, customFieldDefs, folders, resultStatusEnum, runResults,
   runs, runStatusEnum, runTemplates, sharedSteps, testImplementations, testIntents, testPlanCases, testPlans, workspaces,
@@ -169,18 +170,28 @@ export async function GET(request: Request) {
     return NextResponse.json({ items: selected, nextCursor });
   }
 
-  if (resource === "runs" && (assigneeId || searchParams.has("cursor") || searchParams.has("status") ||
+  if (resource === "exploratory_session") {
+    const id = searchParams.get("id") ?? "";
+    if (!isUuid(id)) return NextResponse.json({ error: "Invalid exploratory session id", code: "INVALID_ID" }, { status: 400 });
+    const session = await readExploratorySession(workspaceId, id);
+    if (!session) return NextResponse.json({ error: "Exploratory session not found", code: "SESSION_NOT_FOUND" }, { status: 404 });
+    return NextResponse.json(session);
+  }
+
+  if (resource === "runs" && (assigneeId || searchParams.has("source") || searchParams.has("cursor") || searchParams.has("status") ||
       searchParams.has("limit") || new URL(request.url).pathname === "/api/v1/agent")) {
     const cursor = cursorId(searchParams);
+    const source = searchParams.get("source");
     const status = z.enum(runStatusEnum.enumValues).optional().safeParse(searchParams.get("status") ?? undefined);
-    if (cursor === null || !status.success) {
-      return NextResponse.json({ error: "Invalid status or cursor", code: "INVALID_FILTER" }, { status: 400 });
+    if (cursor === null || !status.success || (source !== null && source !== "exploratory")) {
+      return NextResponse.json({ error: "Invalid status, source, or cursor", code: "INVALID_FILTER" }, { status: 400 });
     }
     const limit = parseLimitParam(searchParams.get("limit"), 50);
     const rows = await db.query.runs.findMany({ where: and(
       eq(runs.workspaceId, workspaceId),
       cursor ? lt(runs.id, cursor) : undefined,
       status.data ? eq(runs.status, status.data) : undefined,
+      source ? eq(runs.source, source) : undefined,
       assigneeId ? or(
         eq(runs.assigneeId, assigneeId),
         inArray(runs.id, db.select({ id: runResults.runId }).from(runResults).where(eq(runResults.assigneeId, assigneeId))),

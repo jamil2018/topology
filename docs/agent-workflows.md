@@ -8,7 +8,7 @@ Settings → Integrations creates a project token with read and proposal capabil
 | --- | --- |
 | `agent-read` | List cases, runs, and results, read graph context and evidence, inspect workflow requests and release reports |
 | `agent-propose` | Submit catalog and coverage changes for human review |
-| `agent-run` | Create an assigned manual run or retest, launch an active matrix plan, or request an approved GitHub Actions workflow or GitLab pipeline |
+| `agent-run` | Create an assigned manual run, exploratory session, or retest, launch a matrix plan or baseline, or request an approved GitHub Actions workflow or GitLab pipeline |
 | `agent-observe` | Record one result or step with optional evidence, or hand off a manual run assigned to the credential owner |
 
 Each credential is bound to one project and its owner. Expiring or revoking the credential, removing its owner from the project, or archiving the project closes scoped access. A project header, when supplied, must match the credential. Agent writes to the new API use an `Idempotency-Key`. Reuse the same key for a retry and a new key for a new operation. Successful effects, their attribution, and retry receipts are committed together.
@@ -51,6 +51,12 @@ A project member with run creation permission can save a baseline from a plan's 
 Agents can browse `resource=baselines`, inspect `resource=baseline&id=BASELINE_UUID`, and launch with `{"action":"launch_baseline","baselineId":"BASELINE_UUID"}` and an idempotency key. The corresponding MCP tools are `get_baseline` and `launch_assigned_baseline`. Apply migration `0013_regression_baselines` during an upgrade.
 
 REST `record_result` and MCP `record_observation` accept one optional `evidence` object with `filename`, `dataBase64`, and optional `contentType`. The file must contain 1 byte to 1 MiB. The result stores the attachment and the audit entry links it to the exact result or step observation. The executor shows it with other result attachments. A project-bound `agent-read` token can download it at the returned URL. Retry a storage failure with the same key and evidence.
+
+### Exploratory sessions
+
+From Test runs → Start a run → Exploratory session, enter a charter and an environment. Topology assigns the session to its creator and creates a findings result for notes, evidence, and triage. Use **Propose a follow-up case** to submit a regression case with a link to the source session. For failed or blocked findings, a project member can preview and file a defect using the result's issue controls. An agent can record the finding and hand the session back for that decision.
+
+Agents create a session with `{"action":"create_exploratory_session","name":"Explore checkout","charter":"Check recovery after a disconnect","environment":"smoke"}` or MCP `create_exploratory_session`. Save the returned run and result IDs for `record_result`. List these sessions with `resource=runs&source=exploratory` or `topology agent list runs --source exploratory --assignee me`. Read the saved charter with `resource=exploratory_session&id=RUN_UUID` or MCP `get_exploratory_session`. To propose a new case, add `exploration: { runId, resultId }` to `propose_coverage` and use the standard scoped idempotency key. The proposal and its audit entry retain the session and result references.
 
 ## GitHub Actions
 
