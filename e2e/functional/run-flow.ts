@@ -41,20 +41,22 @@ export async function startManualRun(
     name: "Select all visible cases",
   });
   await expect(selectAll).toBeChecked();
-  // HeroUI puts role=checkbox on CheckboxButton; force-click avoids Control overlays.
+  // Control overlays steal pointer hits; Space toggles controlled TopoCheckbox.
   await selectAll.scrollIntoViewIfNeeded();
-  await selectAll.click({ force: true });
+  await selectAll.focus();
+  await selectAll.press("Space");
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
 
   for (const title of titles) {
-    await page.locator('input[name="case-search"]').fill(title);
+    await page.locator('[data-slot="search-field-input"]').fill(title);
     const rowCheckbox = page.getByRole("checkbox", {
       name: `Select ${title}`,
       exact: true,
     });
     await rowCheckbox.scrollIntoViewIfNeeded();
-    await rowCheckbox.click({ force: true });
-    await page.locator('input[name="case-search"]').fill("");
+    await rowCheckbox.focus();
+    await rowCheckbox.press("Space");
+    await page.locator('[data-slot="search-field-input"]').fill("");
   }
   await expect(
     page.getByText(`${titles.length} selected`, { exact: true }),

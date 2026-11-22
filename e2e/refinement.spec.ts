@@ -3,9 +3,9 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 
 /**
- * HeroUI puts role=checkbox on CheckboxButton (`data-slot="checkbox-content"`).
- * Scroll it into view, then force-click so Control/Indicator children don't
- * steal the hit target on Firefox/WebKit.
+ * HeroUI Checkbox.Control intercepts pointer hits; React Aria also ignores
+ * force-clicks on the covered input. Focus + Space toggles selection reliably
+ * across Chromium/Firefox/WebKit for controlled TopoCheckbox.
  */
 async function clickHeroUiCheckbox(
   root: Page | Locator,
@@ -15,7 +15,8 @@ async function clickHeroUiCheckbox(
     ? root.getByRole("checkbox", { name })
     : root.getByRole("checkbox").first();
   await checkbox.scrollIntoViewIfNeeded();
-  await checkbox.click({ force: true });
+  await checkbox.focus();
+  await checkbox.press("Space");
 }
 
 for (const theme of ["light", "dark"] as const) {
@@ -65,9 +66,13 @@ test("review template, create fresh run, retest failure and follow lineage", asy
   const name = `Refinement ${Date.now()}`;
   await page.goto("/runs/new");
   await page.getByLabel("Run name", { exact: true }).filter({visible:true}).fill(name);
+  const selectAll = page.getByRole("checkbox", { name: "Select all visible cases" });
+  await expect(selectAll).toBeChecked();
   await clickHeroUiCheckbox(page, "Select all visible cases");
+  await expect(selectAll).not.toBeChecked();
   await expect(page.getByRole("button", { name: /^Create run/ })).toBeDisabled();
   await clickHeroUiCheckbox(page, "Select all visible cases");
+  await expect(selectAll).toBeChecked();
   await page.getByRole("button", { name: "Save as template", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Template saved" })).toBeVisible();
   await page.goto("/runs");
