@@ -10,15 +10,20 @@ for (const theme of ["light", "dark"] as const) {
     await loaded;
     await page.getByRole("radiogroup", { name: "Color theme" }).getByRole("radio", { name: `${theme === "light" ? "Light" : "Dark"} theme`, exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-    for (const [url, title, name] of [
+    const viewport = page.viewportSize()!;
+    for (const [url, title, name, height] of [
       ["/", "Home", "home"], ["/cases", "Test cases", "cases"], ["/runs", "Test runs", "runs"],
-      ["/reports?range=all", "Reports", "reports"], ["/settings", "Settings", "settings"],
-    ]) {
+      ["/reports?range=all", "Reports", "reports", 1400], ["/settings", "Settings", "settings", 1200],
+    ] as const) {
+      // The shell scrolls its main pane. Use a taller viewport for these
+      // pages so the screenshot still covers the panels below the fold.
+      if (height) await page.setViewportSize({ ...viewport, height });
       await page.goto(url);
       await expect(page.getByRole("heading", { name: title, exact: true, level: 1 })).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
       await expect(page).toHaveScreenshot(`${name}-${theme}.png`, { fullPage: true, animations: "disabled" });
     }
+    await page.setViewportSize(viewport);
     testInfo.annotations.push({ type: "expected-page-error", description: "An error occurred in the Server Components render" });
     const sql = await ownedDatabase();
     let renamed = false;
