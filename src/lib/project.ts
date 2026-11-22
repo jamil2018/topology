@@ -36,6 +36,7 @@ export type ProjectSummary = {
   slug: string;
   archivedAt: Date | null;
   role: WorkspaceRole;
+  requireCaseReview?: boolean;
 };
 
 export type MembershipWithRole = WorkspaceMember & {
@@ -61,6 +62,7 @@ function toSummary(
     slug: workspace.slug,
     archivedAt: workspace.archivedAt,
     role,
+    requireCaseReview: workspace.requireCaseReview,
   };
 }
 
@@ -337,7 +339,7 @@ export async function createProject(input: {
 
 export async function updateProject(
   projectId: string,
-  patch: { name?: string; archived?: boolean; legacyAgentWrites?: boolean; actorId?: string },
+  patch: { name?: string; archived?: boolean; legacyAgentWrites?: boolean; requireCaseReview?: boolean; actorId?: string },
 ) {
   const updates: Partial<typeof workspaces.$inferInsert> = {
     updatedAt: new Date(),
@@ -347,6 +349,7 @@ export async function updateProject(
   if (patch.archived === false) updates.archivedAt = null;
 
   if (patch.legacyAgentWrites !== undefined) updates.legacyAgentWrites = patch.legacyAgentWrites;
+  if (patch.requireCaseReview !== undefined) updates.requireCaseReview = patch.requireCaseReview;
   return db.transaction(async (tx) => {
     const [updated] = await tx.update(workspaces).set(updates)
       .where(eq(workspaces.id, projectId)).returning();
@@ -358,6 +361,16 @@ export async function updateProject(
         targetType: "project",
         targetId: projectId,
         metadataJson: JSON.stringify({ legacyAgentWrites: patch.legacyAgentWrites }),
+      });
+    }
+    if (updated && patch.requireCaseReview !== undefined) {
+      await tx.insert(auditEvents).values({
+        action: "project.case_review_policy.update",
+        workspaceId: projectId,
+        actorId: patch.actorId,
+        targetType: "project",
+        targetId: projectId,
+        metadataJson: JSON.stringify({ requireCaseReview: updated.requireCaseReview }),
       });
     }
     return updated ?? null;

@@ -1,3 +1,4 @@
+import { lockCaseReviewPolicy } from "@/lib/case-review-policy";
 import { and, asc, desc, eq, inArray, max } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -334,56 +335,65 @@ export async function restoreCaseVersion(input: {
   versionId: string;
   actorId?: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  const version = await db.query.caseVersions.findFirst({
-    where: and(
-      eq(caseVersions.id, input.versionId),
-      eq(caseVersions.caseId, input.caseId),
-      eq(caseVersions.workspaceId, input.workspaceId),
-    ),
-  });
-  if (!version) return { ok: false, error: "Version not found", status: 404 };
-  const snapshot = parseCaseSnapshot(version.snapshotJson);
-  const patch = restoreCasePatch(snapshot);
-  await db
-    .update(cases)
-    .set({
-      title: patch.title,
-      description: patch.description,
-      preconditions: patch.preconditions,
-      steps: patch.steps,
-      expectedResult: patch.expectedResult,
-      priority: patch.priority as "P0" | "P1" | "P2" | "P3",
-      status: patch.status as "draft" | "ready" | "blocked" | "deprecated",
-      tags: patch.tags,
-      folderId: patch.folderId,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(cases.id, input.caseId), eq(cases.workspaceId, input.workspaceId)));
-  await replaceCaseSteps({
-    workspaceId: input.workspaceId,
-    caseId: input.caseId,
-    steps: snapshot.structuredSteps,
-  });
-  await replaceCaseParameters({
-    caseId: input.caseId,
-    parameters: snapshot.parameters,
-    datasets: snapshot.datasets,
-  });
-  if (Object.keys(snapshot.customFields).length > 0) {
-    await upsertCustomFieldValues({
-      workspaceId: input.workspaceId,
-      entityType: "case",
-      entityId: input.caseId,
-      values: snapshot.customFields,
+  return db.transaction(async (tx) => {
+    const requireReview = await lockCaseReviewPolicy(tx, input.workspaceId);
+    const version = await tx.query.caseVersions.findFirst({
+      where: and(
+        eq(caseVersions.id, input.versionId),
+        eq(caseVersions.caseId, input.caseId),
+        eq(caseVersions.workspaceId, input.workspaceId),
+      ),
     });
-  }
-  await snapshotCaseVersion({
-    workspaceId: input.workspaceId,
-    caseId: input.caseId,
-    actorId: input.actorId,
-    summary: `Restored v${version.version}`,
+    if (!version) return { ok: false, error: "Version not found", status: 404 };
+    const snapshot = parseCaseSnapshot(version.snapshotJson);
+    const patch = restoreCasePatch(snapshot);
+    const [current] = await tx.select({ status: cases.status }).from(cases)
+      .where(and(eq(cases.id, input.caseId), eq(cases.workspaceId, input.workspaceId))).for("update");
+    if (!current) return { ok: false, error: "Case not found", status: 404 };
+    if (requireReview && [current.status, patch.status].some((status) => status === "ready" || status === "in_review")) {
+      return { ok: false, error: "Propose the historical changes in the case editor to restore a reviewed case.", status: 409 };
+    }
+    await tx
+      .update(cases)
+      .set({
+        title: patch.title,
+        description: patch.description,
+        preconditions: patch.preconditions,
+        steps: patch.steps,
+        expectedResult: patch.expectedResult,
+        priority: patch.priority as "P0" | "P1" | "P2" | "P3",
+        status: patch.status as "draft" | "ready" | "blocked" | "deprecated",
+        tags: patch.tags,
+        folderId: patch.folderId,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(cases.id, input.caseId), eq(cases.workspaceId, input.workspaceId)));
+    await replaceCaseSteps({
+      workspaceId: input.workspaceId,
+      caseId: input.caseId,
+      steps: snapshot.structuredSteps,
+    }, tx);
+    await replaceCaseParameters({
+      caseId: input.caseId,
+      parameters: snapshot.parameters,
+      datasets: snapshot.datasets,
+    }, tx);
+    if (Object.keys(snapshot.customFields).length > 0) {
+      await upsertCustomFieldValues({
+        workspaceId: input.workspaceId,
+        entityType: "case",
+        entityId: input.caseId,
+        values: snapshot.customFields,
+      }, tx);
+    }
+    await snapshotCaseVersion({
+      workspaceId: input.workspaceId,
+      caseId: input.caseId,
+      actorId: input.actorId,
+      summary: `Restored v${version.version}`,
+    }, tx);
+    return { ok: true };
   });
-  return { ok: true };
 }
 
 export async function executableStepsForCase(input: {

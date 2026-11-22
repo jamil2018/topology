@@ -57,6 +57,8 @@ type CaseDetail = {
   intentId?: string | null;
   reviewerId?: string | null;
   reviewedAt?: string | Date | null;
+  revision?: string;
+  requireCaseReview?: boolean;
   intent?: {
     id: string;
     key: string;
@@ -180,7 +182,8 @@ export const CaseEditPanel = memo(function CaseEditPanel({
   const duplicateLock = useRef(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const { can } = useProjectActions();
+  const [proposalSubmitted, setProposalSubmitted] = useState(false);
+  const { can, userId } = useProjectActions();
   const [serverReadOnly, setReadOnly] = useState(false);
   const readOnly = serverReadOnly || !can("cases.edit");
   const [detail, setDetail] = useState<CaseDetail | null>(null);
@@ -210,6 +213,7 @@ export const CaseEditPanel = memo(function CaseEditPanel({
     setLoading(true);
     setLoadError(null);
     setSaveError(null);
+    setProposalSubmitted(false);
     setReadOnly(false);
     setShowHistory(false);
     setHistoryTab("activity");
@@ -368,6 +372,7 @@ export const CaseEditPanel = memo(function CaseEditPanel({
     saveLock.current = true;
     setSaving(true);
     setSaveError(null);
+    setProposalSubmitted(false);
     try {
       const res = await fetch(`/api/cases/${caseId}`, {
         method: "PATCH",
@@ -382,6 +387,7 @@ export const CaseEditPanel = memo(function CaseEditPanel({
           status: form.status,
           folderId: form.folderId || null,
           tags: parseTags(form.tags),
+          expectedRevision: detail.revision,
           ...(useStructured
             ? {
                 structuredSteps,
@@ -395,6 +401,16 @@ export const CaseEditPanel = memo(function CaseEditPanel({
         }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 202 && data.proposalId) {
+        setForm(toForm(detail));
+        setStructuredSteps(detail.structuredSteps ?? []);
+        setUseStructured(Boolean(detail.structuredSteps?.length));
+        setParameters(detail.parameters ?? []);
+        setDatasets(detail.datasets ?? []);
+        setCustomFields(detail.customFields ?? {});
+        setProposalSubmitted(true);
+        return false;
+      }
       if (res.status === 403) {
         setReadOnly(true);
         setSaveError(
@@ -429,6 +445,8 @@ export const CaseEditPanel = memo(function CaseEditPanel({
         intent: saved.intent ?? detail.intent,
         reviewerId: saved.reviewerId ?? detail.reviewerId,
         reviewedAt: saved.reviewedAt ?? detail.reviewedAt,
+        requireCaseReview: saved.requireCaseReview ?? detail.requireCaseReview,
+        revision: saved.revision ?? detail.revision,
         structuredSteps: useStructured
           ? structuredSteps
           : (saved.structuredSteps ?? []),
@@ -498,7 +516,7 @@ export const CaseEditPanel = memo(function CaseEditPanel({
         action === "submit"
           ? { status: "in_review", reviewerId }
           : action === "approve"
-            ? { status: "ready" }
+            ? { status: "ready", expectedRevision: detail.revision }
             : { status: "draft", reviewComment: reviewComment.trim() };
       const res = await fetch(`/api/cases/${caseId}`, {
         method: "PATCH",
@@ -520,6 +538,7 @@ export const CaseEditPanel = memo(function CaseEditPanel({
         status: saved.status,
         reviewerId: saved.reviewerId ?? detail.reviewerId,
         reviewedAt: saved.reviewedAt ?? detail.reviewedAt,
+        revision: saved.revision ?? detail.revision,
       };
       setDetail(nextDetail);
       setForm((f) => (f ? { ...f, status: saved.status } : f));
@@ -625,21 +644,28 @@ export const CaseEditPanel = memo(function CaseEditPanel({
   const headerKey = detail?.key ?? caseKey;
   const headerTitle = form?.title || detail?.title || caseTitle;
   const statusValue = form?.status ?? detail?.status ?? "draft";
+  const readyRequiresReview = detail?.requireCaseReview && detail.status === "ready";
+  const queuesReview = readyRequiresReview || (detail?.requireCaseReview && detail.status === "deprecated" && statusValue === "ready");
+  const canDecideReview = can("cases.approve") && (!detail?.requireCaseReview || !detail.reviewerId || detail.reviewerId === userId);
   const reviewGateActive =
-    Boolean(reviewerId || detail?.reviewerId) || statusValue === "in_review";
+    Boolean(detail?.requireCaseReview || reviewerId || detail?.reviewerId) || statusValue === "in_review";
   const assignedReviewerLabel = reviewerLabel(
     members,
     detail?.reviewerId || reviewerId || null,
   );
   const selectableStatuses = useMemo(() => {
+    if (readyRequiresReview) return statuses.filter((s) => s === "ready" || s === "deprecated");
     if (statusValue === "in_review") {
       return statuses.filter((s) => s === "in_review");
     }
     if (reviewGateActive && statusValue === "draft") {
       return statuses.filter((s) => s !== "ready" && s !== "in_review");
     }
+    if (detail?.requireCaseReview) {
+      return statuses.filter((s) => s !== "in_review" && (s !== "ready" || detail.status === "deprecated"));
+    }
     return [...statuses];
-  }, [reviewGateActive, statusValue]);
+  }, [detail?.requireCaseReview, detail?.status, readyRequiresReview, reviewGateActive, statusValue]);
 
   return (
     <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)]">
@@ -1126,7 +1152,7 @@ export const CaseEditPanel = memo(function CaseEditPanel({
                       : ""}
                     .
                   </p>
-                  {can("cases.approve") ? (
+                  {canDecideReview ? (
                     <>
                       <TextField name="review-comment" className="w-full">
                         <Label>Review comment</Label>
@@ -1142,7 +1168,7 @@ export const CaseEditPanel = memo(function CaseEditPanel({
                         <Button
                           size="sm"
                           variant="primary"
-                          isDisabled={reviewBusy || saving}
+                          isDisabled={reviewBusy || saving || Boolean(detail?.requireCaseReview && !detail.reviewerId)}
                           onPress={() => void applyReview("approve")}
                         >
                           {dirty ? "Save & approve" : "Approve"}
@@ -1276,6 +1302,11 @@ export const CaseEditPanel = memo(function CaseEditPanel({
           {saveError ? (
             <p className="text-sm text-red-600 dark:text-red-300">{saveError}</p>
           ) : null}
+          {proposalSubmitted ? (
+            <p role="status" className="text-sm">
+              Case changes submitted. <Link href="/proposals" className="underline">Open the review queue</Link>
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="primary"
@@ -1290,7 +1321,7 @@ export const CaseEditPanel = memo(function CaseEditPanel({
               onPress={() => void save()}
             >
               <FloppyDiskIcon size={14} weight="bold" />
-              {saving ? "Saving…" : "Save"}
+              {saving ? "Saving…" : queuesReview ? "Propose changes" : "Save"}
             </Button>
             {can("cases.create") ? (
               <Button

@@ -25,6 +25,7 @@ const patchSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   archived: z.boolean().optional(),
   legacyAgentWrites: z.boolean().optional(),
+  requireCaseReview: z.boolean().optional(),
 });
 
 const selectSchema = z.object({
@@ -181,6 +182,7 @@ export async function PATCH(request: Request) {
       name: parsed.data.name,
       archived: parsed.data.archived,
       legacyAgentWrites: parsed.data.legacyAgentWrites,
+      requireCaseReview: parsed.data.requireCaseReview,
       actorId: session.user.id,
     });
   } catch (err) {
@@ -197,6 +199,7 @@ export async function PATCH(request: Request) {
       slug: updated.slug,
       archivedAt: updated.archivedAt,
       legacyAgentWrites: updated.legacyAgentWrites,
+      requireCaseReview: updated.requireCaseReview,
     },
   });
 }

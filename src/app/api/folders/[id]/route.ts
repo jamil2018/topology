@@ -3,7 +3,8 @@ import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { folders } from "@/db/schema";
+import { cases, folders } from "@/db/schema";
+import { lockCaseReviewPolicy, protectedCase } from "@/lib/case-review-policy";
 import { wouldCreateFolderCycle } from "@/lib/folder-tree";
 import { isLockFailure } from "@/lib/pg-error";
 import { requireProjectAccess } from "@/lib/project";
@@ -188,21 +189,28 @@ export async function DELETE(request: Request, { params }: Params) {
   }
 
   try {
-    // Promote any child folders to root so delete is not blocked by nesting.
-    await db
-      .update(folders)
-      .set({ parentId: null, updatedAt: new Date() })
-      .where(
-        and(eq(folders.parentId, id), eq(folders.workspaceId, workspaceId)),
-      );
+    return await db.transaction(async (tx) => {
+      if (await lockCaseReviewPolicy(tx, workspaceId, "no key update")) {
+        const [reference] = await tx.select({ id: cases.id }).from(cases)
+          .where(and(protectedCase(workspaceId), eq(cases.folderId, id))).limit(1);
+        if (reference) return NextResponse.json({ error: "Move the reviewed cases before deleting their folder." }, { status: 409 });
+      }
+      // Promote any child folders to root so delete is not blocked by nesting.
+      await tx
+        .update(folders)
+        .set({ parentId: null, updatedAt: new Date() })
+        .where(
+          and(eq(folders.parentId, id), eq(folders.workspaceId, workspaceId)),
+        );
 
-    // Cases + milestones use ON DELETE SET NULL → become unfiled.
-    const [deleted] = await db
-      .delete(folders)
-      .where(and(eq(folders.id, id), eq(folders.workspaceId, workspaceId)))
-      .returning();
+      // Cases + milestones use ON DELETE SET NULL → become unfiled.
+      const [deleted] = await tx
+        .delete(folders)
+        .where(and(eq(folders.id, id), eq(folders.workspaceId, workspaceId)))
+        .returning();
 
-    return NextResponse.json({ folder: deleted });
+      return NextResponse.json({ folder: deleted });
+    });
   } catch {
     return NextResponse.json(
       { error: "Failed to delete folder" },

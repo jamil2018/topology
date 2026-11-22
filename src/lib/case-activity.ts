@@ -56,7 +56,7 @@ export async function recordCaseFieldChanges(input: {
   before: Record<string, unknown>;
   after: Record<string, unknown>;
   fields: string[];
-}) {
+}, executor: Pick<typeof db, "insert"> = db) {
   const action = input.action ?? "updated";
   const rows = [];
   for (const field of input.fields) {
@@ -74,7 +74,7 @@ export async function recordCaseFieldChanges(input: {
         fromValue,
         toValue,
         summary: describeCaseChange(field, fromValue, toValue),
-      }),
+      }, executor),
     );
   }
   return rows;

@@ -17,6 +17,7 @@ import { requireProjectAccess } from "@/lib/project";
 import { caseListQueryFromSearchParams } from "@/lib/case-list";
 import { listCasesPage } from "@/lib/queries";
 import { createCaseSchema, persistCase } from "@/lib/case-create";
+import { caseReviewRequired, lockCaseReviewPolicy } from "@/lib/case-review-policy";
 
 const bulkUpdateSchema = z.object({
   caseIds: z.array(z.string().uuid()).min(1).max(500),
@@ -190,9 +191,11 @@ export async function POST(request: Request) {
     if (available.length !== sharedIds.length) return NextResponse.json({ error: "Shared steps unavailable in this project" }, { status: 400 });
   }
   try {
-    const withIntent = await db.transaction((tx) =>
-      persistCase(tx, workspaceId, session.user.id, parsed.data),
-    );
+    const withIntent = await db.transaction(async (tx) => {
+      if (await lockCaseReviewPolicy(tx, workspaceId) && ["ready", "in_review"].includes(parsed.data.status)) return null;
+      return persistCase(tx, workspaceId, session.user.id, parsed.data);
+    });
+    if (!withIntent) return NextResponse.json(caseReviewRequired, { status: 409 });
     return NextResponse.json({ case: withIntent }, { status: 201 });
   } catch (err) {
     const mapped = caseWriteError(err);
@@ -262,120 +265,48 @@ export async function PATCH(request: Request) {
     }
   }
 
-  const existing = await db.query.cases.findMany({
-    where: and(
-      inArray(cases.id, caseIds),
-      eq(cases.workspaceId, workspaceId),
-    ),
-  });
-  if (existing.length === 0) {
-    return NextResponse.json({ error: "No matching cases" }, { status: 404 });
-  }
+  try {
+    return await db.transaction(async (tx) => {
+      const requireReview = await lockCaseReviewPolicy(tx, workspaceId);
+      const existing = await tx.select().from(cases).where(and(
+        inArray(cases.id, caseIds), eq(cases.workspaceId, workspaceId),
+      )).orderBy(cases.id).for("update");
+      if (existing.length === 0) {
+        return NextResponse.json({ error: "No matching cases" }, { status: 404 });
+      }
 
-  const folderNameById = new Map<string, string>();
-  const allFolders = await db.query.folders.findMany({
-    where: eq(folders.workspaceId, workspaceId),
-  });
-  for (const f of allFolders) folderNameById.set(f.id, f.name);
+      const allFolders = await tx.query.folders.findMany({ where: eq(folders.workspaceId, workspaceId) });
+      const folderNameById = new Map(allFolders.map((folder) => [folder.id, folder.name]));
+      const input = { status, priority, folderId, tags, tagMode };
+      const patches = existing.map((row) => ({ row, change: buildBulkPatch(row, input, folderNameById) }));
+      if (requireReview && patches.some(({ row, change }) => change.fields.length > 0 &&
+        (["ready", "in_review"].includes(row.status) || status === "ready" || status === "in_review"))) {
+        return NextResponse.json({
+          code: caseReviewRequired.code,
+          error: "Open these cases individually to submit changes for review.",
+        }, { status: 409 });
+      }
 
-  const input = { status, priority, folderId, tags, tagMode };
-  const updated = [];
-
-  const record = async (
-    rowId: string,
-    built: ReturnType<typeof buildBulkPatch>,
-  ) => {
-    if (built.fields.length === 0) return;
-    await recordCaseFieldChanges({
-      caseId: rowId,
-      actorId: session.user.id,
-      action: "bulk_updated",
-      before: built.before,
-      after: built.after,
-      fields: built.fields,
-    });
-  };
-
-  // Add/remove modes adjust tags under a row lock so concurrent edits cannot race.
-  // Replace mode still overwrites the array (last write wins).
-  if (tags !== undefined && (tagMode === "add" || tagMode === "remove")) {
-    try {
-      const written = await db.transaction(async (tx) => {
-        const locked = await tx
-          .select()
-          .from(cases)
-          .where(
-            and(
-              inArray(
-                cases.id,
-                existing.map((row) => row.id),
-              ),
-              eq(cases.workspaceId, workspaceId),
-            ),
-          )
-          .orderBy(cases.id)
-          .for("update");
-
-        const rows = [];
-        for (const row of locked) {
-          const built = buildBulkPatch(row, input, folderNameById);
-          if (built.fields.length === 0) {
-            rows.push({ next: row, built });
-            continue;
-          }
-          const [next] = await tx
-            .update(cases)
-            .set({ ...built.patch, updatedAt: new Date() })
-            .where(eq(cases.id, row.id))
-            .returning();
-          rows.push({ next, built });
+      const updated = [];
+      for (const { row, change } of patches) {
+        if (change.fields.length === 0) {
+          updated.push(row);
+          continue;
         }
-        return rows;
-      });
-
-      for (const item of written) {
-        if (!item.next) continue;
-        await record(item.next.id, item.built);
-        updated.push(item.next);
+        const [next] = await tx.update(cases)
+          .set({ ...change.patch, updatedAt: new Date() }).where(eq(cases.id, row.id)).returning();
+        await recordCaseFieldChanges({
+          caseId: row.id, actorId: session.user.id, action: "bulk_updated",
+          before: change.before, after: change.after, fields: change.fields,
+        }, tx);
+        updated.push(next);
       }
-    } catch (err) {
-      if (isLockFailure(err)) {
-        return NextResponse.json(
-          { error: "Could not lock cases to update tags. Retry." },
-          { status: 409 },
-        );
-      }
-      return NextResponse.json(
-        { error: "Failed to update cases" },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json({
-      updated: updated.length,
-      cases: updated,
+      return NextResponse.json({ updated: updated.length, cases: updated });
     });
-  }
-
-  for (const row of existing) {
-    const built = buildBulkPatch(row, input, folderNameById);
-    if (built.fields.length === 0) {
-      updated.push(row);
-      continue;
+  } catch (err) {
+    if (isLockFailure(err)) {
+      return NextResponse.json({ error: "Could not lock cases for the bulk update. Retry." }, { status: 409 });
     }
-
-    const [next] = await db
-      .update(cases)
-      .set({ ...built.patch, updatedAt: new Date() })
-      .where(eq(cases.id, row.id))
-      .returning();
-
-    await record(row.id, built);
-    updated.push(next);
+    return NextResponse.json({ error: "Failed to update cases" }, { status: 500 });
   }
-
-  return NextResponse.json({
-    updated: updated.length,
-    cases: updated,
-  });
 }

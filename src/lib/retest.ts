@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { cases, runs, runResults, resultCaseLinks, retestSources } from "@/db/schema";
 import { seedManualRunResults } from "@/lib/tcm/seed-run";
+import { allCasesReady, lockCaseReviewPolicy } from "@/lib/case-review-policy";
 
 export async function prepareRetest(workspaceId: string, resultIds: string[], executor: Pick<typeof db, "select"> = db) {
   const rows = await executor.select({ id: runResults.id, caseId: cases.id, title: runResults.title, status: runResults.status, caseTitle: cases.title, caseKey: cases.key, runId: runs.id, runName: runs.name })
@@ -24,16 +25,10 @@ export async function createRetestRun(input: {
   environment: string;
   sourceResultIds: string[];
 }, tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) {
+  const readyOnly = (await lockCaseReviewPolicy(tx, input.workspaceId)) || input.readyOnly;
   const draft = await prepareRetest(input.workspaceId, input.sourceResultIds, tx);
   if (!draft || draft.excluded.length || !draft.caseIds.length) return null;
-  if (input.readyOnly) {
-    const ready = await tx.select({ id: cases.id }).from(cases).where(and(
-      eq(cases.workspaceId, input.workspaceId),
-      eq(cases.status, "ready"),
-      inArray(cases.id, draft.caseIds),
-    )).for("share");
-    if (ready.length !== draft.caseIds.length) return null;
-  }
+  if (readyOnly && !await allCasesReady(tx, input.workspaceId, draft.caseIds)) return null;
   const [created] = await tx.insert(runs).values({
     workspaceId: input.workspaceId,
     name: input.name,

@@ -79,6 +79,7 @@ export const workspaces = pgTable("workspaces", {
   aiModel: text("ai_model"),
   aiBaseUrl: text("ai_base_url"),
   legacyAgentWrites: boolean("legacy_agent_writes").default(false).notNull(),
+  requireCaseReview: boolean("require_case_review").default(false).notNull(),
   /** Show quality-graph destinations in nav and hub. Shared by the workspace. */
   qualityGraphEnabled: boolean("quality_graph_enabled")
     .default(false)

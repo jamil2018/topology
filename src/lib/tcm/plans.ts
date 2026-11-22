@@ -18,6 +18,7 @@ import {
   type PlanMatrixInput,
 } from "@/lib/tcm/matrix";
 import { seedManualRunResults } from "@/lib/tcm/seed-run";
+import { lockCaseReviewPolicy } from "@/lib/case-review-policy";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -180,6 +181,7 @@ export function launchPlan(input: PlanLaunch, executor?: Transaction) {
 }
 
 async function launchPlanInTransaction(input: PlanLaunch, tx: Transaction) {
+  const readyOnly = (await lockCaseReviewPolicy(tx, input.workspaceId)) || input.assignedAgent;
   const [plan] = await tx.select().from(testPlans).where(and(
     eq(testPlans.id, input.planId),
     eq(testPlans.workspaceId, input.workspaceId),
@@ -199,11 +201,11 @@ async function launchPlanInTransaction(input: PlanLaunch, tx: Transaction) {
     .from(cases)
     .where(and(
       inArray(cases.id, caseIds), eq(cases.workspaceId, input.workspaceId),
-      input.assignedAgent ? eq(cases.status, "ready") : undefined,
+      readyOnly ? eq(cases.status, "ready") : undefined,
     )).for("share");
   if (found.length !== caseIds.length) {
-    return input.assignedAgent
-      ? { ok: false as const, error: "An agent plan must contain only ready project cases", status: 409 }
+    return readyOnly
+      ? { ok: false as const, error: "The plan must contain only ready project cases", status: 409 }
       : { ok: false as const, error: "One or more cases are invalid", status: 400 };
   }
 

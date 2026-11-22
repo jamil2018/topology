@@ -1,5 +1,29 @@
 import { test, expect } from "../fixtures";
 
+test("a project setting sends edits to ready cases through review", async ({ page, isolatedProject, makeCase }) => {
+  const original = await makeCase("Approved checkout recovery");
+  await page.goto("/settings?section=projects");
+  const policy = page.getByRole("button", { name: `Require case review for ${isolatedProject.name}` });
+  await expect(policy).toHaveAttribute("aria-pressed", "false");
+  await policy.click();
+  await expect(policy).toHaveAttribute("aria-pressed", "true");
+  await page.goto(`/cases/${original.key}`);
+  const editor = page.getByRole("dialog", { name: /^Case / });
+  const title = editor.getByLabel("Title", { exact: true });
+  await expect(title).toHaveValue(original.title);
+  await title.fill("Checkout recovery with cart contents");
+  await editor.getByRole("button", { name: "Propose changes" }).click();
+  await expect(editor.getByRole("status").filter({ hasText: "Case changes submitted" })).toBeVisible();
+  await expect(title).toHaveValue(original.title);
+  await editor.getByRole("link", { name: "Open the review queue" }).click();
+  const proposal = page.getByRole("listitem").filter({ hasText: `Update ${original.key}` }).filter({
+    has: page.getByRole("button", { name: "Accept", exact: true }),
+  });
+  await proposal.getByRole("button", { name: "Accept", exact: true }).click();
+  await page.goto(`/cases/${original.key}`);
+  await expect(title).toHaveValue("Checkout recovery with cart contents");
+});
+
 test("search, filter, create, edit, folder, saved view, and bulk tag", async ({
   page,
 }) => {

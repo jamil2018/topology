@@ -23,6 +23,7 @@ export const updateCaseSchema = z
     tags: z.array(z.string().trim().min(1)).optional(),
     reviewerId: z.string().uuid().nullable().optional(),
     reviewComment: z.string().trim().max(2000).optional(),
+    expectedRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
     structuredSteps: z.array(structuredStepInputSchema).optional(),
     parameters: z
       .array(

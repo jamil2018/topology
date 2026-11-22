@@ -12,6 +12,7 @@ type ProjectRow = {
   slug: string;
   archivedAt: string | null;
   role: "admin" | "member" | "viewer";
+  requireCaseReview?: boolean;
 };
 
 export function ProjectsPanel() {
@@ -105,14 +106,14 @@ export function ProjectsPanel() {
     }
   }
 
-  async function setArchived(project: ProjectRow, archived: boolean) {
+  async function updateSettings(project: ProjectRow, settings: { archived: boolean } | { requireCaseReview: boolean }) {
     setBusyId(project.id);
     setError(null);
     try {
       const res = await fetch("/api/projects", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: project.id, archived }),
+        body: JSON.stringify({ id: project.id, ...settings }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -274,10 +275,22 @@ export function ProjectsPanel() {
                       size="sm"
                       variant="secondary"
                       isDisabled={busyId === project.id}
-                      onPress={() => void setArchived(project, !archived)}
+                      onPress={() => void updateSettings(project, { archived: !archived })}
                     >
                       {archived ? "Restore" : "Archive"}
                     </Button>
+                    {!archived ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        aria-label={`Require case review for ${project.name}`}
+                        aria-pressed={Boolean(project.requireCaseReview)}
+                        isDisabled={busyId === project.id}
+                        onPress={() => void updateSettings(project, { requireCaseReview: !project.requireCaseReview })}
+                      >
+                        {project.requireCaseReview ? "Case review required" : "Require case review"}
+                      </Button>
+                    ) : null}
                     {project.slug !== "default" ? (
                       <Button
                         size="sm"

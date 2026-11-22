@@ -9,6 +9,7 @@ import {
 import { db } from "@/db";
 import { recordCaseActivity } from "@/lib/case-activity";
 import { readCaseRevision } from "@/lib/case-revision";
+import { lockCaseReviewPolicy } from "@/lib/case-review-policy";
 import { buildCasePatch, updateCaseSchema } from "@/lib/case-update";
 import { replaceCaseParameters, replaceCaseSteps, snapshotCaseVersion, upsertCustomFieldValues } from "@/lib/tcm/case-tcm";
 import { createCaseSchema, persistCase } from "@/lib/case-create";
@@ -715,6 +716,9 @@ async function applyReviewedCaseEdit(
     eq(cases.workspaceId, workspaceId), eq(cases.id, caseId),
   )).for("update");
   if (!row) throw new ProposalApplyError("Case not found in project", 404);
+  if (row.status === "in_review" && await lockCaseReviewPolicy(tx, workspaceId)) {
+    throw new ProposalApplyError("Request changes on the assigned review before applying a proposal to this case", 409);
+  }
   const current = await readCaseRevision(workspaceId, caseId, tx);
   if (!current || current.revision !== diff.before?.revision) {
     throw new ProposalApplyError("Case revision changed. Refresh the case and submit a new proposal", 409);
@@ -980,7 +984,7 @@ export async function reviewProposal(opts: {
   provenance?: ProposalApplyProvenance;
 }> {
   return db.transaction(async (tx) => {
-    const [allowedProject] = await tx.select({ id: workspaceMembers.id }).from(workspaceMembers)
+    const [allowedProject] = await tx.select({ id: workspaceMembers.id, requireCaseReview: workspaces.requireCaseReview }).from(workspaceMembers)
       .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
       .where(and(
         eq(workspaceMembers.workspaceId, opts.workspaceId),
@@ -1006,11 +1010,16 @@ export async function reviewProposal(opts: {
       throw new ProposalApplyError("Only pending proposals can be reviewed", 409);
     }
 
-    const result = opts.decision === "accepted"
+    const payload = opts.decision === "accepted" ? parseProposalPayload(row.payloadJson) : null;
+    if (allowedProject.requireCaseReview && payload?.diffs.some((diff) => diff.entityType === "case") &&
+      !roleHasAction(membershipActions(reviewer), "cases.approve")) {
+      throw new ProposalApplyError("Case approval permission required", 403);
+    }
+    const result = payload
       ? await applyProposalPayload(
           tx,
           opts.workspaceId,
-          parseProposalPayload(row.payloadJson),
+          payload,
           row.createdById,
           proposalApplyProvenance(row, opts.approvedById),
           reviewer,

@@ -1,3 +1,4 @@
+import { allCasesReady, caseReviewRequired, lockCaseReviewPolicy } from "@/lib/case-review-policy";
 import { NextResponse } from "next/server";
 import { and, asc, count, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
@@ -599,29 +600,34 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      const [{ value: caseCount }] = await db
-        .select({ value: count() })
-        .from(cases)
-        .where(eq(cases.workspaceId, workspaceId));
-      const key = parsed.data.key ?? `TOP-${Number(caseCount) + 1}`;
-      const [row] = await db
-        .insert(cases)
-        .values({
-          workspaceId,
-          key,
-          title: parsed.data.title,
-          description: parsed.data.description,
-          steps: parsed.data.steps,
-          expectedResult: parsed.data.expectedResult,
-          priority: parsed.data.priority,
-          status: "ready",
-          tags: parsed.data.tags,
-          createdById: authResult.userId,
-        })
-        .returning();
-      const { ensureIntentForCase } = await import("@/lib/quality-graph");
-      const { intentId } = await ensureIntentForCase(row);
-      return NextResponse.json({ case: { ...row, intentId } });
+      const created = await db.transaction(async (tx) => {
+        if (await lockCaseReviewPolicy(tx, workspaceId)) return null;
+        const [{ value: caseCount }] = await tx
+          .select({ value: count() })
+          .from(cases)
+          .where(eq(cases.workspaceId, workspaceId));
+        const key = parsed.data.key ?? `TOP-${Number(caseCount) + 1}`;
+        const [row] = await tx
+          .insert(cases)
+          .values({
+            workspaceId,
+            key,
+            title: parsed.data.title,
+            description: parsed.data.description,
+            steps: parsed.data.steps,
+            expectedResult: parsed.data.expectedResult,
+            priority: parsed.data.priority,
+            status: "ready",
+            tags: parsed.data.tags,
+            createdById: authResult.userId,
+          })
+          .returning();
+        const { ensureIntentForCase } = await import("@/lib/quality-graph");
+        const { intentId } = await ensureIntentForCase(row, tx);
+        return { ...row, intentId };
+      });
+      if (!created) return NextResponse.json(caseReviewRequired, { status: 409 });
+      return NextResponse.json({ case: created });
     }
 
     if (action === "create_run") {
@@ -655,6 +661,8 @@ export async function POST(request: Request) {
       }
 
       const run = await db.transaction(async (tx) => {
+        if (await lockCaseReviewPolicy(tx, workspaceId) &&
+          !await allCasesReady(tx, workspaceId, caseRows.map((row) => row.id))) return null;
         const [created] = await tx.insert(runs).values({
           workspaceId,
           name: parsed.data.name,
@@ -670,6 +678,7 @@ export async function POST(request: Request) {
         return created;
       });
 
+      if (!run) return NextResponse.json({ code: "CASE_REVIEW_REQUIRED", error: "Select ready cases to start this run." }, { status: 409 });
       return NextResponse.json({ run, caseCount: caseRows.length });
     }
 

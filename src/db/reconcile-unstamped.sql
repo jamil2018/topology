@@ -532,3 +532,4 @@ CREATE TABLE IF NOT EXISTS "regression_baselines" (
 CREATE INDEX IF NOT EXISTS "regression_baselines_project_plan_idx" ON "regression_baselines" ("workspace_id", "plan_id");
 ALTER TABLE "runs" ADD COLUMN IF NOT EXISTS "baseline_id" uuid REFERENCES "regression_baselines"("id") ON DELETE set null;
 ALTER TABLE "run_results" ADD COLUMN IF NOT EXISTS "case_snapshot" jsonb;
+ALTER TABLE "workspaces" ADD COLUMN IF NOT EXISTS "require_case_review" boolean DEFAULT false NOT NULL;

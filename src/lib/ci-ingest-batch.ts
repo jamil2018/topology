@@ -3,6 +3,7 @@ import type { NormalizedResult } from "@topology/domain";
 import { db } from "@/db";
 import { cases, testImplementations, testIntents } from "@/db/schema";
 import { implementationTypeForCase } from "./quality-graph/ensure";
+import { lockCaseReviewPolicy } from "./case-review-policy";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const BATCH = 500;
@@ -21,6 +22,8 @@ export async function resolveExternalLinks(
   }
   const keys = [...byKey.keys()].sort();
   const links = new Map<string, { caseId: string; implementationId: string }>();
+  if (!keys.length) return links;
+  const status: "draft" | "ready" = await lockCaseReviewPolicy(tx, workspaceId) ? "draft" : "ready";
   for (let offset = 0; offset < keys.length; offset += BATCH) {
     const batch = keys.slice(offset, offset + BATCH);
     await tx.insert(cases).values(batch.map((key) => {
@@ -28,7 +31,7 @@ export async function resolveExternalLinks(
       return { workspaceId, key, title: result.name || result.externalKey,
         description: `Imported from automation (${result.classname || "junit"})`,
         steps: "", expectedResult: "Test passes in CI", priority: "P2" as const,
-        status: "ready" as const, tags: ["automation", "junit"], createdById: userId };
+        status, tags: ["automation", "junit"], createdById: userId };
     })).onConflictDoNothing({ target: [cases.workspaceId, cases.key] });
     const rows = await tx.select().from(cases)
       .where(and(eq(cases.workspaceId, workspaceId), inArray(cases.key, batch)))

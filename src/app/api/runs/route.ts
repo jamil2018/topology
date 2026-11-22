@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { cases, runs, notifications } from "@/db/schema";
 import { requireWorkspaceAssignee } from "@/lib/assignee";
 import { caseWriteError } from "@/lib/pg-error";
+import { allCasesReady, lockCaseReviewPolicy } from "@/lib/case-review-policy";
 import { requireProjectAccess } from "@/lib/project";
 import { listRunsPage } from "@/lib/queries";
 import { runListQueryFromSearchParams } from "@/lib/run-list";
@@ -109,6 +110,7 @@ export async function POST(request: Request) {
 
   try {
     const run = await db.transaction(async (tx) => {
+    if (await lockCaseReviewPolicy(tx, workspaceId) && !await allCasesReady(tx, workspaceId, caseIds)) return null;
     const [run] = await tx
       .insert(runs)
       .values({
@@ -143,6 +145,7 @@ export async function POST(request: Request) {
     return run;
     });
 
+    if (!run) return NextResponse.json({ code: "CASE_REVIEW_REQUIRED", error: "Select ready cases to start this run." }, { status: 409 });
     if (run.assigneeId && run.assigneeId !== session.user.id) {
       void import("@/lib/notification-channels")
         .then(({ dispatchNotificationChannels }) =>

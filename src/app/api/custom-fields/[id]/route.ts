@@ -1,9 +1,10 @@
+import { lockCaseReviewPolicy, protectedCase } from "@/lib/case-review-policy";
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { customFieldDefs } from "@/db/schema";
+import { cases, customFieldDefs, customFieldValues } from "@/db/schema";
 import { requireProjectAccess } from "@/lib/project";
 import { validateFieldDef } from "@/lib/tcm/custom-fields";
 
@@ -95,17 +96,28 @@ export async function DELETE(request: Request, { params }: Params) {
   if (!z.string().uuid().safeParse(id).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  const [deleted] = await db
-    .delete(customFieldDefs)
-    .where(
-      and(
-        eq(customFieldDefs.id, id),
-        eq(customFieldDefs.workspaceId, access.ctx.project.id),
-      ),
-    )
-    .returning();
-  if (!deleted) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  return NextResponse.json({ field: deleted });
+  const workspaceId = access.ctx.project.id;
+  return db.transaction(async (tx) => {
+    if (await lockCaseReviewPolicy(tx, workspaceId, "no key update")) {
+      const [reference] = await tx.select({ id: customFieldValues.id }).from(customFieldValues)
+        .innerJoin(cases, eq(cases.id, customFieldValues.entityId))
+        .innerJoin(customFieldDefs, eq(customFieldDefs.id, customFieldValues.fieldId))
+        .where(and(protectedCase(workspaceId), eq(customFieldDefs.workspaceId, workspaceId),
+          eq(customFieldValues.fieldId, id), eq(customFieldValues.entityType, "case"))).limit(1);
+      if (reference) return NextResponse.json({ error: "Remove this field from the reviewed cases before deleting it." }, { status: 409 });
+    }
+    const [deleted] = await tx
+      .delete(customFieldDefs)
+      .where(
+        and(
+          eq(customFieldDefs.id, id),
+          eq(customFieldDefs.workspaceId, access.ctx.project.id),
+        ),
+      )
+      .returning();
+    if (!deleted) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({ field: deleted });
+  });
 }

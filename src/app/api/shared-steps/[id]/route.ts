@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { sharedStepItems, sharedSteps } from "@/db/schema";
+import { caseSteps, cases, sharedStepItems, sharedSteps } from "@/db/schema";
+import { lockCaseReviewPolicy, protectedCase, type CaseReviewTransaction } from "@/lib/case-review-policy";
 import { requireProjectAccess } from "@/lib/project";
 import { orderSteps } from "@/lib/tcm/steps";
 
@@ -39,15 +40,6 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!z.string().uuid().safeParse(id).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  const existing = await db.query.sharedSteps.findFirst({
-    where: and(
-      eq(sharedSteps.id, id),
-      eq(sharedSteps.workspaceId, access.ctx.project.id),
-    ),
-  });
-  if (!existing) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
   let body: unknown;
   try {
     body = await request.json();
@@ -58,31 +50,36 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid shared step" }, { status: 400 });
   }
-  const [updated] = await db
-    .update(sharedSteps)
-    .set({
-      ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
-      ...(parsed.data.description !== undefined
-        ? { description: parsed.data.description }
-        : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(sharedSteps.id, id))
-    .returning();
-  if (parsed.data.items) {
-    await db.delete(sharedStepItems).where(eq(sharedStepItems.sharedStepId, id));
-    const items = orderSteps(parsed.data.items);
-    await db.insert(sharedStepItems).values(
-      items.map((item) => ({
-        sharedStepId: id,
-        position: item.position,
-        action: item.action,
-        expected: item.expected,
-        data: item.data,
-      })),
-    );
-  }
-  return NextResponse.json({ sharedStep: updated });
+  const workspaceId = access.ctx.project.id;
+  return db.transaction(async (tx) => {
+    if (parsed.data.items && await sharedStepInReview(tx, workspaceId, id)) return sharedStepConflict();
+    const [updated] = await tx
+      .update(sharedSteps)
+      .set({
+        ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+        ...(parsed.data.description !== undefined
+          ? { description: parsed.data.description }
+          : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(sharedSteps.id, id), eq(sharedSteps.workspaceId, workspaceId)))
+      .returning();
+    if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (parsed.data.items) {
+      await tx.delete(sharedStepItems).where(eq(sharedStepItems.sharedStepId, id));
+      const items = orderSteps(parsed.data.items);
+      if (items.length) await tx.insert(sharedStepItems).values(
+        items.map((item) => ({
+          sharedStepId: id,
+          position: item.position,
+          action: item.action,
+          expected: item.expected,
+          data: item.data,
+        })),
+      );
+    }
+    return NextResponse.json({ sharedStep: updated });
+  });
 }
 
 export async function DELETE(request: Request, { params }: Params) {
@@ -101,17 +98,35 @@ export async function DELETE(request: Request, { params }: Params) {
   if (!z.string().uuid().safeParse(id).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  const [deleted] = await db
-    .delete(sharedSteps)
-    .where(
-      and(
-        eq(sharedSteps.id, id),
-        eq(sharedSteps.workspaceId, access.ctx.project.id),
-      ),
-    )
-    .returning();
-  if (!deleted) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  return NextResponse.json({ sharedStep: deleted });
+  return db.transaction(async (tx) => {
+    if (await sharedStepInReview(tx, access.ctx.project.id, id)) return sharedStepConflict();
+    const [deleted] = await tx
+      .delete(sharedSteps)
+      .where(
+        and(
+          eq(sharedSteps.id, id),
+          eq(sharedSteps.workspaceId, access.ctx.project.id),
+        ),
+      )
+      .returning();
+    if (!deleted) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({ sharedStep: deleted });
+  });
+}
+
+async function sharedStepInReview(tx: CaseReviewTransaction, workspaceId: string, id: string) {
+  if (!await lockCaseReviewPolicy(tx, workspaceId, "no key update")) return false;
+  const [reference] = await tx.select({ id: caseSteps.id }).from(caseSteps)
+    .innerJoin(cases, eq(cases.id, caseSteps.caseId))
+    .where(and(protectedCase(workspaceId), eq(caseSteps.sharedStepId, id))).limit(1);
+  return Boolean(reference);
+}
+
+function sharedStepConflict() {
+  return NextResponse.json({
+    code: "CASE_REVIEW_REQUIRED",
+    error: "Create a replacement shared step and propose it on the cases that use this step.",
+  }, { status: 409 });
 }

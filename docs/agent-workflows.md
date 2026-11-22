@@ -26,6 +26,14 @@ Content-Type: application/json
 
 Use a signed-in project administrator session for this operation. The project audit log records the change.
 
+## Required case review
+
+Project admins can enable **Require case review** in Settings → Projects. Existing ready cases remain executable. New cases enter the catalog as drafts before they can be marked ready. The assigned reviewer approves a submitted draft using the revision returned by the case API. Vendor, CSV, and CI imports create drafts when they would otherwise create ready cases. CI can still record results and evidence.
+
+Edits and archival requests for a ready case go to Proposals. The editor submits the revision it loaded and returns a link to the review queue. Acceptance requires both proposal review and case approval permissions. The ready revision remains available for runs while the proposal is pending. New manual runs, matrix launches, and retests select ready cases. Saved baselines retain their pinned revisions.
+
+Bulk changes and version restores that would affect a ready or pending review case must go through the case editor. To change a shared step used by a ready or pending review case, create a replacement step and propose switching the references. Legacy agent credentials use a scoped case proposal to create a ready case in these projects. Apply migration `0014_case_review_policy` during upgrades.
+
 ## REST, CLI, and MCP
 
 Use `GET /api/v1/agent?resource=cases` with `q`, `status`, `limit`, and the returned `nextCursor`. Use `resource=case&key=CASE-KEY` for structured content and recent versions. The `folders`, `shared_steps`, `custom_fields`, `plans`, and `run_templates` resources page the project catalog. The `results` resource pages by result ID and accepts `runId` and `status`. Read one result and its iteration and step snapshots at `resource=result&id=RESULT_UUID`.

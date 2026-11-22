@@ -1,3 +1,4 @@
+import { importedCaseStatus, lockCaseReviewPolicy } from "@/lib/case-review-policy";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cases, folders } from "@/db/schema";
@@ -99,66 +100,71 @@ export async function persistCsvCases(options: {
       .filter(Boolean);
 
     try {
-      const duplicate = await db.query.cases.findFirst({
-        where: and(
-          eq(cases.key, row.key),
-          eq(cases.workspaceId, options.workspaceId),
-        ),
+      const createdRow = await db.transaction(async (tx) => {
+        const requireReview = await lockCaseReviewPolicy(tx, options.workspaceId);
+        const duplicate = await tx.query.cases.findFirst({
+          where: and(
+            eq(cases.key, row.key),
+            eq(cases.workspaceId, options.workspaceId),
+          ),
+        });
+        if (duplicate) return null;
+
+        const [createdRow] = await tx
+          .insert(cases)
+          .values({
+            workspaceId: options.workspaceId,
+            key: row.key,
+            title: row.title,
+            description: row.description,
+            preconditions: row.preconditions,
+            steps: row.steps,
+            expectedResult: row.expectedResult,
+            priority: row.priority,
+            status: importedCaseStatus(row.status, requireReview),
+            folderId,
+            tags,
+            createdById: options.actorId,
+          })
+          .returning({
+            id: cases.id,
+            key: cases.key,
+            title: cases.title,
+            folderId: cases.folderId,
+          });
+
+        if (row.customFields && Object.keys(row.customFields).length > 0) {
+          await upsertCustomFieldValues({
+            workspaceId: options.workspaceId,
+            entityType: "case",
+            entityId: createdRow.id,
+            values: row.customFields,
+          }, tx);
+        }
+
+        const structured = parseFallbackSteps(
+          row.steps ?? "",
+          row.expectedResult ?? "",
+        ).filter((step) => step.action.trim() || step.expected.trim());
+        if (structured.length > 0) {
+          await replaceCaseSteps({
+            workspaceId: options.workspaceId,
+            caseId: createdRow.id,
+            steps: structured.map((step) => ({
+              action: step.action,
+              expected: step.expected,
+              data: step.data,
+              sharedStepId: step.sharedStepId,
+            })),
+          }, tx);
+        }
+
+        return createdRow;
       });
-      if (duplicate) {
+      if (!createdRow) {
         skipped.push(row.key);
         continue;
       }
-
-      const [createdRow] = await db
-        .insert(cases)
-        .values({
-          workspaceId: options.workspaceId,
-          key: row.key,
-          title: row.title,
-          description: row.description,
-          preconditions: row.preconditions,
-          steps: row.steps,
-          expectedResult: row.expectedResult,
-          priority: row.priority,
-          status: row.status,
-          folderId,
-          tags,
-          createdById: options.actorId,
-        })
-        .returning({
-          id: cases.id,
-          key: cases.key,
-          title: cases.title,
-          folderId: cases.folderId,
-        });
-
-      if (row.customFields && Object.keys(row.customFields).length > 0) {
-        await upsertCustomFieldValues({
-          workspaceId: options.workspaceId,
-          entityType: "case",
-          entityId: createdRow.id,
-          values: row.customFields,
-        });
-      }
-
-      const structured = parseFallbackSteps(
-        row.steps ?? "",
-        row.expectedResult ?? "",
-      ).filter((step) => step.action.trim() || step.expected.trim());
-      if (structured.length > 0) {
-        await replaceCaseSteps({
-          workspaceId: options.workspaceId,
-          caseId: createdRow.id,
-          steps: structured.map((step) => ({
-            action: step.action,
-            expected: step.expected,
-            data: step.data,
-            sharedStepId: step.sharedStepId,
-          })),
-        });
-      }
-
       created.push(createdRow);
       if (createdRow.folderId) folderIdSet.add(createdRow.folderId);
     } catch {

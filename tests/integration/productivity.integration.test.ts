@@ -2,9 +2,14 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { and, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "@/db";
-import { cases, users, workspaces, workspaceMembers, runs, runResults, retestSources, notifications, workspaceRoles } from "@/db/schema";
+import { cases, sharedSteps, sharedStepItems, users, workspaces, workspaceMembers, runs, runResults, retestSources, notifications, workspaceRoles } from "@/db/schema";
 import { listRunsPage } from "@/lib/queries/list-runs";
 import * as caseRoutes from "@/app/api/cases/route";
+import * as caseDetail from "@/app/api/cases/[id]/route";
+import * as projectRoutes from "@/app/api/projects/route";
+import * as proposalRoutes from "@/app/api/proposals/route";
+import * as runRoutes from "@/app/api/runs/route";
+import * as sharedStepRoutes from "@/app/api/shared-steps/[id]/route";
 import * as caseTcm from "@/lib/tcm/case-tcm";
 import * as templates from "@/app/api/run-templates/route";
 import * as templateDetail from "@/app/api/run-templates/[id]/route";
@@ -15,6 +20,8 @@ import * as runDetail from "@/app/api/runs/[id]/route";
 import * as caseLink from "@/app/api/results/[id]/case/route";
 import * as notificationOpen from "@/app/api/notifications/[id]/open/route";
 import * as seed from "@/lib/tcm/seed-run";
+import { persistCsvCases } from "@/lib/import/csv-import";
+import { findOrCreateCaseForExternal } from "@/lib/ci-ingest";
 const identity = vi.hoisted(() => ({ id: "" }));
 vi.mock("@/auth", () => ({ auth: async () => identity.id ? { user: { id: identity.id } } : null }));
 const project = randomUUID(), foreign = randomUUID();
@@ -55,6 +62,79 @@ describe("QA productivity access and lineage", () => {
     const rejected = await caseRoutes.POST(request("cases", "POST", { ...input, key: "ATOMIC-2" }));
     expect(rejected.status).toBe(500);
     expect(await db.query.cases.findFirst({ where: and(eq(cases.workspaceId, project), eq(cases.key, "ATOMIC-2")) })).toBeUndefined();
+  });
+
+  it("requires the assigned reviewer and keeps the approved revision executable until a proposal is accepted", async () => {
+    const policy = request("projects", "PATCH", { id: project, requireCaseReview: true });
+    identity.id = ids.member;
+    expect((await projectRoutes.PATCH(policy)).status).toBe(403);
+    identity.id = ids.admin;
+    expect((await projectRoutes.PATCH(request("projects", "PATCH", { id: project, requireCaseReview: true }))).status).toBe(200);
+    try {
+      const [shared] = await db.insert(sharedSteps).values({ workspaceId: project, name: "Connect" }).returning();
+      await db.insert(sharedStepItems).values({ sharedStepId: shared.id, position: 0, action: "Connect to checkout" });
+      identity.id = ids.member;
+      const imported = await persistCsvCases({
+        workspaceId: project, actorId: ids.member, dryRun: false,
+        rows: [{ key: "REVIEW-CSV", title: "Imported checkout", priority: "P2", status: "ready",
+          description: "", preconditions: "", steps: "", expectedResult: "", folder: "", tags: "" }],
+      });
+      const automated = await findOrCreateCaseForExternal({
+        externalKey: "review-policy-test", name: "Discovered checkout", classname: "review",
+        status: "passed", durationMs: 2, notes: "",
+      }, ids.member, project);
+      expect(imported.created).toHaveLength(1);
+      const discovered = await db.select({ status: cases.status }).from(cases)
+        .where(inArray(cases.id, [imported.created[0].id, automated.caseId]));
+      expect(discovered).toEqual([{ status: "draft" }, { status: "draft" }]);
+      const initial = { key: "REVIEW-1", title: "Checkout recovers", structuredSteps: [{ action: "Connect", sharedStepId: shared.id }] };
+      expect((await caseRoutes.POST(request("cases", "POST", { ...initial, status: "ready" }))).status).toBe(409);
+      const created = await caseRoutes.POST(request("cases", "POST", initial));
+      expect(created.status).toBe(201);
+      const { case: { id } } = await created.json();
+      const patch = (data: unknown) => caseDetail.PATCH(request(`cases/${id}`, "PATCH", data), params(id));
+      const startRun = () => runRoutes.POST(request("runs", "POST", { name: "Review test", caseIds: [id] }));
+      expect((await patch({ status: "ready" })).status).toBe(409);
+      expect((await startRun()).status).toBe(409);
+      expect((await caseRoutes.PATCH(request("cases", "PATCH", { caseIds: [caseId, id], status: "ready", tags: ["unchecked"] }))).status).toBe(409);
+      const submitted = await patch({ status: "in_review", reviewerId: ids.admin });
+      expect(submitted.status).toBe(200);
+      const review = (await submitted.json()).case;
+      expect((await sharedStepRoutes.PATCH(
+        request(`shared-steps/${shared.id}`, "PATCH", { items: [{ action: "Replace in-place" }] }),
+        params(shared.id),
+      )).status).toBe(409);
+      expect((await patch({ status: "ready", expectedRevision: review.revision })).status).toBe(403);
+      expect((await patch({ title: "Changed during review" })).status).toBe(409);
+
+      identity.id = ids.admin;
+      expect((await patch({ status: "ready", expectedRevision: "0".repeat(64) })).status).toBe(409);
+      expect((await patch({ status: "ready", expectedRevision: review.revision, title: "Unreviewed changes" })).status).toBe(409);
+      const approval = await patch({ status: "ready", expectedRevision: review.revision });
+      expect(approval.status).toBe(200);
+      const ready = (await approval.json()).case;
+      expect(ready.title).toBe(initial.title);
+
+      identity.id = ids.member;
+      const edit = { title: "Checkout preserves the cart", expectedRevision: ready.revision };
+      const [first, replay] = await Promise.all([patch(edit), patch(edit)]);
+      expect(first.status).toBe(202);
+      expect(replay.status).toBe(202);
+      const receipt = await first.json();
+      expect(await replay.json()).toEqual(receipt);
+      expect((await startRun()).status).toBe(201);
+      expect((await sharedStepRoutes.DELETE(request(`shared-steps/${shared.id}`, "DELETE"), params(shared.id))).status).toBe(409);
+      expect(await db.query.cases.findFirst({ where: eq(cases.id, id) })).toMatchObject({ status: "ready", title: initial.title });
+      const accept = () => proposalRoutes.PATCH(request("proposals", "PATCH", { id: receipt.proposalId, status: "accepted" }));
+      identity.id = ids.viewer;
+      expect((await accept()).status).toBe(403);
+      identity.id = ids.admin;
+      expect((await accept()).status).toBe(200);
+      expect(await db.query.cases.findFirst({ where: eq(cases.id, id) })).toMatchObject({ status: "ready", title: edit.title });
+    } finally {
+      identity.id = ids.admin;
+      expect((await projectRoutes.PATCH(request("projects", "PATCH", { id: project, requireCaseReview: false }))).status).toBe(200);
+    }
   });
   it("allows authors, denies viewers, and keeps template references project-scoped", async () => {
     expect((await templates.POST(request("run-templates", "POST", input))).status).toBe(401);

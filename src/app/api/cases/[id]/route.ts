@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { cases, customFieldDefs, folders, runResults } from "@/db/schema";
+import { cases, customFieldDefs, folders, notifications, proposals, runResults, sharedSteps } from "@/db/schema";
 import {
   recordCaseActivity,
   recordCaseFieldChanges,
 } from "@/lib/case-activity";
 import { validateCaseReviewTransition } from "@/lib/case-review";
-import { buildCasePatch, updateCaseSchema } from "@/lib/case-update";
-import { createNotification } from "@/lib/notifications";
+import { buildCasePatch, updateCaseSchema, type UpdateCaseInput } from "@/lib/case-update";
+import { readCaseRevision } from "@/lib/case-revision";
+import { caseReviewRequired, lockCaseReviewPolicy, type CaseReviewTransaction } from "@/lib/case-review-policy";
+import { createProposal, notifyProposalCreated } from "@/lib/proposals";
+import type { ProposalPayload } from "@topology/domain";
 import { isLockFailure } from "@/lib/pg-error";
-import { ctxHasAction, requireProjectAccess } from "@/lib/project";
+import { ctxHasAction, requireProjectAccess, type ActiveProjectContext } from "@/lib/project";
 import { requireWorkspaceAssignee } from "@/lib/assignee";
 import {
   loadCaseTcm,
@@ -72,18 +75,26 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid case id" }, { status: 400 });
   }
 
-  const row = await db.query.cases.findFirst({
-    where: and(eq(cases.id, id), eq(cases.workspaceId, access.ctx.project.id)),
+  const { id: workspaceId, requireCaseReview } = access.ctx.project;
+  if (!requireCaseReview) return readCaseDetail(db, workspaceId, id, false);
+  return db.transaction((tx) => readCaseDetail(tx, workspaceId, id, true), {
+    isolationLevel: "repeatable read", accessMode: "read only",
+  });
+}
+
+async function readCaseDetail(executor: Pick<typeof db, "query">, workspaceId: string, id: string, requireReview: boolean) {
+  const row = await executor.query.cases.findFirst({
+    where: and(eq(cases.id, id), eq(cases.workspaceId, workspaceId)),
     with: { folder: true, intent: true },
   });
   if (!row) {
     return NextResponse.json({ error: "Case not found" }, { status: 404 });
   }
 
-  const tcm = await loadCaseTcm(access.ctx.project.id, id);
-  const fieldDefs = await db.query.customFieldDefs.findMany({
+  const tcm = await loadCaseTcm(workspaceId, id, executor);
+  const fieldDefs = await executor.query.customFieldDefs.findMany({
     where: and(
-      eq(customFieldDefs.workspaceId, access.ctx.project.id),
+      eq(customFieldDefs.workspaceId, workspaceId),
       eq(customFieldDefs.entity, "case"),
     ),
     orderBy: [asc(customFieldDefs.position)],
@@ -91,6 +102,8 @@ export async function GET(request: Request, { params }: Params) {
 
   return NextResponse.json({
     case: {
+      requireCaseReview: requireReview,
+      revision: requireReview ? (await readCaseRevision(workspaceId, id, executor))?.revision : undefined,
       id: row.id,
       key: row.key,
       title: row.title,
@@ -150,8 +163,6 @@ export async function PATCH(request: Request, { params }: Params) {
       { status: viewAccess.status },
     );
   }
-  const workspaceId = viewAccess.ctx.project.id;
-
   const { id } = await params;
   if (invalidId(id)) {
     return NextResponse.json({ error: "Invalid case id" }, { status: 400 });
@@ -170,67 +181,107 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: first }, { status: 400 });
   }
 
-  const existing = await db.query.cases.findFirst({
-    where: and(eq(cases.id, id), eq(cases.workspaceId, workspaceId)),
-  });
+  const afterCommit: (() => void)[] = [];
+  try {
+    const response = await db.transaction((tx) =>
+      updateCase(tx, viewAccess.ctx, session.user.id, id, parsed.data, afterCommit),
+    );
+    for (const callback of afterCommit) callback();
+    return response;
+  } catch (error) {
+    if (error instanceof CaseEditError) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (isLockFailure(error)) return NextResponse.json({ error: "Could not lock the case. Retry." }, { status: 409 });
+    throw error;
+  }
+}
+
+class CaseEditError extends Error {}
+
+async function updateCase(
+  tx: CaseReviewTransaction,
+  project: ActiveProjectContext,
+  actorId: string,
+  id: string,
+  input: UpdateCaseInput,
+  afterCommit: (() => void)[],
+) {
+  const workspaceId = project.project.id;
+  const requireReview = await lockCaseReviewPolicy(tx, workspaceId);
+  const [existing] = await tx.select().from(cases).where(and(
+    eq(cases.id, id), eq(cases.workspaceId, workspaceId),
+  )).for("update");
   if (!existing) {
     return NextResponse.json({ error: "Case not found" }, { status: 404 });
   }
 
   const reviewCheck = validateCaseReviewTransition({
     from: existing.status,
-    to: parsed.data.status,
+    to: input.status,
     reviewerId:
-      parsed.data.reviewerId !== undefined
-        ? parsed.data.reviewerId
+      input.reviewerId !== undefined
+        ? input.reviewerId
         : existing.reviewerId,
-    reviewComment: parsed.data.reviewComment,
+    reviewComment: input.reviewComment,
   });
   if (!reviewCheck.ok) {
     return NextResponse.json({ error: reviewCheck.error }, { status: 400 });
   }
   const transition = reviewCheck.transition;
+  const restoring = requireReview && existing.status === "deprecated" && input.status === "ready";
 
   const reviewOnly =
     (transition.kind === "approve" || transition.kind === "request_changes") &&
-    parsed.data.title === undefined &&
-    parsed.data.description === undefined &&
-    parsed.data.preconditions === undefined &&
-    parsed.data.steps === undefined &&
-    parsed.data.expectedResult === undefined &&
-    parsed.data.priority === undefined &&
-    parsed.data.folderId === undefined &&
-    parsed.data.tags === undefined &&
-    parsed.data.structuredSteps === undefined &&
-    parsed.data.parameters === undefined &&
-    parsed.data.datasets === undefined &&
-    parsed.data.customFields === undefined;
+    input.title === undefined &&
+    input.description === undefined &&
+    input.preconditions === undefined &&
+    input.steps === undefined &&
+    input.expectedResult === undefined &&
+    input.priority === undefined &&
+    input.folderId === undefined &&
+    input.tags === undefined &&
+    input.structuredSteps === undefined &&
+    input.parameters === undefined &&
+    input.datasets === undefined &&
+    input.customFields === undefined;
 
   if (transition.kind === "approve" || transition.kind === "request_changes") {
-    if (!ctxHasAction(viewAccess.ctx, "cases.approve")) {
+    if (!ctxHasAction(project, "cases.approve")) {
       return NextResponse.json(
         { error: "Missing permission: cases.approve" },
         { status: 403 },
       );
     }
-    if (!reviewOnly && !ctxHasAction(viewAccess.ctx, "cases.edit")) {
+    if (!reviewOnly && !ctxHasAction(project, "cases.edit")) {
       return NextResponse.json(
         { error: "Missing permission: cases.edit" },
         { status: 403 },
       );
     }
-  } else if (!ctxHasAction(viewAccess.ctx, "cases.edit")) {
+  } else if (!ctxHasAction(project, "cases.edit")) {
     return NextResponse.json(
       { error: "Missing permission: cases.edit" },
       { status: 403 },
     );
   }
 
-  if (transition.kind === "submit" && parsed.data.reviewerId) {
+  if (requireReview) {
+    if (input.status === "ready" && existing.status !== "ready" && transition.kind !== "approve" && !restoring) {
+      return NextResponse.json(caseReviewRequired, { status: 409 });
+    }
+    if (existing.status === "in_review" && !reviewOnly) {
+      return NextResponse.json({ error: "Request changes before editing this review.", code: caseReviewRequired.code }, { status: 409 });
+    }
+    if (reviewOnly && existing.reviewerId !== actorId && (existing.reviewerId || transition.kind === "approve")) {
+      return NextResponse.json({ error: "The assigned reviewer must decide this review." }, { status: 403 });
+    }
+  }
+
+  if (transition.kind === "submit" && input.reviewerId) {
     const assignee = await requireWorkspaceAssignee(
       workspaceId,
-      parsed.data.reviewerId,
+      input.reviewerId,
       "cases.approve",
+      tx,
     );
     if (!assignee.ok) {
       return NextResponse.json(
@@ -240,10 +291,10 @@ export async function PATCH(request: Request, { params }: Params) {
     }
   }
 
-  if (parsed.data.folderId) {
-    const folder = await db.query.folders.findFirst({
+  if (input.folderId) {
+    const folder = await tx.query.folders.findFirst({
       where: and(
-        eq(folders.id, parsed.data.folderId),
+        eq(folders.id, input.folderId),
         eq(folders.workspaceId, workspaceId),
       ),
     });
@@ -251,8 +302,15 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: "Folder not found" }, { status: 400 });
     }
   }
+  const sharedIds = [...new Set(input.structuredSteps?.flatMap((step) => step.sharedStepId ? [step.sharedStepId] : []))];
+  if (sharedIds.length) {
+    const steps = await tx.select({ id: sharedSteps.id }).from(sharedSteps).where(and(
+      eq(sharedSteps.workspaceId, workspaceId), inArray(sharedSteps.id, sharedIds),
+    ));
+    if (steps.length !== sharedIds.length) return NextResponse.json({ error: "Shared steps unavailable in this project" }, { status: 400 });
+  }
 
-  const allFolders = await db.query.folders.findMany({
+  const allFolders = await tx.query.folders.findMany({
     where: eq(folders.workspaceId, workspaceId),
     columns: { id: true, name: true },
   });
@@ -270,21 +328,58 @@ export async function PATCH(request: Request, { params }: Params) {
       folderId: existing.folderId,
       tags: existing.tags ?? [],
     },
-    parsed.data,
+    input,
     folderNameById,
   );
 
   const tcmChanged =
-    parsed.data.structuredSteps !== undefined ||
-    parsed.data.parameters !== undefined ||
-    parsed.data.datasets !== undefined ||
-    parsed.data.customFields !== undefined;
+    input.structuredSteps !== undefined ||
+    input.parameters !== undefined ||
+    input.datasets !== undefined ||
+    input.customFields !== undefined;
 
   const reviewMetaChanged =
     transition.kind === "submit" ||
     transition.kind === "approve" ||
     transition.kind === "request_changes" ||
-    parsed.data.reviewerId !== undefined;
+    input.reviewerId !== undefined;
+
+  const queueReview = restoring || (existing.status === "ready" && (fields.length > 0 || tcmChanged || reviewMetaChanged));
+  if (requireReview && (transition.kind === "approve" || queueReview)) {
+    const revision = await readCaseRevision(workspaceId, id, tx);
+    if (!input.expectedRevision || revision?.revision !== input.expectedRevision) {
+      return NextResponse.json({ code: "STALE_CASE_REVISION", error: "Reload the case before submitting or approving this revision." }, { status: 409 });
+    }
+    if (queueReview) {
+      if (!ctxHasAction(project, "proposals.create")) {
+        return NextResponse.json({ error: "Missing permission: proposals.create" }, { status: 403 });
+      }
+      if (input.status && input.status !== "ready" && input.status !== "deprecated") {
+        return NextResponse.json({ error: "Keep the case ready or propose archiving it." }, { status: 400 });
+      }
+      const { expectedRevision, reviewerId, reviewComment, ...changes } = input;
+      if (reviewerId !== undefined || reviewComment !== undefined) {
+        return NextResponse.json({ error: "Submit case changes without reviewer fields." }, { status: 400 });
+      }
+      const payload: ProposalPayload = {
+        rationale: `Update ${existing.key}`,
+        diffs: [{ action: "update", entityType: "case", entityId: id, before: { ...before, revision: expectedRevision }, after: changes }],
+      };
+      const prior = await tx.query.proposals.findFirst({ where: and(
+        eq(proposals.workspaceId, workspaceId), eq(proposals.createdById, actorId),
+        eq(proposals.status, "pending"), eq(proposals.payloadJson, JSON.stringify(payload)),
+      ) });
+      const proposal = prior ?? await createProposal({
+        workspaceId, createdById: actorId, actorType: "user", payload,
+        inputRefs: [`/cases/${encodeURIComponent(existing.key)}`],
+      }, tx);
+      if (!prior) afterCommit.push(() => notifyProposalCreated(proposal, 1));
+      return NextResponse.json({ proposalId: proposal.id, href: "/proposals" }, { status: 202 });
+    }
+  }
+  if (requireReview && reviewOnly) {
+    input = { ...input, reviewerId: undefined };
+  }
 
   if (fields.length === 0 && !tcmChanged && !reviewMetaChanged) {
     return NextResponse.json({ case: existing, updated: false });
@@ -299,22 +394,22 @@ export async function PATCH(request: Request, { params }: Params) {
     } = {};
 
     if (transition.kind === "submit") {
-      reviewFields.reviewerId = parsed.data.reviewerId ?? null;
+      reviewFields.reviewerId = input.reviewerId ?? null;
       reviewFields.reviewedAt = null;
     } else if (transition.kind === "approve") {
       reviewFields.reviewedAt = now;
-      if (parsed.data.reviewerId !== undefined) {
-        reviewFields.reviewerId = parsed.data.reviewerId;
+      if (input.reviewerId !== undefined) {
+        reviewFields.reviewerId = input.reviewerId;
       } else if (!existing.reviewerId) {
-        reviewFields.reviewerId = session.user.id;
+        reviewFields.reviewerId = actorId;
       }
     } else if (transition.kind === "request_changes") {
       reviewFields.reviewedAt = now;
-    } else if (parsed.data.reviewerId !== undefined) {
-      reviewFields.reviewerId = parsed.data.reviewerId;
+    } else if (input.reviewerId !== undefined) {
+      reviewFields.reviewerId = input.reviewerId;
     }
 
-    const [updated] = await db
+    const [updated] = await tx
       .update(cases)
       .set({
         ...(patch.title !== undefined ? { title: patch.title } : {}),
@@ -353,72 +448,72 @@ export async function PATCH(request: Request, { params }: Params) {
     if (fields.length > 0) {
       await recordCaseFieldChanges({
         caseId: id,
-        actorId: session.user.id,
+        actorId,
         action: "updated",
         before,
         after,
         fields,
-      });
+      }, tx);
     }
 
     if (transition.kind === "submit") {
       await recordCaseActivity({
         caseId: id,
-        actorId: session.user.id,
+        actorId,
         action: "submitted_for_review",
         field: "status",
         fromValue: existing.status,
         toValue: "in_review",
         summary: "Submitted for review",
-      });
+      }, tx);
     } else if (transition.kind === "approve") {
       await recordCaseActivity({
         caseId: id,
-        actorId: session.user.id,
+        actorId,
         action: "approved",
         field: "status",
         fromValue: existing.status,
         toValue: "ready",
         summary: "Approved review",
-        approvedById: session.user.id,
-      });
+        approvedById: actorId,
+      }, tx);
     } else if (transition.kind === "request_changes") {
       await recordCaseActivity({
         caseId: id,
-        actorId: session.user.id,
+        actorId,
         action: "changes_requested",
         field: "status",
         fromValue: existing.status,
         toValue: "draft",
-        summary: `Changes requested: ${parsed.data.reviewComment?.trim()}`,
-      });
+        summary: `Changes requested: ${input.reviewComment?.trim()}`,
+      }, tx);
     }
   }
 
-  if (parsed.data.structuredSteps) {
+  if (input.structuredSteps) {
     await replaceCaseSteps({
       workspaceId,
       caseId: id,
-      steps: parsed.data.structuredSteps,
-    });
+      steps: input.structuredSteps,
+    }, tx);
   }
-  if (parsed.data.parameters || parsed.data.datasets) {
-    const currentTcm = await loadCaseTcm(workspaceId, id);
+  if (input.parameters || input.datasets) {
+    const currentTcm = await loadCaseTcm(workspaceId, id, tx);
     await replaceCaseParameters({
       caseId: id,
-      parameters: parsed.data.parameters ?? currentTcm.parameters,
-      datasets: parsed.data.datasets ?? currentTcm.datasets,
-    });
+      parameters: input.parameters ?? currentTcm.parameters,
+      datasets: input.datasets ?? currentTcm.datasets,
+    }, tx);
   }
-  if (parsed.data.customFields) {
+  if (input.customFields) {
     const savedFields = await upsertCustomFieldValues({
       workspaceId,
       entityType: "case",
       entityId: id,
-      values: parsed.data.customFields,
-    });
+      values: input.customFields,
+    }, tx);
     if (!savedFields.ok) {
-      return NextResponse.json({ error: savedFields.error }, { status: 400 });
+      throw new CaseEditError(savedFields.error);
     }
   }
 
@@ -426,14 +521,14 @@ export async function PATCH(request: Request, { params }: Params) {
     await snapshotCaseVersion({
       workspaceId,
       caseId: id,
-      actorId: session.user.id,
-    });
+      actorId,
+    }, tx);
   }
 
   if (transition.kind === "submit" && next.reviewerId) {
     const title = `Review requested: ${next.key}`;
     const body = `${next.title} is waiting for your review.`;
-    await createNotification({
+    await tx.insert(notifications).values({
       workspaceId,
       userId: next.reviewerId,
       type: "assignment",
@@ -442,17 +537,20 @@ export async function PATCH(request: Request, { params }: Params) {
       entityType: "case",
       entityId: next.id,
     });
-    void maybeDispatchReviewChannel({
+    afterCommit.push(() => void maybeDispatchReviewChannel({
       workspaceId,
       title,
       body,
       entityId: next.id,
-    });
+    }));
   }
 
-  const tcm = await loadCaseTcm(workspaceId, id);
+  const tcm = await loadCaseTcm(workspaceId, id, tx);
   return NextResponse.json({
-    case: { ...next, ...tcm },
+    case: {
+      ...next, ...tcm, requireCaseReview: requireReview,
+      revision: requireReview ? (await readCaseRevision(workspaceId, id, tx))?.revision : undefined,
+    },
     updated: true,
   });
 }
@@ -486,13 +584,17 @@ export async function DELETE(request: Request, { params }: Params) {
 
   try {
     const deleted = await db.transaction(async (tx) => {
+      const requireReview = await lockCaseReviewPolicy(tx, workspaceId);
       const [locked] = await tx
-        .select({ id: cases.id })
+        .select({ id: cases.id, status: cases.status })
         .from(cases)
         .where(and(eq(cases.id, id), eq(cases.workspaceId, workspaceId)))
         .limit(1)
         .for("update");
       if (!locked) return { kind: "missing" as const };
+      if (requireReview && ["ready", "in_review"].includes(locked.status)) {
+        return { kind: "review" as const };
+      }
 
       const [referenced] = await tx
         .select({ id: runResults.id })
@@ -510,6 +612,12 @@ export async function DELETE(request: Request, { params }: Params) {
 
     if (deleted.kind === "missing") {
       return NextResponse.json({ error: "Case not found" }, { status: 404 });
+    }
+    if (deleted.kind === "review") {
+      return NextResponse.json({
+        code: caseReviewRequired.code,
+        error: "Archive the case through review before deleting it.",
+      }, { status: 409 });
     }
     if (deleted.kind === "referenced") {
       return NextResponse.json(

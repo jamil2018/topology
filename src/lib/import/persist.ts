@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { caseImportSources, cases, folders } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/http-errors";
 import { persistCase } from "@/lib/case-create";
+import { importedCaseStatus, lockCaseReviewPolicy } from "@/lib/case-review-policy";
 import type { ImportProvider, MappedCase } from "./types";
 
 type ImportedCase = { id: string; key: string; title: string; folderId: string | null };
@@ -55,6 +56,7 @@ function sourceWhere(options: ImportOptions) {
 async function persistRow(options: ImportOptions, row: MappedCase): Promise<ImportedCase | Skip> {
   const { workspaceId, actorId } = options;
   return db.transaction(async (tx) => {
+    const requireReview = await lockCaseReviewPolicy(tx, workspaceId);
     // Serialize folder creation and source reconciliation across vendor imports.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`case-import:${workspaceId}`}, 0))`);
     if (row.sourceId) {
@@ -75,7 +77,7 @@ async function persistRow(options: ImportOptions, row: MappedCase): Promise<Impo
       steps: row.steps,
       expectedResult: row.expectedResult,
       priority: row.priority,
-      status: row.status,
+      status: importedCaseStatus(row.status, requireReview),
       folderId,
       tags: row.tags.split(/[;,]/).map((tag) => tag.trim()).filter(Boolean),
       structuredSteps: row.structuredSteps?.map((step) => ({

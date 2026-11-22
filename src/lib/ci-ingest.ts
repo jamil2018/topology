@@ -8,6 +8,7 @@ import {
   type NormalizedResult,
 } from "@topology/domain";
 import { db } from "@/db";
+import { lockCaseReviewPolicy } from "@/lib/case-review-policy";
 import { cases, runResults, runShards, runs, triageItems, type Case } from "@/db/schema";
 import { upsertFailureSignature } from "@/lib/failure-signature-persist";
 import { refreshImplementationStatsForRun } from "@/lib/implementation-stats";
@@ -107,7 +108,7 @@ async function insertCase(
     return await executor.transaction(async (inner) => {
       const [row] = await inner
         .insert(cases)
-        .values(values)
+        .values({ ...values, status: await lockCaseReviewPolicy(inner, values.workspaceId) ? "draft" : values.status })
         .returning({ id: cases.id });
       return row?.id ?? null;
     });
