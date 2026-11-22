@@ -110,15 +110,16 @@ for (const width of [320,768,1440]) {
 
 test("filtering does not silently change the chosen cases", async ({page}) => {
   await page.goto('/runs/new');
+  await expect(page.getByRole('heading', { name: 'Start a run' })).toBeVisible();
   const create = page.getByRole('button',{name:/Create run ·/});
   const initial = await create.textContent();
-  // HeroUI SearchField uses role=searchbox (not textbox).
-  const caseSearch = page.getByRole('searchbox', { name: 'Search cases', exact: true });
+  // Prefer the stable name= attribute; SearchField remounts can drop role locators.
+  const caseSearch = page.locator('input[name="case-search"]');
   await caseSearch.fill('no-matching-ux-case');
   await expect(page.getByText(/selected cases are outside these filters/)).toBeVisible();
   await expect(create).toHaveText(initial!);
   await page.getByRole('button',{name:'Clear filters',exact:true}).click();
-  await expect(caseSearch).toHaveValue('');
+  await expect(page.locator('input[name="case-search"]')).toHaveValue('');
   await expect(create).toHaveText(initial!);
 });
 

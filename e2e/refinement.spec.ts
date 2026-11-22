@@ -2,7 +2,11 @@ import { test, expect } from "./fixtures";
 import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 
-/** Click HeroUI Checkbox.Content so React Aria toggles controlled selection. */
+/**
+ * HeroUI puts role=checkbox on CheckboxButton (`data-slot="checkbox-content"`).
+ * Scroll it into view, then force-click so Control/Indicator children don't
+ * steal the hit target on Firefox/WebKit.
+ */
 async function clickHeroUiCheckbox(
   root: Page | Locator,
   name?: string | RegExp,
@@ -10,13 +14,8 @@ async function clickHeroUiCheckbox(
   const checkbox = name
     ? root.getByRole("checkbox", { name })
     : root.getByRole("checkbox").first();
-  const content = root
-    .locator('[data-slot="checkbox"]')
-    .filter({ has: checkbox })
-    .locator('[data-slot="checkbox-content"]')
-    .first();
-  await content.scrollIntoViewIfNeeded();
-  await content.click();
+  await checkbox.scrollIntoViewIfNeeded();
+  await checkbox.click({ force: true });
 }
 
 for (const theme of ["light", "dark"] as const) {

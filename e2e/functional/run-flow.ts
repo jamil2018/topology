@@ -41,28 +41,20 @@ export async function startManualRun(
     name: "Select all visible cases",
   });
   await expect(selectAll).toBeChecked();
-  // Click Checkbox.Content so controlled React Aria state updates (force-clicking the input does not).
-  const selectAllContent = page
-    .locator('[data-slot="checkbox"]')
-    .filter({ has: selectAll })
-    .locator('[data-slot="checkbox-content"]');
-  await selectAllContent.scrollIntoViewIfNeeded();
-  await selectAllContent.click();
+  // HeroUI puts role=checkbox on CheckboxButton; force-click avoids Control overlays.
+  await selectAll.scrollIntoViewIfNeeded();
+  await selectAll.click({ force: true });
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
 
   for (const title of titles) {
-    await page.getByRole("searchbox", { name: "Search cases", exact: true }).fill(title);
+    await page.locator('input[name="case-search"]').fill(title);
     const rowCheckbox = page.getByRole("checkbox", {
       name: `Select ${title}`,
       exact: true,
     });
-    const rowContent = page
-      .locator('[data-slot="checkbox"]')
-      .filter({ has: rowCheckbox })
-      .locator('[data-slot="checkbox-content"]');
-    await rowContent.scrollIntoViewIfNeeded();
-    await rowContent.click();
-    await page.getByRole("searchbox", { name: "Search cases", exact: true }).fill("");
+    await rowCheckbox.scrollIntoViewIfNeeded();
+    await rowCheckbox.click({ force: true });
+    await page.locator('input[name="case-search"]').fill("");
   }
   await expect(
     page.getByText(`${titles.length} selected`, { exact: true }),
