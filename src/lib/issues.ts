@@ -130,27 +130,29 @@ export async function createIssueFromResult(input: {
     })
     .where(eq(triageItems.resultId, result.id));
 
-  void dispatchWebhook(
-    "issue.created",
-    {
-      issue: {
-        id: row.id,
-        provider: row.provider,
-        remoteKey: row.remoteKey,
-        url: row.url,
-        title: row.title,
-        remoteStatus: row.remoteStatus,
-      },
-      result: {
-        id: result.id,
-        status: result.status,
-        caseKey,
-        caseTitle,
-        runId: result.runId,
-      },
+  const issuePayload = {
+    issue: {
+      id: row.id,
+      provider: row.provider,
+      remoteKey: row.remoteKey,
+      url: row.url,
+      title: row.title,
+      remoteStatus: row.remoteStatus,
     },
-    workspaceId,
-  );
+    result: {
+      id: result.id,
+      status: result.status,
+      caseKey,
+      caseTitle,
+      runId: result.runId,
+    },
+  };
+  void dispatchWebhook("issue.created", issuePayload, workspaceId);
+  void import("@/lib/notification-channels")
+    .then(({ dispatchNotificationChannels }) =>
+      dispatchNotificationChannels("issue.created", issuePayload, workspaceId),
+    )
+    .catch(() => {});
 
   return row;
 }

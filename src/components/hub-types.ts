@@ -50,8 +50,10 @@ export type HubPulseData = {
   };
   triageOpen?: number;
   flakeSuspects?: number;
-  /** Open linked tracker issues — used for guided first-run step 4. */
+  /** Open linked tracker issues. */
   openLinkedIssues?: number;
+  /** Total linked tracker issues (open or closed) — guided first-run step 4. */
+  linkedIssuesTotal?: number;
   retestQueue?: Array<{
     id: string;
     key: string;
@@ -108,12 +110,32 @@ export type MilestoneView = {
   badge: string;
 } | null;
 
-export const PERSONAS: Array<{ id: HubPersona; label: string }> = [
-  { id: "em", label: "EM" },
-  { id: "qa", label: "QA" },
-  { id: "dev", label: "Dev" },
-  { id: "pm", label: "PM" },
+export const PERSONAS: Array<{ id: HubPersona; label: string; hint: string }> = [
+  {
+    id: "em",
+    label: "EM",
+    hint: "Engineering manager — quality health, milestones, and coverage",
+  },
+  {
+    id: "qa",
+    label: "QA",
+    hint: "QA lead — active runs, failures, and retest queue",
+  },
+  {
+    id: "dev",
+    label: "Dev",
+    hint: "Developer — gaps, cases, and what still needs coverage",
+  },
+  {
+    id: "pm",
+    label: "PM",
+    hint: "Product — release readiness and milestone status",
+  },
 ];
+
+export const PERSONA_ALL_HINT =
+  "Show every Overview section without a persona filter";
+
 
 /** Client-only Hub section visibility by persona (Phase 8). */
 export const PERSONA_SECTIONS: Record<

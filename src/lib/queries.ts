@@ -164,6 +164,10 @@ export async function getHubPulse(
         eq(linkedIssues.remoteStatus, "open"),
       ),
     );
+  const linkedIssuesTotal = await db
+    .select({ value: count() })
+    .from(linkedIssues)
+    .where(eq(linkedIssues.workspaceId, workspaceId));
   const retestQueue = await listRetestQueue(workspaceId);
   const coverage = await getWorkspaceCoverage(workspaceId);
 
@@ -245,6 +249,8 @@ export async function getHubPulse(
     triageOpen: Number(triageStats?.open ?? 0),
     flakeSuspects,
     openLinkedIssues: Number(openLinked[0]?.value ?? 0),
+    /** Total linked tracker issues (open or closed) — guided first-run step 4. */
+    linkedIssuesTotal: Number(linkedIssuesTotal[0]?.value ?? 0),
     coverage,
     retestQueue: retestQueue.slice(0, 8).map((i) => ({
       id: i.id,

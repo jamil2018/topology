@@ -24,6 +24,7 @@ import {
 } from "./case-steps-editor";
 import {
   CaseTcmPanel,
+  CaseVersionsList,
   type CustomFieldDefView,
   type DatasetDraft,
   type ParameterDraft,
@@ -184,6 +185,9 @@ export function CaseEditPanel({
   const [form, setForm] = useState<EditForm | null>(null);
   const [historyKey, setHistoryKey] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
+  const [historyTab, setHistoryTab] = useState<"activity" | "versions">(
+    "activity",
+  );
   const [useStructured, setUseStructured] = useState(false);
   const [structuredSteps, setStructuredSteps] = useState<OrderedStep[]>([]);
   const [parameters, setParameters] = useState<ParameterDraft[]>([]);
@@ -206,6 +210,7 @@ export function CaseEditPanel({
     setSaveError(null);
     setReadOnly(false);
     setShowHistory(false);
+    setHistoryTab("activity");
     setReviewComment("");
     void fetch(`/api/cases/${caseId}`)
       .then(async (res) => {
@@ -1181,22 +1186,7 @@ export function CaseEditPanel({
               onCustomFieldsChange={setCustomFields}
               disabled={readOnly || saving}
               hideCustomFields
-              onRestored={() => {
-                setHistoryKey((k) => k + 1);
-                void fetch(`/api/cases/${caseId}`)
-                  .then((res) => res.json())
-                  .then((data) => {
-                    const next = data.case as CaseDetail;
-                    setDetail(next);
-                    setForm(toForm(next));
-                    setStructuredSteps(next.structuredSteps ?? []);
-                    setUseStructured((next.structuredSteps ?? []).length > 0);
-                    setParameters(next.parameters ?? []);
-                    setDatasets(next.datasets ?? []);
-                    setCustomFields(next.customFields ?? {});
-                  })
-                  .catch(() => undefined);
-              }}
+              hideVersions
             />
             <div className="border-t border-[color:var(--topo-line)] pt-3">
               <Button
@@ -1205,18 +1195,75 @@ export function CaseEditPanel({
                 className="w-full justify-between"
                 onPress={() => setShowHistory((v) => !v)}
               >
-                {showHistory ? "Hide history" : "Show history"}
+                {showHistory ? "Hide history & versions" : "History & versions"}
               </Button>
               {showHistory ? (
-                <div className="mt-2 overflow-hidden rounded-md border border-[color:var(--topo-line)]">
-                  <CaseHistoryPanel
-                    key={`${caseId}-${historyKey}`}
-                    caseId={caseId}
-                    caseKey={headerKey}
-                    caseTitle={headerTitle}
-                    onClose={() => setShowHistory(false)}
-                    embedded
-                  />
+                <div className="mt-2 space-y-2">
+                  <div
+                    role="tablist"
+                    aria-label="History view"
+                    className="flex gap-1 rounded-md border border-[color:var(--topo-line)] p-0.5"
+                  >
+                    {(
+                      [
+                        ["activity", "Activity"],
+                        ["versions", "Versions"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="tab"
+                        aria-selected={historyTab === id}
+                        className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                          historyTab === id
+                            ? "bg-[color:var(--topo-accent-soft)] text-[color:var(--topo-ink)]"
+                            : "text-[color:var(--topo-muted)] hover:text-[color:var(--topo-ink)]"
+                        }`}
+                        onClick={() => setHistoryTab(id)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {historyTab === "activity" ? (
+                    <div className="overflow-hidden rounded-md border border-[color:var(--topo-line)]">
+                      <CaseHistoryPanel
+                        key={`${caseId}-${historyKey}`}
+                        caseId={caseId}
+                        caseKey={headerKey}
+                        caseTitle={headerTitle}
+                        onClose={() => setShowHistory(false)}
+                        embedded
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-[color:var(--topo-line)] p-2">
+                      <CaseVersionsList
+                        key={`${caseId}-versions-${historyKey}`}
+                        caseId={caseId}
+                        disabled={readOnly || saving}
+                        onRestored={() => {
+                          setHistoryKey((k) => k + 1);
+                          void fetch(`/api/cases/${caseId}`)
+                            .then((res) => res.json())
+                            .then((data) => {
+                              const next = data.case as CaseDetail;
+                              setDetail(next);
+                              setForm(toForm(next));
+                              setStructuredSteps(next.structuredSteps ?? []);
+                              setUseStructured(
+                                (next.structuredSteps ?? []).length > 0,
+                              );
+                              setParameters(next.parameters ?? []);
+                              setDatasets(next.datasets ?? []);
+                              setCustomFields(next.customFields ?? {});
+                            })
+                            .catch(() => undefined);
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               ) : null}
             </div>

@@ -484,7 +484,7 @@ export function SettingsWorkspace({
 
           {page === "integrations" ? (
             <>
-              <details id="connections" className="scroll-mt-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
+              <details id="agent" className="scroll-mt-4 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-4">
                 <summary className="cursor-pointer text-sm font-semibold">Connect an agent<span className="mt-1 block text-sm font-normal text-[color:var(--topo-muted)]">Set up an AI assistant to work with your tests.</span></summary>
                 <div className="mt-4">
                 <ConnectAgentPanel defaultUrl={defaultUrl} compact />

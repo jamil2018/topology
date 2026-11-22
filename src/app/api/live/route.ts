@@ -62,6 +62,8 @@ export async function GET(request: Request) {
         if (closed) return;
         send("mode", { mode });
         if (mode !== "notify") {
+          // Triage poll ticks are slower; clients still throttle when hidden.
+          const pollMs = runId ? 3000 : 5000;
           pollTimer = setInterval(() => {
             send("live", {
               workspaceId,
@@ -69,7 +71,7 @@ export async function GET(request: Request) {
               entityId: runId,
               at: Date.now(),
             } satisfies LiveEvent);
-          }, 3000);
+          }, pollMs);
         }
       });
 

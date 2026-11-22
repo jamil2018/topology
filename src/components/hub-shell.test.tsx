@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { render } from "@/test/render";
 import { HubShell } from "./hub-shell";
 import { resetQualityGraphPref } from "@/lib/quality-graph-pref";
 
+const pathname = vi.hoisted(() => ({ current: "/" }));
+
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/",
+  usePathname: () => pathname.current,
 }));
 
 vi.mock("next-auth/react", () => ({
@@ -43,6 +45,36 @@ const workspaceId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 afterEach(() => {
   cleanup();
   resetQualityGraphPref();
+  pathname.current = "/";
+});
+
+describe("HubShell breadcrumbs", () => {
+  it("resolves sub-route crumbs instead of App", () => {
+    pathname.current = "/cases/import";
+    render(
+      <HubShell activeProjectId={workspaceId} userEmail="qa@example.com">
+        <p>child</p>
+      </HubShell>,
+    );
+
+    const header = screen.getByRole("banner");
+    expect(within(header).getByText("Test cases")).toBeInTheDocument();
+    expect(within(header).getByText("Import")).toBeInTheDocument();
+    expect(within(header).queryByText("App")).not.toBeInTheDocument();
+  });
+
+  it("labels milestone detail crumbs", () => {
+    pathname.current = "/milestones/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    render(
+      <HubShell activeProjectId={workspaceId} userEmail="qa@example.com">
+        <p>child</p>
+      </HubShell>,
+    );
+
+    const header = screen.getByRole("banner");
+    expect(within(header).getByText("Milestones")).toBeInTheDocument();
+    expect(within(header).getByText("Detail")).toBeInTheDocument();
+  });
 });
 
 describe("HubShell nav diet", () => {

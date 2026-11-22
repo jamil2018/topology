@@ -5,6 +5,7 @@ import { useMutationFeedback } from "./use-mutation-feedback";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, TextArea } from "@heroui/react";
+import type { Action } from "@/lib/permissions";
 import { EntityCollabPanel } from "./entity-collab-panel";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
@@ -16,6 +17,12 @@ type EntityRow = {
   description: string;
   criticality: string;
 };
+
+/** Create gates match /api/risks and /api/components (requirements.*). */
+const CREATE_ACTION_BY_KIND = {
+  risks: "requirements.create",
+  components: "requirements.create",
+} as const satisfies Record<"risks" | "components", Action>;
 
 export function GraphEntityWorkspace({
   kind,
@@ -44,6 +51,7 @@ export function GraphEntityWorkspace({
   const { can } = useProjectActions();
   const { saving, submit } = useMutationFeedback(setError);
   const pending = transitionPending || saving;
+  const createAction = CREATE_ACTION_BY_KIND[kind];
   const [draft, setDraft] = useState({
     key: "",
     title: "",
@@ -52,7 +60,7 @@ export function GraphEntityWorkspace({
   });
 
   async function createEntity() {
-    if (!can("requirements.create")) return;
+    if (!can(createAction)) return;
     return submit(async () => {
     if (!draft.key.trim() || !draft.title.trim()) return;
     setError(null);
@@ -131,7 +139,7 @@ export function GraphEntityWorkspace({
         <Button
           className="mt-3"
           onPress={() => void createEntity()}
-          isDisabled={pending || !can("requirements.create")}
+          isDisabled={pending || !can(createAction)}
         >
           Create
         </Button>

@@ -8,7 +8,7 @@ Implement `IssueProvider` (`createIssue`, `getIssue`, `linkExisting`, `updateIss
 
 Built-ins: `mock`, `jira`, `linear`, `github`, `gitlab`.
 
-Hub persistence (`linked_issues.provider`) currently stores `mock` | `jira` | `linear` | `github`. GitLab create/get/update works at the package layer; storing GitLab-linked issues in the hub needs a schema enum follow-up.
+Hub persistence (`linked_issues.provider`) stores `mock` | `jira` | `linear` | `github` | `gitlab`. GitLab create/get/update/link works at the package layer and persists through the same hub enum as the other providers (`issue_provider` includes `gitlab` from `0000_baseline` / `0002_scale`).
 
 Use this when linking failures or triage items to an external tracker. Outbound sync calls `transition(..., { status: "done" })` when:
 

@@ -1,9 +1,19 @@
 # Ops and integration findings
 
-> Historical 2026-11-06 record retained below. Current implementation/evidence is tracked in `tasks/validation/findings.md`, `tasks/validation/feature-families.md` and the final acceptance manifests. The old fixme/seed/a11y/image status is not a statement about the current tree. Webhook retry and missing headers were re-confirmed and repaired in this revision; optional empty-secret HMAC remains an explicit compatibility contract. Native/TLS/live qualifications remain separate.
+## Status (read first)
 
+| Status | Meaning |
+| --- | --- |
+| **Historical audit** | Snapshot recorded 2026-11-06 while adding integration coverage. Retained for provenance. |
+| **Resolved since** | WH-002 (webhook retry), SEC-HEADERS-001 (security headers), share-link revoke, seed/demo Harbor catalog gaps addressed in later work, production image typecheck/dockerignore fixes. Do not treat those items as open bugs. |
+| **Compatibility contract** | Optional empty webhook secret still omits HMAC (WH-001) by design. |
+| **Still separate** | Native zoom, screen-reader, TLS terminator, and live provider write qualifications remain outside this file. |
 
-Recorded while adding integration coverage. These tests document current behavior and do not fail the default suite.
+Current implementation evidence: `tasks/validation/findings.md`, `tasks/validation/feature-families.md`, and the final acceptance manifests. The item list below is **not** a statement about the current tree.
+
+---
+
+Recorded while adding integration coverage. These tests document behavior as of that date and do not fail the default suite.
 
 ## WH-001 Empty webhook secret omits the HMAC signature
 

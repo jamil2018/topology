@@ -31,7 +31,11 @@ describe("settings-sections", () => {
     });
     expect(resolveSettingsSection("connections")).toEqual({
       page: "integrations",
-      anchor: "connections",
+      anchor: "agent",
+    });
+    expect(resolveSettingsSection("agent")).toEqual({
+      page: "integrations",
+      anchor: "agent",
     });
     expect(resolveSettingsSection("ci")).toEqual({
       page: "integrations",

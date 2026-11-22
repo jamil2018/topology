@@ -123,4 +123,75 @@ describe("NotificationsBell abort cleanup", () => {
       );
     });
   });
+
+  it("optimistically decrements unread when Open item is clicked", async () => {
+    const fetchMock = abortAwareFetch({
+      notifications: [
+        {
+          id: "n1",
+          title: "Hello",
+          body: "World",
+          readAt: null,
+          href: "/runs/1",
+          openHref: "/api/notifications/n1/open",
+        },
+      ],
+      unreadCount: 1,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<NotificationsBell />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /1 unread/ })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /1 unread/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Open item" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Open item" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^Notifications$/ })).toBeInTheDocument();
+    });
+  });
+
+  it("refreshes quietly when the tab becomes visible again", async () => {
+    const fetchMock = abortAwareFetch({ notifications: [], unreadCount: 0 });
+    vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+
+    render(<NotificationsBell />);
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1);
+    });
+    const afterMount = fetchMock.mock.calls.length;
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(afterMount);
+    });
+  });
 });

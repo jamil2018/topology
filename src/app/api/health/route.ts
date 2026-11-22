@@ -14,17 +14,25 @@ export async function GET() {
   } catch (err) {
     database = "error";
     dbError = err instanceof Error ? err.message : "database unreachable";
+    console.error("[health] database check failed:", dbError);
   }
 
   const ok = database === "ok";
+  const isProd = process.env.NODE_ENV === "production";
+
   return NextResponse.json(
     {
       status: ok ? "ok" : "degraded",
       database,
       attachmentsDriver: process.env.ATTACHMENTS_DRIVER ?? "local",
-      attachmentsDir: process.env.ATTACHMENTS_DIR ?? "./data/attachments",
       uptimeHintMs: Date.now() - started,
-      ...(dbError ? { error: dbError } : {}),
+      // Dev/test only: filesystem paths and raw DB errors stay off public prod responses.
+      ...(!isProd
+        ? {
+            attachmentsDir: process.env.ATTACHMENTS_DIR ?? "./data/attachments",
+            ...(dbError ? { error: dbError } : {}),
+          }
+        : {}),
     },
     { status: ok ? 200 : 503 },
   );

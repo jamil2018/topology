@@ -2,17 +2,19 @@
 
 import { useCallback, type ClipboardEvent } from "react";
 import { Button } from "@heroui/react";
-import type { AttachmentRow, CommentRow } from "./run-executor-model";
+import type { AttachmentRow, CommentRow, MemberOption } from "./run-executor-model";
 import {
   imageFilesFromDataTransfer,
   isImageAttachment,
   type PendingUpload,
 } from "./run-paste-upload";
+import { MentionComposer } from "./mention-composer";
 
 export function RunCommentsPanel({
   comments,
   draft,
   pending,
+  members = [],
   onDraftChange,
   onSubmit,
   onUpload,
@@ -20,6 +22,7 @@ export function RunCommentsPanel({
   comments: CommentRow[];
   draft: string;
   pending: boolean;
+  members?: MemberOption[];
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
   onUpload?: (file: File) => void | Promise<void>;
@@ -65,24 +68,19 @@ export function RunCommentsPanel({
         </ul>
       )}
       <div className="flex flex-wrap gap-2">
-        <textarea
+        <MentionComposer
           value={draft}
-          onChange={(e) => onDraftChange(e.target.value)}
+          onChange={onDraftChange}
+          members={members}
+          pending={pending}
+          onSubmit={onSubmit}
           onPaste={onPaste}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              e.preventDefault();
-              if (!pending && draft.trim()) void onSubmit();
-            }
-          }}
-          rows={2}
           aria-label="Add a comment"
           placeholder={
             onUpload
-              ? "Add a comment — paste or drop screenshots · ⌘/Ctrl+Enter to submit"
-              : "Add a comment · ⌘/Ctrl+Enter to submit"
+              ? "Add a comment — type @ to mention, paste screenshots · ⌘/Ctrl+Enter"
+              : "Add a comment — type @ to mention · ⌘/Ctrl+Enter to submit"
           }
-          className="min-w-[12rem] flex-1 resize-y rounded-md border border-[color:var(--topo-line)] bg-transparent px-2 py-1.5 text-sm"
         />
         <Button
           size="sm"

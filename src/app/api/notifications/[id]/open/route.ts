@@ -5,9 +5,9 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { notifications } from "@/db/schema";
 import { requireProjectAccess, PROJECT_COOKIE } from "@/lib/project";
-import { notificationDestinations } from "@/lib/notifications";
+import { markNotificationRead, notificationDestinations } from "@/lib/notifications";
 
-/** Resolve the current target and carry project context across tabs and project switches. */
+/** Resolve the current target, mark read, and carry project context across tabs and project switches. */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -19,6 +19,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!access.ok) return NextResponse.json({ error: "This project is no longer available" }, { status: 404 });
   const [resolved] = await notificationDestinations([row], row.workspaceId);
   if (!resolved.href) return NextResponse.json({ error: "This item is no longer available" }, { status: 404 });
+  if (!row.readAt) {
+    await markNotificationRead(session.user.id, id, row.workspaceId);
+  }
   const response = NextResponse.redirect(new URL(resolved.href, request.url));
   response.cookies.set(PROJECT_COOKIE, row.workspaceId, { path: "/", sameSite: "lax", httpOnly: true, maxAge: 60 * 60 * 24 * 365 });
   return response;

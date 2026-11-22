@@ -3,6 +3,8 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { requireWorkspaceAssignee } from "@/lib/assignee";
 import {
+  collabEditAction,
+  collabViewAction,
   entityExistsInWorkspace,
   getEntityOwner,
   isCollabEntityType,
@@ -22,20 +24,20 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const access = await requireProjectAccess(session.user.id, {
-    request,
-    action: "intents.view",
-  });
-  if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status });
-  }
-
   const { entityType: rawType, id: entityId } = await params;
   if (!isCollabEntityType(rawType)) {
     return NextResponse.json({ error: "Invalid entity type" }, { status: 400 });
   }
   if (!z.string().uuid().safeParse(entityId).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    action: collabViewAction(rawType),
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   const exists = await entityExistsInWorkspace(
@@ -61,15 +63,6 @@ export async function PUT(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const access = await requireProjectAccess(session.user.id, {
-    request,
-    action: "intents.edit",
-  });
-  if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status });
-  }
-  const workspaceId = access.ctx.project.id;
-
   const { entityType: rawType, id: entityId } = await params;
   if (!isCollabEntityType(rawType)) {
     return NextResponse.json({ error: "Invalid entity type" }, { status: 400 });
@@ -77,6 +70,16 @@ export async function PUT(request: Request, { params }: Params) {
   if (!z.string().uuid().safeParse(entityId).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
+
+  const editAction = collabEditAction(rawType);
+  const access = await requireProjectAccess(session.user.id, {
+    request,
+    action: editAction,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const workspaceId = access.ctx.project.id;
 
   const exists = await entityExistsInWorkspace(workspaceId, rawType, entityId);
   if (!exists) {
@@ -102,7 +105,7 @@ export async function PUT(request: Request, { params }: Params) {
     const assignee = await requireWorkspaceAssignee(
       workspaceId,
       parsed.data.userId,
-      "intents.edit",
+      editAction,
     );
     if (!assignee.ok) {
       return NextResponse.json(
@@ -118,5 +121,6 @@ export async function PUT(request: Request, { params }: Params) {
     entityId,
     userId: parsed.data.userId,
   });
+
   return NextResponse.json({ owner });
 }

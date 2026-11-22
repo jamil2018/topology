@@ -243,19 +243,29 @@ export async function createProposal(
     })
     .returning();
 
+  const proposalPayload = {
+    proposalId: row.id,
+    entityType: row.entityType,
+    status: row.status,
+    actorType: row.actorType,
+    model: row.model,
+    diffCount: input.payload.diffs.length,
+  };
   const { dispatchWebhook } = await import("@/lib/webhooks");
   void dispatchWebhook(
     "proposal.created",
-    {
-      proposalId: row.id,
-      entityType: row.entityType,
-      status: row.status,
-      actorType: row.actorType,
-      model: row.model,
-      diffCount: input.payload.diffs.length,
-    },
+    proposalPayload,
     input.workspaceId,
   ).catch(() => {});
+  void import("@/lib/notification-channels")
+    .then(({ dispatchNotificationChannels }) =>
+      dispatchNotificationChannels(
+        "proposal.created",
+        proposalPayload,
+        input.workspaceId,
+      ),
+    )
+    .catch(() => {});
 
   return row;
 }

@@ -150,6 +150,73 @@ describe("RunExecutor complete confirmation", () => {
   });
 });
 
+describe("RunExecutor retest failures", () => {
+  it("promotes Retest failures into the header when completed", () => {
+    const failedId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3";
+    render(
+      <RunExecutor
+        run={{
+          ...baseRun,
+          status: "completed",
+          results: [
+            result({ status: "passed" }),
+            result({
+              id: failedId,
+              status: "failed",
+              key: "FAIL-1",
+              title: "Broken",
+              case: {
+                id: "case-fail",
+                key: "FAIL-1",
+                title: "Broken",
+                steps: "",
+                expectedResult: "",
+              },
+            }),
+          ],
+        }}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: /Retest 1 failure/i });
+    expect(link).toHaveAttribute("href", `/runs/new?retest=${failedId}`);
+  });
+
+  it("keeps Retest failures under More actions while the run is active", async () => {
+    const user = userEvent.setup();
+    const failedId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3";
+    render(
+      <RunExecutor
+        run={{
+          ...baseRun,
+          status: "in_progress",
+          results: [
+            result({
+              id: failedId,
+              status: "failed",
+              key: "FAIL-1",
+              title: "Broken",
+              case: {
+                id: "case-fail",
+                key: "FAIL-1",
+                title: "Broken",
+                steps: "",
+                expectedResult: "",
+              },
+            }),
+          ],
+        }}
+      />,
+    );
+
+    await user.click(screen.getByText("More actions"));
+    const link = screen.getByRole("link", { name: /Retest 1 failure/i });
+    expect(link).toHaveAttribute("href", `/runs/new?retest=${failedId}`);
+    // Active runs keep retest in More actions, not as the accent header CTA.
+    expect(link.className).not.toMatch(/topo-accent/);
+  });
+});
+
 describe("RunExecutor abort confirmation", () => {
   it("warns before aborting and cancel does not mutate", async () => {
     const user = userEvent.setup();

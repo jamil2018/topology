@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { render } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import {
@@ -20,6 +20,8 @@ afterEach(() => {
   cleanup();
   push.mockClear();
   publishPaletteFocus({ kind: "none" });
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 function renderPalette(qualityGraphEnabled = false) {
@@ -138,5 +140,62 @@ describe("CommandPalette coverage", () => {
     expect(push).toHaveBeenCalledWith(
       "/runs/new?cases=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     );
+  });
+
+  it("routes Connect agent to integrations#agent", async () => {
+    const user = userEvent.setup();
+    renderPalette(false);
+    openCommandPalette();
+
+    expect(
+      await screen.findByRole("dialog", { name: "Command palette" }),
+    ).toBeInTheDocument();
+
+    const connectAgent = screen
+      .getAllByRole("option")
+      .find(
+        (el) =>
+          el.querySelector("span.min-w-0")?.textContent?.trim() ===
+          "Connect agent",
+      );
+    expect(connectAgent).toBeTruthy();
+    await user.click(connectAgent!);
+    expect(push).toHaveBeenCalledWith("/settings?section=integrations#agent");
+  });
+
+  it("shows Searching status then surfaces search failures with retry", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPalette(false);
+    openCommandPalette();
+
+    const input = await screen.findByRole("textbox", { name: "Command search" });
+    await user.type(input, "pay");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("offline");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        cases: [],
+        runs: [],
+        folders: [],
+        comments: [],
+        plans: [],
+        milestones: [],
+        triage: [],
+        proposals: [],
+      }),
+    });
+    const callsBeforeRetry = fetchMock.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBeforeRetry);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
   });
 });

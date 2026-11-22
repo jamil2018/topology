@@ -48,6 +48,9 @@ next-env.d.ts
 # playwright cli dumps
 .playwright-cli/
 
+# local scratch / CI artifact dumps
+.tmp/
+
 # local attachment uploads
 /data/attachments/
 

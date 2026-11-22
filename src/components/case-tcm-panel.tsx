@@ -16,54 +16,42 @@ export type CustomFieldDefView = {
 
 type VersionRow = { id: string; version: number; summary: string; createdAt: string };
 
-export function CaseTcmPanel({
+export function CaseVersionsList({
   caseId,
-  parameters,
-  datasets,
-  customFields,
-  customFieldDefs,
-  onParametersChange,
-  onDatasetsChange,
-  onCustomFieldsChange,
   disabled,
-  hideCustomFields = false,
   onRestored,
 }: {
   caseId: string;
-  parameters: ParameterDraft[];
-  datasets: DatasetDraft[];
-  customFields: Record<string, unknown>;
-  customFieldDefs: CustomFieldDefView[];
-  onParametersChange: (next: ParameterDraft[]) => void;
-  onDatasetsChange: (next: DatasetDraft[]) => void;
-  onCustomFieldsChange: (next: Record<string, unknown>) => void;
   disabled?: boolean;
-  /** When true, custom fields are rendered elsewhere (e.g. case metadata strip). */
-  hideCustomFields?: boolean;
   onRestored?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [versions, setVersions] = useState<VersionRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!open) return;
     let cancelled = false;
+    setLoading(true);
     void fetch(`/api/cases/${caseId}/versions`)
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error ?? "Failed to load versions");
-        if (!cancelled) setVersions(data.versions ?? []);
+        if (!cancelled) {
+          setVersions(data.versions ?? []);
+          setError(null);
+          setLoading(false);
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load versions");
+          setLoading(false);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [caseId, open]);
+  }, [caseId]);
 
   async function restore(versionId: string) {
     setError(null);
@@ -80,6 +68,80 @@ export function CaseTcmPanel({
     onRestored?.();
   }
 
+  if (loading) {
+    return (
+      <p className="text-xs text-[color:var(--topo-muted)]" role="status">
+        Loading versions…
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {error ? (
+        <p className="text-xs text-red-600 dark:text-red-300">{error}</p>
+      ) : null}
+      {versions.length === 0 ? (
+        <p className="text-xs text-[color:var(--topo-muted)]">
+          Snapshots are created on save.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {versions.map((v) => (
+            <li
+              key={v.id}
+              className="flex items-center justify-between gap-2 text-xs"
+            >
+              <span>
+                v{v.version} · {v.summary}
+              </span>
+              <Button
+                size="sm"
+                variant="tertiary"
+                isDisabled={disabled}
+                onPress={() => void restore(v.id)}
+              >
+                Restore
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export function CaseTcmPanel({
+  caseId,
+  parameters,
+  datasets,
+  customFields,
+  customFieldDefs,
+  onParametersChange,
+  onDatasetsChange,
+  onCustomFieldsChange,
+  disabled,
+  hideCustomFields = false,
+  hideVersions = false,
+  onRestored,
+}: {
+  caseId: string;
+  parameters: ParameterDraft[];
+  datasets: DatasetDraft[];
+  customFields: Record<string, unknown>;
+  customFieldDefs: CustomFieldDefView[];
+  onParametersChange: (next: ParameterDraft[]) => void;
+  onDatasetsChange: (next: DatasetDraft[]) => void;
+  onCustomFieldsChange: (next: Record<string, unknown>) => void;
+  disabled?: boolean;
+  /** When true, custom fields are rendered elsewhere (e.g. case metadata strip). */
+  hideCustomFields?: boolean;
+  /** When true, versions are rendered elsewhere (e.g. History & versions). */
+  hideVersions?: boolean;
+  onRestored?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
   return (
     <div className="space-y-2 border-t border-[color:var(--topo-line)] pt-3">
       <Button
@@ -88,13 +150,16 @@ export function CaseTcmPanel({
         className="w-full justify-between"
         onPress={() => setOpen((v) => !v)}
       >
-        {open ? "Hide parameters & versions" : "Parameters, data & versions"}
+        {open
+          ? hideVersions
+            ? "Hide parameters & data"
+            : "Hide parameters & versions"
+          : hideVersions
+            ? "Parameters & data"
+            : "Parameters, data & versions"}
       </Button>
       {open ? (
         <div className="space-y-3">
-          {error ? (
-            <p className="text-xs text-red-600 dark:text-red-300">{error}</p>
-          ) : null}
           <div className="space-y-1.5">
             <p className="font-medium text-xs text-[color:var(--topo-muted)]">
               Parameters
@@ -272,37 +337,18 @@ export function CaseTcmPanel({
             </div>
           ) : null}
 
-          <div className="space-y-1.5">
-            <p className="font-medium text-xs text-[color:var(--topo-muted)]">
-              Versions
-            </p>
-            {versions.length === 0 ? (
-              <p className="text-xs text-[color:var(--topo-muted)]">
-                Snapshots are created on save.
+          {!hideVersions ? (
+            <div className="space-y-1.5">
+              <p className="font-medium text-xs text-[color:var(--topo-muted)]">
+                Versions
               </p>
-            ) : (
-              <ul className="space-y-1">
-                {versions.map((v) => (
-                  <li
-                    key={v.id}
-                    className="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span>
-                      v{v.version} · {v.summary}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="tertiary"
-                      isDisabled={disabled}
-                      onPress={() => void restore(v.id)}
-                    >
-                      Restore
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+              <CaseVersionsList
+                caseId={caseId}
+                disabled={disabled}
+                onRestored={onRestored}
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

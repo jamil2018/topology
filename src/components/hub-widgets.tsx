@@ -74,14 +74,43 @@ export function CoverageBar({
 }
 
 export function gapLabel(kind: string) {
-  if (kind === "uncovered_requirement") return "Uncovered requirement";
+  if (
+    kind === "uncovered_requirement" ||
+    kind === "affected_requirement_uncovered"
+  ) {
+    return "Uncovered requirement";
+  }
   if (kind === "manual_only_p0") return "P0 manual-only";
+  if (kind === "manual_only") return "Manual only";
   if (kind === "never_executed") return "Never executed";
-  return kind;
+  if (kind === "intent_without_implementations") {
+    return "Intent without implementations";
+  }
+  if (kind === "component_without_intents") return "Component without intents";
+  return kind.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
-export function gapHref(key: string) {
-  return `/cases?q=${encodeURIComponent(key)}`;
+/** Graph-aware gap deep links (aligned with release detail). */
+export function gapHref(kind: string, id: string, key?: string) {
+  if (
+    kind === "uncovered_requirement" ||
+    kind === "affected_requirement_uncovered"
+  ) {
+    return "/requirements";
+  }
+  if (kind === "component_without_intents") {
+    return "/components";
+  }
+  if (
+    kind === "manual_only_p0" ||
+    kind === "manual_only" ||
+    kind === "never_executed" ||
+    kind === "intent_without_implementations"
+  ) {
+    return `/intents?intent=${encodeURIComponent(id)}`;
+  }
+  const q = key || id;
+  return `/cases?q=${encodeURIComponent(q)}`;
 }
 
 export function PassFailGraph({

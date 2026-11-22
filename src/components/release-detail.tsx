@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { EntityCollabPanel } from "./entity-collab-panel";
+import { gapHref } from "./hub-widgets";
 import { PageHeader } from "./page-header";
 import { StatusChip } from "./status-chip";
 
@@ -50,11 +51,6 @@ function DimRow({ label, dim }: { label: string; dim: Dimension }) {
       </span>
     </div>
   );
-}
-
-function gapHref(kind: string, id: string) {
-  if (kind === "uncovered_requirement") return "/requirements";
-  return `/intents?intent=${id}`;
 }
 
 export function ReleaseDetail({
@@ -181,7 +177,7 @@ export function ReleaseDetail({
             {quality.gaps.slice(0, 12).map((gap) => (
               <li key={`${gap.kind}-${gap.id}`}>
                 <Link
-                  href={gapHref(gap.kind, gap.id)}
+                  href={gapHref(gap.kind, gap.id, gap.key)}
                   className="block px-4 py-2.5 text-sm transition-colors hover:bg-[color:var(--topo-chip)]/50"
                 >
                   <span className="font-mono text-xs text-[color:var(--topo-accent)]">

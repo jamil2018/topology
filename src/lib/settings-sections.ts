@@ -12,6 +12,7 @@ export type SettingsAnchor =
   | "members"
   | "roles"
   | "connections"
+  | "agent"
   | "ci"
   | "repositories"
   | "ai"
@@ -54,7 +55,8 @@ const SECTION_ALIASES: Record<string, ResolvedSettingsSection> = {
   members: { page: "access", anchor: "members" },
   roles: { page: "access", anchor: "roles" },
   integrations: { page: "integrations" },
-  connections: { page: "integrations", anchor: "connections" },
+  connections: { page: "integrations", anchor: "agent" },
+  agent: { page: "integrations", anchor: "agent" },
   ci: { page: "integrations", anchor: "ci" },
   repositories: { page: "integrations", anchor: "repositories" },
   ai: { page: "integrations", anchor: "ai" },

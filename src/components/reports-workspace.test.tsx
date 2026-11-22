@@ -142,6 +142,10 @@ describe("ReportsWorkspace", () => {
     expect(screen.getByText("Pass-rate trend")).toBeInTheDocument();
     expect(screen.getByText("Results by suite")).toBeInTheDocument();
     expect(screen.getByText("Release readiness")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /1\.4 checkout/i })).toHaveAttribute(
+      "href",
+      "/milestones/ms-1",
+    );
     expect(screen.getByText("Tester throughput")).toBeInTheDocument();
     expect(screen.getByText("Top failing cases")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /HAR-12/i })).toHaveAttribute(

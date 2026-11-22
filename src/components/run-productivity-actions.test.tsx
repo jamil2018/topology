@@ -132,4 +132,38 @@ describe("RunProductivityActions abort cleanup", () => {
       );
     });
   });
+
+  it("renders a styled template name field", async () => {
+    vi.stubGlobal("fetch", abortAwareFetch());
+    render(
+      <RunProductivityActions
+        run={{
+          ...run,
+          results: [
+            {
+              id: "r1",
+              status: "passed",
+              notes: "",
+              assigneeId: null,
+              linkedIssues: [],
+              comments: [],
+              attachments: [],
+              case: {
+                id: "c1",
+                key: "SMOKE-1",
+                title: "Loads",
+                steps: "",
+                expectedResult: "",
+              },
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Template name")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("No retests linked to this run.")).toBeInTheDocument();
+    });
+  });
 });

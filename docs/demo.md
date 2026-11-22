@@ -2,7 +2,7 @@
 
 There is **no public Topology demo URL** in this repository. This page is the runbook for standing up a read-only demo that resets every night.
 
-A production Compose file and GHCR image are a separate ops track. Until those land, run the app the same way as local quickstart: Compose for Postgres, Node for the app.
+Production packaging is shipped: use [docker-compose.prod.yml](../docker-compose.prod.yml) and the multi-stage [Dockerfile](../Dockerfile) (or a published `ghcr.io/<owner>/topology:<tag>` image after a `v*` tag). Details: [docs/deploy.md](deploy.md).
 
 ## What “read-only demo” means
 
@@ -10,56 +10,74 @@ A production Compose file and GHCR image are a separate ops track. Until those l
 - Seeded cases, runs, and pulse data look like a real workspace.
 - Nightly job drops the database (and attachment volume), migrates, and seeds again so the instance cannot accumulate junk.
 
-Do not publish admin credentials. Prefer OAuth with a shared demo IdP, or a well-known viewer email whose password you rotate.
+Do not publish admin credentials. Prefer OAuth/OIDC with a shared demo IdP, or a well-known viewer email whose password you rotate.
 
-## Compose + seed
+## Production Compose + seed
 
-From the repo root, with [`.env.example`](../.env.example) copied to `.env.local` (or container env):
+From the repo root:
 
 ```bash
-docker compose up -d
-npm install
-npm run db:migrate
-# Demo data is required for a showcase instance:
-TOPOLOGY_SEED_MODE=demo npm run db:seed
-npm run start   # or: npm run dev  for a throwaway box
+cp .env.example .env.prod
+# Set AUTH_SECRET, AUTH_URL, POSTGRES_PASSWORD, and demo seed overrides below.
+docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
 ```
 
-Production-like env:
+Demo-specific env (in `.env.prod` or injected into the app service):
 
 | Variable | Demo value |
 | --- | --- |
-| `NODE_ENV` | `production` |
+| `NODE_ENV` | `production` (Compose sets this on the app) |
 | `TOPOLOGY_ALLOW_DEMO_SEED` | `1` (seed is refused in production without this) |
 | `TOPOLOGY_SEED_MODE` | `demo` (not `bootstrap`) |
 | `TOPOLOGY_ISSUE_PROVIDER` | `mock` |
 | `TOPOLOGY_ALLOW_ENV_API_TOKEN` | unset in production |
 | `AUTH_SECRET` / `AUTH_URL` | required |
-| `DATABASE_URL` | Compose Postgres (`postgresql://topology:topology@127.0.0.1:54329/topology` locally) |
+| `POSTGRES_PASSWORD` | required (no silent default) |
 | `DEMO_USER_EMAIL` / `DEMO_USER_PASSWORD` | viewer or demo login you actually share |
 
-After seed, demote the demo user to `viewer` in Settings → Members (or seed a second viewer and disable the admin login). Keep issue filing on `mock` so the demo cannot open real Jira/Linear/GitHub tickets.
+After the stack is healthy, seed from the host (or an exec into a tooling container with the same `DATABASE_URL`):
+
+```bash
+NODE_ENV=production TOPOLOGY_ALLOW_DEMO_SEED=1 TOPOLOGY_SEED_MODE=demo \
+  DATABASE_URL=postgresql://topology:<POSTGRES_PASSWORD>@127.0.0.1:<published-or-tunnelled-pg>/topology \
+  npm run db:seed
+```
+
+Prod Compose does **not** publish Postgres to the host by default. For a demo host, either publish the DB port temporarily for seed, run seed via `docker compose … exec` with a one-shot Node image that shares the compose network, or use the local-dev Compose path below for a throwaway box.
+
+### Local-dev Compose alternative
+
+For a quick throwaway showcase without the production image:
+
+```bash
+docker compose up -d
+npm install
+npm run db:migrate
+TOPOLOGY_SEED_MODE=demo npm run db:seed
+npm run start   # or: npm run dev
+```
+
+After seed, demote the demo user to `viewer` in Settings → Members (or seed a second viewer and disable the admin login). Keep issue filing on `mock` so the demo cannot open real Jira/Linear/GitHub/GitLab tickets.
 
 Health check: `GET /api/health`.
 
 ## Nightly reset
 
-Run this from cron / systemd timer / GitHub Actions `schedule` on the demo host (times in UTC):
+Run this from cron / systemd timer / GitHub Actions `schedule` on the demo host (times in UTC). Adjust compose flags and `DATABASE_URL` to match how you run seed:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 cd /opt/topology   # deploy checkout
 
-docker compose exec -T postgres \
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   psql -U topology -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'topology' AND pid <> pg_backend_pid();"
-docker compose exec -T postgres \
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   psql -U topology -d postgres -c "DROP DATABASE IF EXISTS topology; CREATE DATABASE topology OWNER topology;"
 
-rm -rf ./data/attachments
-mkdir -p ./data/attachments
-
-NODE_ENV=production TOPOLOGY_ALLOW_DEMO_SEED=1 TOPOLOGY_SEED_MODE=demo npm run db:migrate
+# Local attachments volume (skip when ATTACHMENTS_DRIVER=s3)
+docker compose --env-file .env.prod -f docker-compose.prod.yml restart app
+# App entrypoint re-runs migrations on start. Then seed via your chosen network path:
 NODE_ENV=production TOPOLOGY_ALLOW_DEMO_SEED=1 TOPOLOGY_SEED_MODE=demo npm run db:seed
 ```
 

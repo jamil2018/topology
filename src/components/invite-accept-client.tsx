@@ -50,8 +50,8 @@ export function InviteAcceptClient({
         <p className="mt-2 text-sm text-[color:var(--topo-muted)]">
           Invited as <span className="font-mono">{invite.email}</span> with role{" "}
           <span className="font-mono">{invite.role}</span>. Prefer signing in with
-          GitHub/Google using that email, or use email/password if OAuth is
-          unavailable.
+          GitHub, Google, or your organization&apos;s OIDC provider using that
+          email, or use email/password if SSO is unavailable.
         </p>
       </div>
 

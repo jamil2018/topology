@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { workspaces } from "@/db/schema";
+import { assertSafeWebhookDestination } from "@/lib/webhooks";
 
 export const AI_PROVIDERS = [
   "none",
@@ -99,6 +100,44 @@ export async function getWorkspaceAiProviderConfig(
 
 export function isAiProviderEnabled(config: AiProviderConfig): boolean {
   return config.provider !== "none";
+}
+
+const LOCAL_AI_URL_ALLOWED = () =>
+  process.env.TOPOLOGY_ALLOW_LOCAL_AI_URL === "1";
+
+/**
+ * Reject AI base URLs that would enable SSRF (private/loopback/link-local).
+ * Self-hosted Ollama/vLLM on private hosts requires TOPOLOGY_ALLOW_LOCAL_AI_URL=1.
+ */
+export async function assertSafeAiBaseUrl(
+  raw: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return { ok: false, error: "AI base URL must not be empty" };
+  }
+
+  if (LOCAL_AI_URL_ALLOWED()) {
+    let url: URL;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      return { ok: false, error: "AI base URL must be a valid http or https URL" };
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return { ok: false, error: "AI base URL must use http or https" };
+    }
+    return { ok: true };
+  }
+
+  const destination = await assertSafeWebhookDestination(trimmed);
+  if (!destination.ok) {
+    return {
+      ok: false,
+      error: destination.error.replace(/^Webhook URL/, "AI base URL"),
+    };
+  }
+  return { ok: true };
 }
 
 /** Public view for APIs (no secrets). */
@@ -225,6 +264,10 @@ export async function completeChat(
         "ai_misconfigured",
       );
     }
+    const baseUrlSafe = await assertSafeAiBaseUrl(config.baseUrl);
+    if (!baseUrlSafe.ok) {
+      throw new AiProviderError(baseUrlSafe.error, 400, "ai_unsafe_base_url");
+    }
     const deployment = config.azureDeployment ?? model;
     const apiVersion = config.azureApiVersion ?? "2024-02-15-preview";
     const base = config.baseUrl.replace(/\/$/, "");
@@ -250,11 +293,16 @@ export async function completeChat(
         "ai_misconfigured",
       );
     }
-    const base =
-      config.provider === "compatible-local"
-        ? (config.baseUrl ?? "http://127.0.0.1:11434/v1").replace(/\/$/, "")
-        : "https://api.openai.com/v1";
-    url = `${base}/chat/completions`;
+    if (config.provider === "compatible-local") {
+      const resolvedBase = config.baseUrl ?? "http://127.0.0.1:11434/v1";
+      const baseUrlSafe = await assertSafeAiBaseUrl(resolvedBase);
+      if (!baseUrlSafe.ok) {
+        throw new AiProviderError(baseUrlSafe.error, 400, "ai_unsafe_base_url");
+      }
+      url = `${resolvedBase.replace(/\/$/, "")}/chat/completions`;
+    } else {
+      url = "https://api.openai.com/v1/chat/completions";
+    }
     if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
     body = {
       model,

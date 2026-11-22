@@ -33,7 +33,7 @@ export default async function RisksPage({
     <GraphEntityWorkspace
       kind="risks"
       title="Risks"
-      description="Risks mitigated by test intents. Hub risk coverage stays N/A until risks exist."
+      description="Catalog product risks for Hub risk coverage. Mitigation links to intents are created via proposals or the risks API, not from this page."
       apiPath="/api/risks"
       initial={rows}
       selectedId={params.risk ?? null}

@@ -98,7 +98,33 @@ export function ProjectSwitcher({
   }
 
   if (projects.length === 0) {
-    return collapsed ? null : (
+    if (collapsed) {
+      return showNewProject ? (
+        <div className="relative flex justify-center px-2 pb-2">
+          <Link
+            href="/settings?section=projects"
+            title="New project"
+            aria-label="New project"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-[color:var(--topo-line)] text-[color:var(--topo-accent)] hover:bg-[color:var(--topo-chip)]"
+          >
+            <PlusIcon size={16} weight="bold" />
+          </Link>
+        </div>
+      ) : (
+        <div
+          className="relative flex justify-center px-2 pb-2"
+          title="No projects"
+        >
+          <span
+            aria-label="No projects"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-[color:var(--topo-line)] text-[color:var(--topo-muted)]"
+          >
+            <FolderSimpleIcon size={16} weight="regular" />
+          </span>
+        </div>
+      );
+    }
+    return (
       <div className="mx-2 mb-2 space-y-2">
         <div className="rounded-lg border border-dashed border-[color:var(--topo-line)] px-2.5 py-2 text-xs text-[color:var(--topo-muted)]">
           No projects

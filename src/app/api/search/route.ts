@@ -6,6 +6,8 @@ import {
   cases,
   folders,
   milestones,
+  proposals,
+  releases,
   requirements,
   resultComments,
   risks,
@@ -71,6 +73,14 @@ type KeyedHit = {
   matchField: string;
 };
 
+type ProposalHit = {
+  id: string;
+  name: string;
+  status: string;
+  entityType: string;
+  snippet: string | null;
+};
+
 function emptyResponse(qualityGraphEnabled: boolean) {
   return {
     cases: [] as CaseHit[],
@@ -80,14 +90,82 @@ function emptyResponse(qualityGraphEnabled: boolean) {
     plans: [] as NamedHit[],
     milestones: [] as NamedHit[],
     triage: [] as TriageHit[],
+    proposals: [] as ProposalHit[],
     ...(qualityGraphEnabled
       ? {
           requirements: [] as KeyedHit[],
           intents: [] as KeyedHit[],
           risks: [] as KeyedHit[],
+          releases: [] as NamedHit[],
         }
       : {}),
   };
+}
+
+function formatEntityTypeLabel(entityType: string): string {
+  return entityType
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function proposalRationaleOrSummary(payloadJson: string): string | null {
+  try {
+    const payload = JSON.parse(payloadJson) as {
+      rationale?: unknown;
+      summary?: unknown;
+    };
+    if (typeof payload.rationale === "string" && payload.rationale.trim()) {
+      return payload.rationale.trim();
+    }
+    if (typeof payload.summary === "string" && payload.summary.trim()) {
+      return payload.summary.trim();
+    }
+  } catch {
+    /* ignore malformed payload */
+  }
+  return null;
+}
+
+function proposalDisplayName(row: {
+  entityType: string;
+  model: string | null;
+  payloadJson: string;
+}): string {
+  try {
+    const payload = JSON.parse(row.payloadJson) as {
+      rationale?: unknown;
+      diffs?: Array<{ after?: { title?: unknown; key?: unknown } }>;
+    };
+    if (typeof payload.rationale === "string" && payload.rationale.trim()) {
+      return payload.rationale.trim();
+    }
+    const after = payload.diffs?.[0]?.after;
+    const title =
+      after && typeof after.title === "string" ? after.title.trim() : "";
+    const key = after && typeof after.key === "string" ? after.key.trim() : "";
+    if (key && title) return `${key}: ${title}`;
+    if (title) return title;
+    if (key) return key;
+  } catch {
+    /* ignore malformed payload */
+  }
+  if (row.model?.trim()) return `${row.entityType} · ${row.model.trim()}`;
+  return row.entityType;
+}
+
+/** Snippet under the proposal name: rationale/summary, else formatted entity type. */
+function proposalSnippet(row: {
+  entityType: string;
+  payloadJson: string;
+}): string | null {
+  const rationale = proposalRationaleOrSummary(row.payloadJson);
+  if (rationale) return rationale;
+  const label = formatEntityTypeLabel(row.entityType);
+  return label || null;
 }
 
 function stripHeadline(value: string | null | undefined): string | null {
@@ -492,6 +570,59 @@ export async function GET(request: Request) {
       .orderBy(desc(triageItems.lastSeenAt))
       .limit(6);
 
+    const proposalPromise = db
+      .select({
+        id: proposals.id,
+        entityType: proposals.entityType,
+        status: proposals.status,
+        model: proposals.model,
+        payloadJson: proposals.payloadJson,
+      })
+      .from(proposals)
+      .where(
+        and(
+          eq(proposals.workspaceId, workspaceId),
+          eq(proposals.status, "pending"),
+          or(
+            ilike(proposals.entityType, pattern),
+            ilike(proposals.model, pattern),
+            ilike(proposals.payloadJson, pattern),
+          ),
+        ),
+      )
+      .orderBy(desc(proposals.updatedAt))
+      .limit(6);
+
+    const releasePromise = qualityGraphEnabled
+      ? db
+          .select({
+            id: releases.id,
+            name: releases.name,
+            snippet: sql<string | null>`
+              coalesce(
+                nullif(trim(coalesce(${releases.gitTag}, '')), ''),
+                nullif(trim(coalesce(${releases.sha}, '')), ''),
+                ${releases.name}
+              )
+            `,
+          })
+          .from(releases)
+          .where(
+            and(
+              eq(releases.workspaceId, workspaceId),
+              or(
+                ilike(releases.name, pattern),
+                ilike(releases.gitTag, pattern),
+                ilike(releases.sha, pattern),
+              ),
+            ),
+          )
+          .orderBy(desc(releases.updatedAt))
+          .limit(6)
+      : Promise.resolve(
+          [] as Array<{ id: string; name: string; snippet: string | null }>,
+        );
+
     const keyedSelect = (table: typeof requirements | typeof risks) =>
       db
         .select({
@@ -679,6 +810,8 @@ export async function GET(request: Request) {
       planRows,
       milestoneRows,
       triageRows,
+      proposalRows,
+      releaseRows,
       requirementRows,
       intentRows,
       riskRows,
@@ -690,6 +823,8 @@ export async function GET(request: Request) {
       planPromise,
       milestonePromise,
       triagePromise,
+      proposalPromise,
+      releasePromise,
       qualityGraphEnabled
         ? keyedSelect(requirements)
         : Promise.resolve(
@@ -760,6 +895,16 @@ export async function GET(request: Request) {
         priority: row.priority,
         snippet: stripHeadline(row.snippet),
       })),
+      proposals: proposalRows.map((row) => {
+        const name = proposalDisplayName(row);
+        return {
+          id: row.id,
+          name,
+          status: row.status,
+          entityType: row.entityType,
+          snippet: stripHeadline(proposalSnippet(row)),
+        };
+      }),
       ...(qualityGraphEnabled
         ? {
             requirements: requirementRows.map((row) => ({
@@ -782,6 +927,11 @@ export async function GET(request: Request) {
               title: row.title,
               snippet: stripHeadline(row.snippet),
               matchField: row.matchField,
+            })),
+            releases: releaseRows.map((row) => ({
+              id: row.id,
+              name: row.name,
+              snippet: stripHeadline(row.snippet),
             })),
           }
         : {}),

@@ -86,6 +86,8 @@ describe("ReportDetail", () => {
       "src",
       "/api/attachments/att-1",
     );
+    expect(screen.getByRole("link", { name: /Open run/i })).toBeInTheDocument();
+    expect(screen.getByText(/Run aaaaaaaa/)).toBeInTheDocument();
   });
 
   it("labels in-progress reports as Live", () => {
@@ -107,5 +109,51 @@ describe("ReportDetail", () => {
     expect(screen.getAllByText("Live").length).toBeGreaterThan(0);
     expect(screen.getByText("Report · live run")).toBeInTheDocument();
     expect(screen.getByLabelText("Executive summary")).toHaveTextContent("—");
+  });
+
+  it("renders public share mode without auth chrome or run UUID", () => {
+    const token = "signed.share-token";
+    render(
+      <ReportDetail
+        publicShareToken={token}
+        report={{
+          ...baseReport,
+          failures: [
+            {
+              ...baseReport.failures[0],
+              attachments: [
+                {
+                  ...baseReport.failures[0].attachments[0],
+                  url: `/api/share/reports/${encodeURIComponent(token)}/attachments/att-1`,
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Topology")).toBeInTheDocument();
+    expect(screen.getByText("Shared report · read only")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Open run/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /All reports/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Triage/i })).toBeNull();
+    expect(screen.queryByText(/Share link/i)).toBeNull();
+    expect(screen.queryByText(/Run aaaaaaaa/)).toBeNull();
+    expect(screen.queryByRole("link", { name: /Execute \/ review/i })).toBeNull();
+
+    expect(screen.getByRole("link", { name: "csv" })).toHaveAttribute(
+      "href",
+      `/api/share/reports/${encodeURIComponent(token)}/export?format=csv`,
+    );
+    expect(screen.getByRole("link", { name: "xlsx" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "pdf" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Print/i })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "coupon.png" })).toHaveAttribute(
+      "src",
+      `/api/share/reports/${encodeURIComponent(token)}/attachments/att-1`,
+    );
+    expect(screen.queryByRole("link", { name: /HAR-9/i })).toBeNull();
+    expect(screen.getByText("HAR-9")).toBeInTheDocument();
   });
 });

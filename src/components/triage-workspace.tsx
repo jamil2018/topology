@@ -2,7 +2,7 @@
 import { useProjectActions } from "./project-actions";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Input } from "@heroui/react";
 import { motion } from "motion/react";
 import { clusterTriageBySignature } from "@topology/domain/client";
@@ -116,6 +116,33 @@ export function TriageWorkspace({
   const showDemoIssue = mockProvider && demoMode;
   const showIssueLink = !mockProvider || demoMode;
 
+  const refreshInFlight = useRef(false);
+  const lastHiddenRefreshAt = useRef(0);
+  const HIDDEN_REFRESH_MS = 12_000;
+
+  const refreshQueue = useCallback(async () => {
+    if (refreshInFlight.current) return;
+    if (typeof document !== "undefined" && document.hidden) {
+      const now = Date.now();
+      if (now - lastHiddenRefreshAt.current < HIDDEN_REFRESH_MS) return;
+      lastHiddenRefreshAt.current = now;
+    }
+    refreshInFlight.current = true;
+    try {
+      const res = await fetch("/api/triage");
+      if (!res.ok) {
+        setError("Could not refresh triage queue");
+        return;
+      }
+      const data = (await res.json()) as { queue?: QueueItem[] };
+      if (Array.isArray(data.queue)) setQueue(data.queue);
+    } catch {
+      setError("Could not refresh triage queue");
+    } finally {
+      refreshInFlight.current = false;
+    }
+  }, []);
+
   const onLive = useCallback(
     async (event: LiveEvent) => {
       if (event.topic !== "triage" && event.workspaceId !== "*") return;
@@ -123,21 +150,15 @@ export function TriageWorkspace({
         setQueue((prev) => prev.filter((item) => item.id !== event.entityId));
         return;
       }
-      try {
-        const res = await fetch("/api/triage");
-        if (!res.ok) {
-          setError("Could not refresh triage queue");
-          return;
-        }
-        const data = (await res.json()) as { queue?: QueueItem[] };
-        if (Array.isArray(data.queue)) setQueue(data.queue);
-      } catch {
-        setError("Could not refresh triage queue");
-      }
+      await refreshQueue();
     },
-    [],
+    [refreshQueue],
   );
-  const liveStatus = useLiveUpdates(onLive, { onReconnect: () => onLive({ topic: "triage", workspaceId: "*" } as LiveEvent) });
+  const liveStatus = useLiveUpdates(onLive, {
+    onReconnect: () => {
+      void refreshQueue();
+    },
+  });
 
   const clusters = toClusterItems(queue);
   useEffect(() => {
@@ -865,10 +886,21 @@ export function TriageWorkspace({
             {flakeHints.map((hint) => (
               <li key={hint.caseId} className="px-3 py-2.5 text-sm">
                 <div className="flex flex-wrap items-center gap-2 text-[color:var(--topo-ink)]">
-                  <span className="font-mono text-xs text-[color:var(--topo-accent)]">
+                  <Link
+                    href={`/cases?q=${encodeURIComponent(hint.caseKey)}`}
+                    className="font-mono text-xs text-[color:var(--topo-accent)] underline-offset-2 hover:underline"
+                  >
                     {hint.caseKey}
-                  </span>
+                  </Link>
                   <StatusChip mono>score {hint.score}</StatusChip>
+                  {can("runs.create") ? (
+                    <Link
+                      href={`/runs/new?cases=${encodeURIComponent(hint.caseId)}`}
+                      className="text-xs text-[color:var(--topo-muted)] underline-offset-2 hover:underline"
+                    >
+                      Retest
+                    </Link>
+                  ) : null}
                 </div>
                 <div className="mt-1 text-xs text-[color:var(--topo-muted)]">
                   {hint.hint}

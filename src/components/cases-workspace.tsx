@@ -5,6 +5,7 @@ import { useListPage, useQueryState } from "./use-list-page";
 import type { PaginatedList } from "@/lib/list-pagination";
 import { useProjectActions } from "./project-actions";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
@@ -1364,6 +1365,19 @@ export function CasesWorkspace({
               </Modal.Heading>
               <p className="text-sm text-[color:var(--topo-mute)]">
                 Dry run — nothing is written until you confirm.
+              </p>
+              <p className="text-sm text-[color:var(--topo-muted)]">
+                Prefer a vendor export?{" "}
+                <Link
+                  href="/cases/import"
+                  className="font-medium text-[color:var(--topo-accent)] underline-offset-2 hover:underline"
+                  onClick={() => {
+                    csvImportModal.close();
+                    setCsvPreview(null);
+                  }}
+                >
+                  Import from TestRail, Qase, Zephyr, or Xray
+                </Link>
               </p>
             </Modal.Header>
             <Modal.Body className="space-y-3 px-4 py-4">

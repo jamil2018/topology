@@ -14,7 +14,7 @@ TOPOLOGY_ISSUE_PROVIDER=mock
 
 ## Migration idempotency
 
-Unit coverage, no database: `src/db/migrator.test.ts` checks the journal from `0000_baseline` through `0003_quality_graph_pref`, unstamped reconciliation (`src/db/reconcile-unstamped.sql`), and that `runMigrations` refuses an empty URL.
+Unit coverage, no database: `src/db/migrator.test.ts` checks the journal from `0000_baseline` through `0009_scm_feedback`, unstamped reconciliation (`src/db/reconcile-unstamped.sql`), and that `runMigrations` refuses an empty URL.
 
 Apply twice against a live database. The second run is a no-op once `drizzle.__drizzle_migrations` has the journal hashes.
 
@@ -29,11 +29,11 @@ Or the node:test wrapper, which skips unless the flag is set:
 TOPOLOGY_OPS_E2E=1 npx tsx --env-file=.env.local --test tests/ops/migrate-idempotent.ts
 ```
 
-### Fresh database vs upgrade 0000 to 0003
+### Fresh database vs upgrade from 0000
 
-Fresh volume: point `DATABASE_URL` at an empty database and run `npm run db:migrate` once. Expect journal entries `0000_baseline`, `0001_tcm_parity`, `0002_scale`, and `0003_quality_graph_pref`.
+Fresh volume: point `DATABASE_URL` at an empty database and run `npm run db:migrate` once. Expect journal entries `0000_baseline` through `0009_scm_feedback` (ten rows).
 
-Upgrade: start from a database whose journal contains only `0000_baseline`, then run `npm run db:migrate`. Expect `0001` through `0003` to apply, and a second run to change nothing.
+Upgrade: start from a database whose journal contains only `0000_baseline`, then run `npm run db:migrate`. Expect `0001` through `0009` to apply, and a second run to change nothing.
 
 A push-era database (tables present, journal empty) should take the reconcile path in `src/db/migrator.ts` (`shouldReconcileUnstamped`) and then stamp the journal. Do not replay retired pre-journal SQL files.
 
@@ -51,7 +51,8 @@ Build and boot the production stack (needs Docker and a generated `AUTH_SECRET` 
 
 ```bash
 cp .env.example .env.prod
-docker compose -f docker-compose.prod.yml up --build -d
+# Set AUTH_SECRET, AUTH_URL, and POSTGRES_PASSWORD
+docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
 ```
 
 Checks:
@@ -62,24 +63,24 @@ Checks:
 - The container is not root. The Dockerfile ends with `USER node`.
 
 ```bash
-docker compose -f docker-compose.prod.yml exec app id -u
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec app id -u
 curl -fsS http://127.0.0.1:4317/api/health
 curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:4317/health
 ```
 
 `id -u` must not be `0`.
 
-Published images, when a `v*` tag exists: `TOPOLOGY_IMAGE=ghcr.io/<owner>/topology:<tag> docker compose -f docker-compose.prod.yml up -d --no-build`.
+Published images, when a `v*` tag exists: `TOPOLOGY_IMAGE=ghcr.io/<owner>/topology:<tag> docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build`.
 
 ## Backup and restore
 
 From `docs/deploy.md`. Restore the database first, then attachment blobs.
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T postgres \
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   pg_dump -U topology -d topology -Fc > topology.dump
 
-docker compose -f docker-compose.prod.yml exec -T postgres \
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   pg_restore -U topology -d topology --clean --if-exists < topology.dump
 ```
 

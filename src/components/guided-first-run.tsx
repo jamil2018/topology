@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useProjectActions } from "./project-actions";
 
 const STEPS = [
   {
@@ -30,7 +31,13 @@ const STEPS = [
   },
 ] as const;
 
-const DISMISS_KEY = "topology:guided-first-run-dismissed";
+const LEGACY_DISMISS_KEY = "topology:guided-first-run-dismissed";
+
+function dismissKey(projectId: string | null) {
+  return projectId
+    ? `topology:guided-first-run-dismissed:${projectId}`
+    : LEGACY_DISMISS_KEY;
+}
 
 export function GuidedFirstRun({
   title = "Get started",
@@ -43,21 +50,32 @@ export function GuidedFirstRun({
   description?: string;
   dismissible?: boolean;
 }) {
+  const { projectId } = useProjectActions();
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     if (!dismissible) return;
     try {
-      setDismissed(window.localStorage.getItem(DISMISS_KEY) === "1");
+      const key = dismissKey(projectId);
+      const scoped = window.localStorage.getItem(key) === "1";
+      // Migrate legacy global dismiss only when scoped key is unset.
+      const legacy =
+        !scoped &&
+        projectId &&
+        window.localStorage.getItem(LEGACY_DISMISS_KEY) === "1";
+      if (legacy) {
+        window.localStorage.setItem(key, "1");
+      }
+      setDismissed(scoped || Boolean(legacy));
     } catch {
       /* Storage unavailable. */
     }
-  }, [dismissible]);
+  }, [dismissible, projectId]);
 
   function dismiss() {
     setDismissed(true);
     try {
-      window.localStorage.setItem(DISMISS_KEY, "1");
+      window.localStorage.setItem(dismissKey(projectId), "1");
     } catch {
       /* Storage unavailable. */
     }

@@ -2,7 +2,8 @@
 import { formatDateTime } from "@/lib/format-date";
 
 import { useEffect, useState, useTransition } from "react";
-import { Button, TextArea } from "@heroui/react";
+import { Button } from "@heroui/react";
+import { MentionComposer } from "./mention-composer";
 
 type Comment = {
   id: string;
@@ -175,29 +176,41 @@ export function EntityCollabPanel({
             ))}
           </ul>
         )}
-        <TextArea
-          className="mt-2"
-          aria-label="New comment"
-          placeholder="Add a comment…"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        <Button
-          className="mt-2"
-          size="sm"
-          isDisabled={pending || !draft.trim()}
-          onPress={() => {
-            startTransition(() => {
-              void postComment();
-            });
-          }}
-        >
-          Comment
-        </Button>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <MentionComposer
+            value={draft}
+            onChange={setDraft}
+            members={members.map((m) => m.user)}
+            pending={pending}
+            rows={3}
+            onSubmit={() => {
+              startTransition(() => {
+                void postComment();
+              });
+            }}
+            aria-label="New comment"
+            placeholder="Add a comment — type @ to mention"
+            className="min-w-[12rem] w-full flex-1 resize-y rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-surface)] px-2 py-1.5 text-sm text-[color:var(--topo-ink)]"
+          />
+          <Button
+            className="mt-0"
+            size="sm"
+            isDisabled={pending || !draft.trim()}
+            onPress={() => {
+              startTransition(() => {
+                void postComment();
+              });
+            }}
+          >
+            Comment
+          </Button>
+        </div>
       </div>
 
       {error ? (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
       ) : null}
     </div>
   );

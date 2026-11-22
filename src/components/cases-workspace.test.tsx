@@ -414,6 +414,11 @@ describe("CasesWorkspace CSV import", () => {
     await waitFor(() => {
       expect(screen.getByText("CSV import preview")).toBeInTheDocument();
     });
+    expect(
+      screen.getByRole("link", {
+        name: /Import from TestRail, Qase, Zephyr, or Xray/i,
+      }),
+    ).toHaveAttribute("href", "/cases/import");
     expect(screen.getByText("1 would create")).toBeInTheDocument();
     expect(screen.getByText("IMP-1")).toBeInTheDocument();
     expect(screen.getByText("owner=qa")).toBeInTheDocument();

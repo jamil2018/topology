@@ -160,8 +160,21 @@ export async function markAllNotificationsRead(
 const EMAIL_MENTION = /@([a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
 const UUID_MENTION =
   /@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
+/** @name handles — letters/digits/._- that are not emails or UUIDs. */
+const NAME_MENTION = /@([a-zA-Z][\w.-]*)(?![@\w.-])/g;
 
-/** Parse @email and @userId tokens from a comment body. */
+function memberMatchesHandle(
+  user: { id: string; name: string | null; email: string },
+  handle: string,
+): boolean {
+  const h = handle.toLowerCase();
+  const name = user.name?.trim().toLowerCase() ?? "";
+  const email = user.email.toLowerCase();
+  const local = email.split("@")[0] ?? "";
+  return name === h || local === h || email === h;
+}
+
+/** Parse @email, @userId, and unambiguous @name tokens from a comment body. */
 export async function notifyEntityCommentMentions(input: {
   workspaceId: string;
   authorUserId: string;
@@ -169,20 +182,32 @@ export async function notifyEntityCommentMentions(input: {
   entityId: string;
   body: string;
 }) {
-  const { emails, userIds } = parseMentionTokens(input.body);
-  if (emails.length === 0 && userIds.length === 0) return;
+  const { emails, userIds, names } = parseMentionTokens(input.body);
+  if (emails.length === 0 && userIds.length === 0 && names.length === 0) return;
 
   const members = await db.query.workspaceMembers.findMany({
     where: eq(workspaceMembers.workspaceId, input.workspaceId),
     with: { user: true },
   });
 
+  const namedUserIds = new Set<string>();
+  for (const name of names) {
+    const hits = members.filter(
+      (m) => m.user && memberMatchesHandle(m.user, name),
+    );
+    // Only notify when the handle resolves to exactly one workspace member.
+    if (hits.length === 1 && hits[0]?.user) {
+      namedUserIds.add(hits[0].user.id);
+    }
+  }
+
   for (const member of members) {
     const user = member.user;
     if (!user || user.id === input.authorUserId) continue;
     const emailHit = emails.includes(user.email.toLowerCase());
     const idHit = userIds.includes(user.id.toLowerCase());
-    if (!emailHit && !idHit) continue;
+    const nameHit = namedUserIds.has(user.id);
+    if (!emailHit && !idHit && !nameHit) continue;
 
     await createNotification({
       workspaceId: input.workspaceId,
@@ -199,17 +224,29 @@ export async function notifyEntityCommentMentions(input: {
 export function parseMentionTokens(body: string): {
   emails: string[];
   userIds: string[];
+  names: string[];
 } {
   const emails = new Set<string>();
   const userIds = new Set<string>();
+  const names = new Set<string>();
   for (const match of body.matchAll(EMAIL_MENTION)) {
     emails.add(match[1].toLowerCase());
   }
   for (const match of body.matchAll(UUID_MENTION)) {
     userIds.add(match[1].toLowerCase());
   }
+  // Strip email/UUID mentions so domains like `@topology.local` are not names.
+  const forNames = body
+    .replace(EMAIL_MENTION, " ")
+    .replace(UUID_MENTION, " ");
+  for (const match of forNames.matchAll(NAME_MENTION)) {
+    const handle = match[1].toLowerCase();
+    if (emails.has(handle) || userIds.has(handle)) continue;
+    names.add(handle);
+  }
   return {
     emails: [...emails],
     userIds: [...userIds],
+    names: [...names],
   };
 }

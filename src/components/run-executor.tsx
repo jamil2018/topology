@@ -6,7 +6,13 @@ import { useProjectActions } from "./project-actions";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { Button, Modal, useOverlayState } from "@heroui/react";
-import { ArrowCounterClockwiseIcon, CheckIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwiseIcon,
+  ArrowsClockwiseIcon,
+  CheckIcon,
+  PlayIcon,
+  StopIcon,
+} from "@phosphor-icons/react";
 import { formatStatusLabel } from "@/lib/format-labels";
 import { PageHeader } from "./page-header";
 import { StatusChip, statusToneForRun } from "./status-chip";
@@ -112,6 +118,23 @@ export function RunExecutor({
   const aborted = optimisticRun.status === "aborted";
   const canReopen = isReopenableRunStatus(optimisticRun.status) && can("runs.complete");
   const done = optimisticRun.results.filter((row) => row.status !== "untested").length;
+  const failureResults = useMemo(
+    () =>
+      optimisticRun.results.filter((row) =>
+        ["failed", "blocked"].includes(row.status),
+      ),
+    [optimisticRun.results],
+  );
+  const retestHref =
+    failureResults.length > 0
+      ? `/runs/new?retest=${failureResults.map((row) => row.id).join(",")}`
+      : null;
+  const showRetestInHeader =
+    Boolean(retestHref) &&
+    can("runs.create") &&
+    optimisticRun.status === "completed";
+  const showRetestInMore =
+    Boolean(retestHref) && can("runs.create") && !showRetestInHeader;
 
   const filtered = useMemo(
     () =>
@@ -659,12 +682,32 @@ export function RunExecutor({
                 Complete
               </Button>
             ) : null}
-            {!frozen || canReopen ? (
+            {showRetestInHeader && retestHref ? (
+              <Link
+                href={retestHref}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[color:var(--topo-accent)] px-3 py-1.5 text-xs font-medium text-[color:var(--accent-foreground)] transition active:scale-[0.98]"
+              >
+                <ArrowsClockwiseIcon size={14} weight="bold" aria-hidden />
+                Retest {failureResults.length}{" "}
+                {failureResults.length === 1 ? "failure" : "failures"}
+              </Link>
+            ) : null}
+            {!frozen || canReopen || showRetestInMore ? (
               <details className="relative self-center text-sm">
                 <summary className="cursor-pointer rounded-md border border-[color:var(--topo-line)] px-3 py-2">
                   More actions
                 </summary>
                 <div className="absolute right-0 z-10 mt-1 flex min-w-[10rem] flex-col gap-1 rounded-md border border-[color:var(--topo-line)] bg-[color:var(--topo-panel)] p-1 shadow-md">
+                  {showRetestInMore && retestHref ? (
+                    <Link
+                      href={retestHref}
+                      className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-[color:var(--topo-ink)] hover:bg-[color:var(--topo-chip)]"
+                    >
+                      <ArrowsClockwiseIcon size={14} weight="bold" aria-hidden />
+                      Retest {failureResults.length}{" "}
+                      {failureResults.length === 1 ? "failure" : "failures"}
+                    </Link>
+                  ) : null}
                   {!frozen ? (
                     <Button
                       size="sm"
