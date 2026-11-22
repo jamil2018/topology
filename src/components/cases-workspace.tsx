@@ -334,8 +334,9 @@ export function CasesWorkspace({
   const deleteModal = useOverlayState();
   const caseDeleteModal = useOverlayState();
   const unsavedModal = useOverlayState();
-  // rerender-defer-reads: visited map is only consulted on URL sync / open — keep in a ref.
-  const visitedCasesRef = useRef(new Map<string, CaseRow>());
+  // Visited cases stay in state so URL-param sync can resolve them during render
+  // without reading a ref (react-hooks/refs).
+  const [visitedCases, setVisitedCases] = useState(() => new Map<string, CaseRow>());
   const [appliedParams, setAppliedParams] = useState(paramsKey);
   if (appliedParams !== paramsKey) {
     const previousCase = new URLSearchParams(appliedParams).get("case");
@@ -345,7 +346,7 @@ export function CasesWorkspace({
     const candidates = [
       ...(selectedCase ? [selectedCase] : []),
       ...listedCases,
-      ...visitedCasesRef.current.values(),
+      ...visitedCases.values(),
     ];
     const target = caseParam ? candidates.find((row) => row.id === caseParam || row.key === caseParam) : null;
     if (caseParam !== previousCase && (target || !caseParam)) {
@@ -750,7 +751,7 @@ export function CasesWorkspace({
   function commitOpen(row: CaseRow | null) {
     setBrowserPanel(null);
     if (row) {
-      visitedCasesRef.current = new Map(visitedCasesRef.current).set(row.key, row);
+      setVisitedCases((prev) => new Map(prev).set(row.key, row));
     }
     setHistoryCase(row);
     setEditorDirty(false);
