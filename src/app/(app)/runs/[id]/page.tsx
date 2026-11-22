@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 import { notFound, redirect } from "next/navigation";
 import { listIssueProviders } from "@topology/issue-providers";
 import { auth } from "@/auth";
@@ -14,10 +15,13 @@ import { runs, workspaceMembers } from "@/db/schema";
 
 type Props = { params: Promise<{ id: string }> };
 
+const runSession = cache(async () => auth());
+const activeProject = cache(resolveActiveProject);
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const session = await auth();
+  const session = await runSession();
   if (!session?.user?.id) return { title: pageTitle("Test run") };
-  const ctx = await resolveActiveProject(session.user.id);
+  const ctx = await activeProject(session.user.id);
   const { id } = await params;
   if (!ctx || !isUuid(id)) return { title: pageTitle("Test run") };
   const run = await db.query.runs.findFirst({
@@ -31,22 +35,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function RunDetailPage({ params }: Props) {
-  const session = await auth();
+  const session = await runSession();
   if (!session?.user?.id) redirect("/login");
 
   await ensureMembership(session.user.id);
-  const ctx = await resolveActiveProject(session.user.id);
+  const ctx = await activeProject(session.user.id);
   if (!ctx) return <NoProjectEmpty userId={session.user.id} />;
 
   const workspaceId = ctx.project.id;
-  const members = await db.query.workspaceMembers.findMany({
-    where: eq(workspaceMembers.workspaceId, workspaceId),
-    with: { user: true },
-  });
-
   const { id } = await params;
   if (!isUuid(id)) notFound();
-  const run = await getRunWithResults(workspaceId, id);
+  const [run, members] = await Promise.all([
+    getRunWithResults(workspaceId, id),
+    db.query.workspaceMembers.findMany({
+      where: eq(workspaceMembers.workspaceId, workspaceId),
+      with: { user: { columns: { id: true, name: true, email: true } } },
+    }),
+  ]);
   if (!run) notFound();
 
   const defaultProvider = process.env.TOPOLOGY_ISSUE_PROVIDER ?? "mock";

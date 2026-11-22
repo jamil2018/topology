@@ -413,19 +413,32 @@ export async function getRunWithResults(workspaceId: string, runId: string) {
   if (!isUuid(runId)) return null;
   return db.query.runs.findFirst({
     where: and(eq(runs.id, runId), eq(runs.workspaceId, workspaceId)),
+    columns: {
+      id: true, name: true, source: true, environment: true, status: true,
+      description: true, assigneeId: true,
+    },
     with: {
       results: {
+        columns: {
+          id: true, caseId: true, caseSnapshot: true, externalKey: true, title: true,
+          status: true, notes: true, durationMs: true, assigneeId: true,
+          iterationIndex: true, iterationValuesJson: true,
+        },
         with: {
-          case: true,
-          linkedIssues: true,
-          comments: { with: { user: true } },
-          attachments: true,
-          assignee: true,
-          stepResults: true,
+          case: { columns: { id: true, key: true, title: true, steps: true, expectedResult: true } },
+          linkedIssues: {
+            columns: { id: true, provider: true, remoteKey: true, url: true, title: true, remoteStatus: true, needsRetest: true },
+          },
+          comments: {
+            columns: { id: true, body: true, createdAt: true },
+            with: { user: { columns: { id: true, name: true, email: true } } },
+          },
+          attachments: { columns: { id: true, filename: true, contentType: true, sizeBytes: true } },
+          stepResults: {
+            columns: { id: true, position: true, action: true, expected: true, data: true, status: true, notes: true },
+          },
         },
       },
-      linkedIssues: true,
-      assignee: true,
     },
   });
 }

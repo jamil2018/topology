@@ -41,6 +41,8 @@ test.describe("production scale budgets", () => {
     await expect(page.getByRole("button", { name: /^Mark \S+ as passed$/ }).first()).toBeEnabled({ timeout: 2000 });
     const paintMs = performance.now() - started;
     expect(await list.getByRole("button").count()).toBeLessThan(200);
+    // Closed retest controls must not mount a second list of all failed results.
+    await expect(page.getByText("Select failures to retest", { exact: true })).toHaveCount(0);
     const interactionStart = await page.evaluate(() => window.performance.now());
     const samples: number[] = [];
     for (let index = 0; index < 20; index++) {

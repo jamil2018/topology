@@ -264,6 +264,7 @@ try {
     delete env.TOPOLOGY_ISOLATE_BROWSER_TESTS;
   }
   if (["release", "performance"].includes(mode)) {
+    await connectContainerBrowser();
     connection.pathname = `/topology_validation_${runId}_performance`;
     env.DATABASE_URL = connection.toString();
     env.PERF_CASES = "50000";

@@ -148,7 +148,7 @@ export function RunProductivityActions({ run }: { run: RunDetail }) {
             ) : null}
           </div>
 
-          {failures.length ? (
+          {expanded && failures.length ? (
             <fieldset className="space-y-2">
               <legend className="text-xs font-medium text-[color:var(--topo-muted)]">
                 Select failures to retest
