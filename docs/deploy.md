@@ -15,7 +15,7 @@ cp .env.example .env.prod
 docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
 ```
 
-The app listens on `0.0.0.0:4317` inside the container (override with `HOST` / `PORT`). Postgres is not published to the host. Open http://127.0.0.1:4317 and complete first-run `/setup` — production does **not** seed demo data.
+The app listens on `0.0.0.0:4317` inside the container (override with `HOST` / `PORT`). Compose publishes the app on loopback for the host proxy. PostgreSQL has no published port. Open http://127.0.0.1:4317 and complete first-run `/setup` — production does **not** seed demo data.
 
 Local development still uses `docker-compose.yml` (Postgres only) and `npm run dev` on `127.0.0.1:4317`. See the [README](../README.md).
 
@@ -74,6 +74,7 @@ Copy [`.env.example`](../.env.example) to `.env.prod` for Compose, or inject the
 | `AUTH_URL` | yes | Public origin, e.g. `https://tcm.example.com` |
 | `DATABASE_URL` | yes (non-Compose) | `postgresql://user:pass@host:5432/topology` |
 | `POSTGRES_PASSWORD` | yes (Compose) | Interpolated into `DATABASE_URL` |
+| `TOPOLOGY_BIND_ADDRESS` | no | Host-side app binding in Compose. Default `127.0.0.1`. |
 | `HOST` / `PORT` | no | Bind address; image defaults `0.0.0.0:4317` |
 | `ATTACHMENTS_DRIVER` | no | `local` (default) or `s3` |
 | `ATTACHMENTS_DIR` | no | Local root; image default `/data/attachments` |
@@ -114,6 +115,10 @@ That runs `src/db/migrate.ts`, which applies `drizzle/meta/_journal.json`. Curre
 | 10 | `0010_agent_operations` |
 | 11 | `0011_github_runner_requests` |
 | 12 | `0012_vendor_case_sources` |
+| 13 | `0013_regression_baselines` |
+| 14 | `0014_case_review_policy` |
+| 15 | `0015_vendor_run_history` |
+| 16 | `0016_jira_requirement_revisions` |
 
 `0000_baseline` is the full schema dump through the Phase 1 security tables (`api_tokens` scopes, `login_rate_limits`, `audit_events`, per-repo `webhook_secret`). Later entries are additive.
 
@@ -147,7 +152,7 @@ Restore order: database first, then attachment blobs. A DB without blobs yields 
 3. Start the new container. Boot applies any new journal entries, then serves traffic.
 4. If the app is unhealthy, roll back the image tag. Do not roll back a migration that already expanded schema unless you also restore the dump taken in step 1.
 
-Upgrade guarantee: **additive SQL only** lands as new journal files after `0012_vendor_case_sources`. Destructive changes will be called out in [CHANGELOG.md](../CHANGELOG.md). The `0000_baseline` replacement was a one-time break from the unjournaled SQL folder.
+Upgrade guarantee: **additive SQL only** lands as new journal files after `0016_jira_requirement_revisions`. Destructive changes will be called out in [CHANGELOG.md](../CHANGELOG.md). The `0000_baseline` replacement was a one-time break from the unjournaled SQL folder.
 
 ## Sizing
 

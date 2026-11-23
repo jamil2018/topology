@@ -38,7 +38,7 @@ services:
     image: ${TOPOLOGY_IMAGE:-topology:local}
     restart: unless-stopped
     ports:
-      - "${PORT:-4317}:4317"
+      - "${TOPOLOGY_BIND_ADDRESS:-127.0.0.1}:${PORT:-4317}:4317"
     env_file:
       - path: .env.prod
         required: false
