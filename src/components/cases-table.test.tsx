@@ -86,7 +86,7 @@ describe("CasesTable", () => {
   it("keeps inline field selects lazy until interaction", () => {
     renderTable();
     const table = screen.getByRole("region", { name: "Case table" });
-    const status = within(table).getByRole("button", { name: "Status for TOP-1" });
+    const status = within(table).getByRole("button", { name: "Draft Status for TOP-1" });
     expect(status).toHaveAttribute("aria-haspopup", "listbox");
     expect(within(table).queryByRole("option")).not.toBeInTheDocument();
   });
@@ -96,7 +96,7 @@ describe("CasesTable", () => {
     const { onInlinePatch } = renderTable();
     const table = screen.getByRole("region", { name: "Case table" });
 
-    await selectTopoOption(user, "Status for TOP-1", "Ready", table);
+    await selectTopoOption(user, "Draft Status for TOP-1", "Ready", table);
     expect(onInlinePatch).toHaveBeenCalledWith(row.id, { status: "ready" });
   });
 

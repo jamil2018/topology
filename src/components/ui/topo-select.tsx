@@ -2,6 +2,7 @@
 
 import { Button, Label, ListBox, Select } from "@heroui/react";
 import {
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -76,6 +77,7 @@ export function TopoSelect({
   name,
   lazy = false,
 }: TopoSelectProps) {
+  const id = useId();
   const [active, setActive] = useState(!lazy);
   const [open, setOpen] = useState(false);
   const pendingOpen = useRef(false);
@@ -98,7 +100,7 @@ export function TopoSelect({
           type="button"
           variant={variant}
           isDisabled={isDisabled}
-          aria-label={resolvedAria}
+          aria-labelledby={resolvedAria ? `${id}-value ${id}-label` : undefined}
           aria-haspopup="listbox"
           aria-expanded={false}
           className={
@@ -112,9 +114,10 @@ export function TopoSelect({
           }}
           {...(triggerProps as ComponentProps<typeof Button>)}
         >
-          <span className={`min-w-0 truncate ${valueClassName ?? ""}`.trim()}>
+          <span id={`${id}-value`} className={`min-w-0 truncate ${valueClassName ?? ""}`.trim()}>
             {optionLabel(options, value, placeholder)}
           </span>
+          {resolvedAria ? <span id={`${id}-label`} className="sr-only">{resolvedAria}</span> : null}
           <span
             aria-hidden
             className="shrink-0 text-[color:var(--topo-muted)]"

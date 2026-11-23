@@ -49,13 +49,14 @@ describe("TopoSelect", () => {
       />,
     );
 
-    const trigger = screen.getByRole("button", { name: "Priority" });
+    const trigger = screen.getByRole("button", { name: "Draft Priority" });
     expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
 
     await user.click(trigger);
     expect(await screen.findByRole("option", { name: "Ready" })).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: "Priority" })).toBeVisible();
     await user.click(screen.getByRole("option", { name: "Ready" }));
     expect(onChange).toHaveBeenCalledWith("ready");
   });
