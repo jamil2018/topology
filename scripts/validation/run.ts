@@ -13,6 +13,9 @@ import { evaluateOperations } from "./operations";
 import { assertOwnedDatabase, redact } from "./safety";
 
 const mode = process.argv[2] ?? "sanity";
+const port = Number(process.env.TOPOLOGY_VALIDATION_PORT ?? "4318");
+if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid validation port");
+const origin = `http://127.0.0.1:${port}`;
 const browserArgs = process.argv.slice(3);
 if (!["sanity", "regression", "release", "integration", "coverage", "consumers", "e2e", "smoke", "core", "ops", "performance", "onboarding", "visual", "visual-linux", "lighthouse", "container", "debug"].includes(mode)) {
   throw new Error(`Unknown validation suite: ${mode}`);
@@ -49,9 +52,9 @@ Object.assign(env, {
   TOPOLOGY_VALIDATION_OWNER: runId,
   PLAYWRIGHT_DEV_SERVER: mode === "debug" ? "1" : "0",
   DOTENV_CONFIG_PATH: "/dev/null",
-  AUTH_SECRET: secret, AUTH_URL: "http://127.0.0.1:4318", PORT: "4318",
-  HOST: "127.0.0.1", TOPOLOGY_URL: "http://127.0.0.1:4318",
-  PLAYWRIGHT_BASE_URL: "http://127.0.0.1:4318", TOPOLOGY_VALIDATION: "1",
+  AUTH_SECRET: secret, AUTH_URL: origin, PORT: String(port),
+  HOST: "127.0.0.1", TOPOLOGY_URL: origin,
+  PLAYWRIGHT_BASE_URL: origin, TOPOLOGY_VALIDATION: "1",
   TOPOLOGY_SEED_MODE: "e2e", TOPOLOGY_ISSUE_PROVIDER: "mock", TOPOLOGY_AI_PROVIDER: "none",
   TOPOLOGY_API_TOKEN: "topo_demo_token_local_dev_only", DEMO_USER_EMAIL: "demo@topology.local",
   DEMO_USER_PASSWORD: "topology-demo", ATTACHMENTS_DRIVER: "local", ATTACHMENTS_DIR: path.join(root, "attachments"),

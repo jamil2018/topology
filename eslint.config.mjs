@@ -6,6 +6,7 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    files: ["**/*.{js,jsx,mjs,ts,tsx,mts,cts}"],
     rules: {
       // Existing effects trip React Compiler lint; keep visible without failing CI.
       "react-hooks/set-state-in-effect": "warn",
