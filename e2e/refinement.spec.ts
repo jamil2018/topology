@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures";
+import { test, expect, makeAxeBuilder } from "./fixtures";
 import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 
@@ -29,13 +29,18 @@ for (const theme of ["light", "dark"] as const) {
     const saved = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH');
     await page.getByRole('radiogroup', { name: 'Color theme' }).getByRole('radio', { name: theme === 'dark' ? 'Dark theme' : 'Light theme', exact: true }).click();
     expect((await saved).ok()).toBeTruthy();
-    for (const route of ["/", "/cases", "/runs", "/runs/new", "/plans", "/triage", "/automation", "/reports", "/settings", "/requirements", "/releases", "/cases/import", "/intents", "/journeys", "/components", "/risks", "/milestones"]) {
+    for (const route of ["/", "/cases", "/runs", "/runs/new", "/plans", "/triage", "/automation", "/reports", "/settings", "/requirements", "/releases", "/cases/import", "/intents", "/journeys", "/components", "/risks", "/milestones", "/impact", "/proposals", "/runs/explore", "/cases/import/history"]) {
       await page.goto(route);
       await expect(page.locator("main h1")).toBeVisible();
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /dark/ : /^(?!.*dark).*$/);
       await page.screenshot({caret: "initial",  path: info.outputPath(`${route.replaceAll("/", "-") || "home"}-${theme}.png`), fullPage: true });
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+      const audit = await makeAxeBuilder(page).analyze();
+      if (audit.violations.length) {
+        await info.attach(`axe-${route.replaceAll("/", "-") || "home"}-${theme}.json`, {
+          contentType: "application/json", body: JSON.stringify(audit.violations),
+        });
+      }
       expect.soft(audit.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? "")), `${route} ${theme}`).toEqual([]);
       expect.soft(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${route} overflow`).toBeLessThanOrEqual(1);
     }

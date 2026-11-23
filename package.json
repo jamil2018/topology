@@ -44,7 +44,7 @@
     "test:regression": "tsx scripts/validation/run.ts regression",
     "test:release": "tsx scripts/validation/run.ts release",
     "test:live": "tsx scripts/validation/live.ts",
-    "test:inventory": "tsx scripts/validation/inventory.ts",
+    "test:inventory": "node --import tsx scripts/validation/inventory.ts",
     "test:core": "tsx scripts/validation/run.ts core",
     "test:ops": "tsx scripts/validation/run.ts ops",
     "test:performance": "tsx scripts/validation/run.ts performance",
@@ -54,6 +54,10 @@
     "test:lighthouse": "tsx scripts/validation/run.ts lighthouse",
     "test:visual:linux": "tsx scripts/validation/run.ts visual-linux",
     "test:container": "tsx scripts/validation/run.ts container",
+    "test:consumers": "tsx scripts/validation/run.ts consumers",
+    "test:coverage": "tsx scripts/validation/run.ts coverage",
+    "test:coverage:compare": "node --import tsx scripts/validation/compare-coverage.ts",
+    "test:launch": "node --import tsx scripts/validation/launch.ts",
     "test:acceptance": "tsx scripts/validation/acceptance.ts"
   },
   "dependencies": {
@@ -93,6 +97,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/coverage-v8": "3.2.7",
     "chrome-launcher": "1.2.3",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",

@@ -2922,7 +2922,7 @@
       "title": "Fresh database migration",
       "source": "docs/test-plan.md",
       "priority": "P0",
-      "expectedBehavior": "- **Priority:** P0\n- **Area:** Ops\n- **Preconditions:** Empty Postgres database `topology_fresh`. `DATABASE_URL` pointed at it.\n- **Steps:**\n  1. `npm run db:migrate`\n  2. Query `__drizzle_migrations` and a known table (`cases`, `api_tokens`).\n- **Expected:** Exit 0. Journal tags `0000_baseline` through `0012_vendor_case_sources` are applied in order. Tables exist. The command does not call `drizzle-kit push`.\n- **Automation:** `tests/ops/migrate.test.ts`",
+      "expectedBehavior": "- **Priority:** P0\n- **Area:** Ops\n- **Preconditions:** Empty Postgres database `topology_fresh`. `DATABASE_URL` pointed at it.\n- **Steps:**\n  1. `npm run db:migrate`\n  2. Query `__drizzle_migrations` and a known table (`cases`, `api_tokens`).\n- **Expected:** Exit 0. Journal tags `0000_baseline` through `0016_jira_requirement_revisions` are applied in order. Tables exist. The command does not call `drizzle-kit push`.\n- **Automation:** `tests/ops/migrate.test.ts`",
       "automatedChecks": [],
       "assertionScope": null,
       "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
@@ -2934,7 +2934,7 @@
       "title": "Upgrade from baseline to current",
       "source": "docs/test-plan.md",
       "priority": "P0",
-      "expectedBehavior": "- **Priority:** P0\n- **Area:** Ops\n- **Preconditions:** A database that has had only `0000_baseline` applied (apply that SQL, stamp only that hash).\n- **Steps:**\n  1. `npm run db:migrate`\n  2. Confirm `0001` through `0012_vendor_case_sources` applied and existing baseline rows remain.\n- **Expected:** Upgrade is additive. A row inserted before the upgrade is still there. Intermediate tags remain meaningful (`0003_quality_graph_pref` for the quality-graph preference; later tags for productivity, share generation, collab, triage, SCM feedback). The app boots against the upgraded database.\n- **Automation:** `tests/ops/migrate.test.ts`",
+      "expectedBehavior": "- **Priority:** P0\n- **Area:** Ops\n- **Preconditions:** A database that has had only `0000_baseline` applied (apply that SQL, stamp only that hash).\n- **Steps:**\n  1. `npm run db:migrate`\n  2. Confirm `0001` through `0016_jira_requirement_revisions` applied and existing baseline rows remain.\n- **Expected:** Upgrade is additive. A row inserted before the upgrade is still there. Intermediate tags remain meaningful (`0003_quality_graph_pref` for the quality-graph preference; later tags for productivity, share generation, collab, triage, SCM feedback). The app boots against the upgraded database.\n- **Automation:** `tests/ops/migrate.test.ts`",
       "automatedChecks": [],
       "assertionScope": {
         "checks": [
@@ -3042,7 +3042,7 @@
         "checks": [
           "e2e/performance.spec.ts"
         ],
-        "proves": "5,000 results paint under 2 s; bounded DOM, action p95 under 500 ms and long tasks below 200 ms."
+        "proves": "5,000 results ready under 2 s with a bounded DOM, action p95 under 500 ms, and interaction long tasks below 200 ms. Startup tasks are reported separately."
       },
       "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
       "assertionReview": "reviewed scope; remaining documented steps require manual qualification",
@@ -3231,6 +3231,195 @@
       "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
       "assertionReview": "reviewed scope; remaining documented steps require manual qualification",
       "status": "not run"
+    },
+    {
+      "id": "LAUNCH-FLOW-001",
+      "title": "Manual release journey",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nStart with the isolated project, invite the tester, author and approve a case, launch the active matrix, execute a failure with evidence, triage and retest, then share, export and revoke the report. Compare stored IDs, revisions, audit events, original results, attachment hashes and totals to the fixture.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-FLOW-002",
+      "title": "Agent release evidence",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nUse `tests/integration/agent-operations.integration.test.ts` and the launch-provider receipts. Verify explained selection, reviewed and revision-pinned cases, exact workflow results, permission and replay denial, and the human sign-off. Change the PR head, case revision and policy independently and verify the prior sign-off cannot qualify each changed matrix.",
+      "automatedChecks": [
+        "tests/integration/agent-operations.integration.test.ts"
+      ],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-FLOW-003",
+      "title": "Agent scope and case review",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nUse `tests/integration/agent-operations.integration.test.ts`. Exercise owner and project binding, capability denial, stale review, assigned plan and baseline, attachments, replay after storage failure, and legacy cutover. Create drafts through the UI, native CSV, vendor API and CI with review enabled, then check review, rollback and immutable ready revision behavior.",
+      "automatedChecks": [
+        "tests/integration/agent-operations.integration.test.ts"
+      ],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-FLOW-004",
+      "title": "Historical import and provenance",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nUse `tests/integration/vendor-history.integration.test.ts`. Verify TestRail/Qase preview leaves storage unchanged, expected totals and raw bytes match after apply, wrong digests fail, per-run retry is resumable, identical replay is idempotent, and source conflicts are reported. Inspect the persisted provenance in the executor and exports.",
+      "automatedChecks": [
+        "tests/integration/vendor-history.integration.test.ts"
+      ],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-FLOW-005",
+      "title": "Jira revisions and coverage review",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nUse `e2e/functional/jira-requirements.spec.ts` and `tests/integration/jira-requirements.integration.test.ts`. Link a requirement using an admin session, deliver a signed synthetic event without session cookies, confirm its edge by keyboard, then deliver a new revision. Verify the stale review fails and the exact newer review persists after reload. Check replay, foreign project, history order, and Impact separately.",
+      "automatedChecks": [
+        "e2e/functional/jira-requirements.spec.ts",
+        "tests/integration/jira-requirements.integration.test.ts"
+      ],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-UX-001",
+      "title": "Browser, viewport and visual review",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nRun release Chromium, Firefox and WebKit projects. Review screenshot diffs and every screen family in both themes. Use macOS Safari, iPhone Safari and Android Chrome on physical devices for the primary journeys. Record versions, orientation, keyboard, touch, file selection, downloads, and preserved focus and context.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-UX-002",
+      "title": "Observed task completion",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nHave three independent participants unfamiliar with the candidate perform admin, tester and release-review tasks on staging. Record task, completion, time, wrong turns and assistance. Primary tasks must complete unassisted. Retest resolved dead ends with a fresh participant.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-A11Y-001",
+      "title": "WCAG and assistive technology",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nUse the manual accessibility checklist with VoiceOver/Safari and NVDA/Chrome and a mobile screen reader. Exercise complete login, authoring, execution, review, reporting and sharing workflows. Review all axe findings, actual 200% and 400% zoom, OS text size, text spacing, forced colors, visible focus and keyboard handling. Record every applicable WCAG criterion, announcement and focus result.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "UNQUALIFIED native behavior: human operator, real desktop browser with 200%/400% native zoom and OS text settings; execute the documented reflow/focus steps. Viewport emulation is separate evidence.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-EXPORT-001",
+      "title": "Consumer document checks",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P1",
+      "expectedBehavior": "**Priority:** P1\n\nOpen the generated CSV, XLSX and PDF using the applicable Excel, Numbers, Sheets and PDF clients. Verify original strings and escaped cells, row totals, date boundaries, non-Latin text, pagination and file integrity.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-OPS-001",
+      "title": "HTTPS Compose qualification",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nInstall the candidate digest on the separate staging Compose host with launch-equivalent settings. Verify non-root execution, no demo data, private backend ports, HTTPS headers and cookies, reverse-proxy redirects, attachment limits, health during restart and SSE through the proxy.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-OPS-002",
+      "title": "Full upgrade, backup and rollback",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nReview the local operations receipt for 0000 through 0009 to the current journal. On staging repeat the full upgrade from the actual existing schema if different. Back up the database and blob store at a consistent point, restore both on a separate host, compare hashes and run smoke tests. Record duration, recovery point, and how accepted writes are preserved on rollback.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-OPS-003",
+      "title": "Sustained workload and recovery",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nRun the 30-minute staging workload with simultaneous browsing, manual result writes, ingestion and SSE. Record request metrics, resource usage and persisted totals. Verify exact results, no duplicate effects, and recovery after service interruption.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-PKG-001",
+      "title": "Clean package consumers",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nInstall the exact candidate archives in clean Node and Python environments. Execute CLI and MCP against the candidate plus real Playwright, Jest, Cypress and pytest fixtures. Record package hashes, runner versions, positive and rejected transport receipts, and supported install modes.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-COVERAGE-001",
+      "title": "Coverage and assertion review",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nCapture TypeScript and Python line and branch reports on the candidate and baseline. Compare touched modules and review uncovered authorization, persistence, migration, ingestion, and release-evidence branches. Reconcile the assertion-audit candidates with the authored tests, and record explicit dispositions and any verified coverage exceptions.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
+    },
+    {
+      "id": "LAUNCH-CI-001",
+      "title": "Validation workflow on the frozen commit",
+      "source": "tasks/validation/launch-checks.md",
+      "priority": "P0",
+      "expectedBehavior": "**Priority:** P0\n\nRecord the workflow-dispatch run whose checkout matches the candidate SHA. Review checks, regression, cross-browser core, the full release evaluation and the aggregate release gate. Require real run receipts with no skips or retry-only passes.",
+      "automatedChecks": [],
+      "assertionScope": null,
+      "manualChecks": "Manual qualification remains NOT RUN beyond the stated assertion scope. Start `npm run test:e2e:debug` (owned disposable services, Node 22, Docker, Python/pytest and Chromium); use its printed origin and synthetic seed accounts. Execute this case's Preconditions, Steps and Expected verbatim from expectedBehavior, capture persistence after reload, negative permissions and recovery evidence, and stop the harness afterward. Never clear developer DB rows to satisfy a precondition.",
+      "assertionReview": "explicit manual qualification; candidate filenames do not prove this case",
+      "status": "not run"
     }
   ],
   "routes": [
@@ -3266,6 +3455,18 @@
       "expectedBehavior": "Render authorized content and persist applicable interactions; review owning page and release cases.",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise PAGE /cases/[key] using the owning src/app/(app)/cases/[key]/page.tsx input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P1"
+    },
+    {
+      "id": "ROUTE:PAGE:/cases/import/history",
+      "file": "src/app/(app)/cases/import/history/page.tsx",
+      "method": "PAGE",
+      "url": "/cases/import/history",
+      "expectedBehavior": "Render authorized content and persist applicable interactions; review owning page and release cases.",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise PAGE /cases/import/history using the owning src/app/(app)/cases/import/history/page.tsx input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
       "assertionReview": "not reviewed",
       "status": "not run",
       "priority": "P1"
@@ -3499,6 +3700,18 @@
       "priority": "P1"
     },
     {
+      "id": "ROUTE:PAGE:/runs/explore",
+      "file": "src/app/(app)/runs/explore/page.tsx",
+      "method": "PAGE",
+      "url": "/runs/explore",
+      "expectedBehavior": "Render authorized content and persist applicable interactions; review owning page and release cases.",
+      "automatedChecks": [],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise PAGE /runs/explore using the owning src/app/(app)/runs/explore/page.tsx input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P1"
+    },
+    {
       "id": "ROUTE:PAGE:/runs/new",
       "file": "src/app/(app)/runs/new/page.tsx",
       "method": "PAGE",
@@ -3682,6 +3895,20 @@
         "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
       ],
       "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/auth/[...nextauth] using the owning src/app/api/auth/[...nextauth]/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/baselines",
+      "file": "src/app/api/baselines/route.ts",
+      "method": "POST",
+      "url": "/api/baselines",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/baselines using the owning src/app/api/baselines/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
       "assertionReview": "not reviewed",
       "status": "not run",
       "priority": "P0"
@@ -4298,6 +4525,20 @@
         "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
       ],
       "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise GET /api/import/csv/template using the owning src/app/api/import/csv/template/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/import/history",
+      "file": "src/app/api/import/history/route.ts",
+      "method": "POST",
+      "url": "/api/import/history",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/import/history using the owning src/app/api/import/history/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
       "assertionReview": "not reviewed",
       "status": "not run",
       "priority": "P0"
@@ -5241,6 +5482,34 @@
       "priority": "P0"
     },
     {
+      "id": "ROUTE:GET:/api/requirements/[id]/jira",
+      "file": "src/app/api/requirements/[id]/jira/route.ts",
+      "method": "GET",
+      "url": "/api/requirements/[id]/jira",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise GET /api/requirements/[id]/jira using the owning src/app/api/requirements/[id]/jira/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/requirements/[id]/jira",
+      "file": "src/app/api/requirements/[id]/jira/route.ts",
+      "method": "POST",
+      "url": "/api/requirements/[id]/jira",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/requirements/[id]/jira using the owning src/app/api/requirements/[id]/jira/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
       "id": "ROUTE:GET:/api/requirements/[id]/owner",
       "file": "src/app/api/requirements/[id]/owner/route.ts",
       "method": "GET",
@@ -5586,6 +5855,20 @@
         "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
       ],
       "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise PATCH /api/runs/[id] using the owning src/app/api/runs/[id]/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/runs/explore",
+      "file": "src/app/api/runs/explore/route.ts",
+      "method": "POST",
+      "url": "/api/runs/explore",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/runs/explore using the owning src/app/api/runs/explore/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
       "assertionReview": "not reviewed",
       "status": "not run",
       "priority": "P0"
@@ -6020,6 +6303,20 @@
         "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
       ],
       "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise GET /api/webhooks/issues using the owning src/app/api/webhooks/issues/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
+      "assertionReview": "not reviewed",
+      "status": "not run",
+      "priority": "P0"
+    },
+    {
+      "id": "ROUTE:POST:/api/webhooks/requirements/jira",
+      "file": "src/app/api/webhooks/requirements/jira/route.ts",
+      "method": "POST",
+      "url": "/api/webhooks/requirements/jira",
+      "expectedBehavior": "Enforce authentication, scopes, project boundaries, input validation and documented persistence contract.",
+      "automatedChecks": [
+        "tests/integration/security/unauth-sweep.integration.test.ts (unauthenticated handler checks only)"
+      ],
+      "manualChecks": "NOT RUN for full contract: start test:e2e:debug on disposable services; exercise POST /api/webhooks/requirements/jira using the owning src/app/api/webhooks/requirements/jira/route.ts input schema and release-case steps. Verify valid/invalid payloads, admin/member/viewer/custom roles, foreign-project IDs, persisted reload, rollback on rejected write, and response headers. Use synthetic IDs from that server; public auth/share routes require the documented cookie-free flow. Unauthenticated handler sweep is only a denial check.",
       "assertionReview": "not reviewed",
       "status": "not run",
       "priority": "P0"
@@ -7007,7 +7304,7 @@
     {
       "id": "README:130",
       "source": "README.md:130",
-      "expectedBehavior": "| `npm run db:migrate` | Apply journaled Drizzle migrations (`0000_baseline` … `0012_vendor_case_sources`) |",
+      "expectedBehavior": "| `npm run db:migrate` | Apply journaled Drizzle migrations (`0000_baseline` … `0016_jira_requirement_revisions`) |",
       "automatedChecks": [],
       "manualChecks": "NOT RUN for complete promise: use the owned debug app and follow README.md:130, including linked setup/example documents. Check this exact promise against the corresponding docs/test-plan.md cases; capture resulting data after reload and failed-input behavior. Docker, Node 22, Python/pytest and browser binaries required; remote-provider promises additionally require an authorized sandbox and credentials.",
       "priority": "P1",
@@ -7100,493 +7397,499 @@
       "file": "src/components/connect-agent-panel.test.tsx",
       "line": 82,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/components/connect-agent-panel.test.tsx",
       "line": 98,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/components/run-executor.test.tsx",
       "line": 589,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/components/run-executor.test.tsx",
       "line": 591,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/affected-resolve.test.ts",
       "line": 72,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/ai-draft.test.ts",
       "line": 19,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/ci-auth.test.ts",
       "line": 167,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/query-compile.test.ts",
       "line": 16,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/query-compile.test.ts",
       "line": 135,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/query-compile.test.ts",
       "line": 145,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/query-compile.test.ts",
       "line": 157,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/release-quality.test.ts",
       "line": 160,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/tcm/custom-fields.test.ts",
       "line": 39,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/tcm/share-token.test.ts",
       "line": 17,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "src/lib/tcm/share-token.test.ts",
       "line": 30,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/cli/src/affected.test.ts",
       "line": 57,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/cli/src/run-upload.test.ts",
       "line": 22,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/cypress-reporter/src/map-test.test.ts",
       "line": 55,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/execution-protocol.test.ts",
       "line": 39,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/execution-protocol.test.ts",
       "line": 65,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/execution-protocol.test.ts",
       "line": 80,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/execution-protocol.test.ts",
       "line": 89,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/proposal.test.ts",
       "line": 60,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/proposal.test.ts",
       "line": 69,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/proposal.test.ts",
       "line": 77,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/proposal.test.ts",
       "line": 99,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/proposal.test.ts",
       "line": 110,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/proposal.test.ts",
       "line": 128,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/proposal.test.ts",
       "line": 148,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/proposal.test.ts",
       "line": 165,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/proposal.test.ts",
       "line": 183,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/proposal.test.ts",
       "line": 202,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/query.test.ts",
       "line": 24,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/query.test.ts",
       "line": 36,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/domain/src/query.test.ts",
       "line": 51,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/jest-reporter/src/map-test.test.ts",
       "line": 55,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/mcp/src/client.test.ts",
       "line": 53,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/mcp/src/client.test.ts",
       "line": 54,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/mcp/src/client.test.ts",
       "line": 55,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/mcp/src/client.test.ts",
       "line": 117,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/mcp/src/client.test.ts",
       "line": 120,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/mcp/src/client.test.ts",
       "line": 270,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/mcp/src/client.test.ts",
       "line": 271,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/mcp/src/client.test.ts",
       "line": 272,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/mcp/src/server.test.ts",
-      "line": 63,
+      "line": 70,
       "reason": "catch requires error-propagation review",
-      "review": "Reviewed cleanup-only suppression (transport close/body cancellation), not mutation success; assertions run before cleanup."
+      "review": "pending assertion review"
     },
     {
       "file": "packages/mcp/src/server.test.ts",
-      "line": 64,
+      "line": 71,
       "reason": "catch requires error-propagation review",
-      "review": "Reviewed cleanup-only suppression (transport close/body cancellation), not mutation success; assertions run before cleanup."
+      "review": "pending assertion review"
     },
     {
       "file": "e2e/a11y/keyboard.spec.ts",
       "line": 13,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "e2e/a11y/routes.spec.ts",
       "line": 36,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "e2e/functional/auth.spec.ts",
       "line": 7,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "e2e/rbac/roles.spec.ts",
       "line": 75,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
+    },
+    {
+      "file": "e2e/refinement.spec.ts",
+      "line": 39,
+      "reason": "conditional assertion path",
+      "review": "pending assertion review"
     },
     {
       "file": "e2e/responsive/touch-targets.spec.ts",
       "line": 31,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "e2e/ux/network.spec.ts",
       "line": 22,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/affected.integration.test.ts",
       "line": 6,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/ci-ingest.integration.test.ts",
       "line": 6,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/ci-ingest.integration.test.ts",
       "line": 106,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/ci-ingest.integration.test.ts",
       "line": 305,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/cli-ingest.integration.test.ts",
       "line": 20,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/cli-ingest.integration.test.ts",
       "line": 35,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/intents.integration.test.ts",
       "line": 6,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/issues-mcp.integration.test.ts",
       "line": 7,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/issues-mcp.integration.test.ts",
       "line": 157,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/mcp-scopes.integration.test.ts",
       "line": 48,
       "reason": "catch requires error-propagation review",
-      "review": "Reviewed cleanup-only suppression (transport close/body cancellation), not mutation success; assertions run before cleanup."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/mcp-scopes.integration.test.ts",
       "line": 49,
       "reason": "catch requires error-propagation review",
-      "review": "Reviewed cleanup-only suppression (transport close/body cancellation), not mutation success; assertions run before cleanup."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/mcp-scopes.integration.test.ts",
       "line": 57,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/mcp-scopes.integration.test.ts",
       "line": 103,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/multi-project.integration.test.ts",
       "line": 6,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/rbac.integration.test.ts",
       "line": 52,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/rbac.integration.test.ts",
       "line": 82,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/rbac.integration.test.ts",
       "line": 85,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/rbac.integration.test.ts",
       "line": 348,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/s3-attachments.integration.test.ts",
       "line": 16,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/security.integration.test.ts",
       "line": 198,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/security.integration.test.ts",
       "line": 198,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/security/unauth-sweep.integration.test.ts",
       "line": 50,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/security/unauth-sweep.integration.test.ts",
       "line": 54,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/security/unauth-sweep.integration.test.ts",
       "line": 66,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/security/unauth-sweep.integration.test.ts",
       "line": 90,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/security/unauth-sweep.integration.test.ts",
       "line": 164,
       "reason": "catch requires error-propagation review",
-      "review": "Reviewed cleanup-only suppression (transport close/body cancellation), not mutation success; assertions run before cleanup."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/webhooks.integration.test.ts",
       "line": 12,
       "reason": "skip or fixme",
-      "review": "Reviewed: service/build conditional guards are preflight requirements of the mandatory harness; missing lease/service/build fails before collection; no skipped tests accepted."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/webhooks.integration.test.ts",
       "line": 12,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/webhooks.integration.test.ts",
       "line": 36,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     },
     {
       "file": "tests/integration/webhooks.integration.test.ts",
       "line": 40,
       "reason": "conditional assertion path",
-      "review": "Reviewed: discriminated result narrowing has a preceding expectation; mock dispatch/environment restoration and visibility filtering are intentional. Missing seed/session/start/skip-link and empty-fixture fallback paths were made strict."
+      "review": "pending assertion review"
     }
   ]
 }

@@ -24,7 +24,8 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
-      - run: npm run test:inventory
+      - run: npm run test:inventory -- --check
+      - run: npm run packages:build
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -10,6 +10,7 @@ export default defineConfig({
     include: [
       "src/**/*.test.ts",
       "packages/*/src/**/*.test.ts",
+      "scripts/validation/*.test.ts",
     ],
     exclude: [
       "**/*.integration.test.ts",

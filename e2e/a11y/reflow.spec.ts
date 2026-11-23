@@ -1,17 +1,22 @@
 import { expect, test } from "../fixtures";
 
-// Width is set inside the test so this stays an @a11y check on every project.
-test("cases page reflows at 320px without horizontal scroll @a11y", async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 640 });
-  await page.goto("/cases");
-  await expect(page.getByRole("heading", { name: "Test cases" })).toBeVisible();
+const routes = [
+  { path: "/cases", heading: "Test cases" },
+  { path: "/cases/import/history", heading: "Import run history" },
+  { path: "/runs/explore", heading: "New exploratory session" },
+  { path: "/requirements", heading: "Requirements" },
+];
 
-  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-  expect(
-    scrollWidth,
-    `documentElement scrollWidth ${scrollWidth} exceeds clientWidth ${clientWidth}`,
-  ).toBeLessThanOrEqual(clientWidth + 1);
+test("catalog and roadmap workflows reflow at 320 CSS px @a11y", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  for (const route of routes) {
+    await page.goto(route.path);
+    await expect(page.getByRole("heading", { name: route.heading, exact: true })).toBeVisible();
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth, `${route.path} overflows (content ${scrollWidth}px, viewport ${clientWidth}px)`)
+      .toBeLessThanOrEqual(clientWidth + 1);
+  }
 });

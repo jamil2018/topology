@@ -6,13 +6,15 @@ import path from "node:path";
 import postgres from "postgres";
 import { CreateBucketCommand, S3Client } from "@aws-sdk/client-s3";
 import { normalizeVisualDates, prepareVisualIdentity } from "./visual-fixture";
+import { evaluateConsumers } from "./consumers";
 import { evaluateContainer } from "./container";
+import { E2E_PRIMARY_PROJECT_NAME } from "../../src/db/seed-e2e-catalog";
 import { evaluateOperations } from "./operations";
 import { assertOwnedDatabase, redact } from "./safety";
 
 const mode = process.argv[2] ?? "sanity";
 const browserArgs = process.argv.slice(3);
-if (!["sanity", "regression", "release", "integration", "e2e", "smoke", "core", "ops", "performance", "onboarding", "visual", "visual-linux", "lighthouse", "container", "debug"].includes(mode)) {
+if (!["sanity", "regression", "release", "integration", "coverage", "consumers", "e2e", "smoke", "core", "ops", "performance", "onboarding", "visual", "visual-linux", "lighthouse", "container", "debug"].includes(mode)) {
   throw new Error(`Unknown validation suite: ${mode}`);
 }
 const runId = randomBytes(8).toString("hex");
@@ -99,10 +101,12 @@ async function run(command: string, args: string[]) {
     const stats = JSON.parse(readFileSync(vitestOutput, "utf8"));
     tests = { passed: stats.numPassedTests, failed: stats.numFailedTests, skipped: stats.numPendingTests + (stats.numTodoTests ?? 0), flaky: 0 };
   }
-  const unqualified = tests && (tests.skipped > 0 || tests.flaky > 0);
-  results.push({ command: label, status: status === 0 && !unqualified ? "passed" : "failed", durationMs: Date.now() - start, tests });
-  if (unqualified) throw new Error(`${label} contains skipped or retry-only passes; see the browser results`);
+  const missingReceipt = (isBrowser || vitestOutput) && (!tests || tests.passed === 0 || !Object.values(tests).every(Number.isInteger));
+  const unqualified = Boolean(tests && (tests.failed > 0 || tests.skipped > 0 || tests.flaky > 0));
+  results.push({ command: label, status: status === 0 && !unqualified && !missingReceipt ? "passed" : "failed", durationMs: Date.now() - start, tests });
   if (status !== 0) throw new Error(`${label} exited ${status}`);
+  if (missingReceipt) throw new Error(`${label} has no valid nonempty runner receipt`);
+  if (unqualified) throw new Error(`${label} contains failures, skips, or retry-only passes`);
 }
 async function connectContainerBrowser() {
   if (!browserProvisioned) {
@@ -157,6 +161,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
 let admin: postgres.Sql | undefined;
 let failure: string | undefined;
 let containerResources: unknown;
+let coverage: { repositoryRoot: string; vitest: string; v8: string; python: string; pythonCoverage: string } | undefined;
 async function main() {
 try {
   containerResources = JSON.parse(sync("docker", ["info", "--format", '{"serverVersion":"{{.ServerVersion}}","cpuCount":{{.NCPU}},"memoryBytes":{{.MemTotal}}}']));
@@ -193,6 +198,21 @@ try {
     await seedSql`INSERT INTO validation_harness_owner (id) VALUES (${runId})`;
   } finally { await seedSql.end(); }
   await run("npx", ["tsx", "src/db/seed.ts"]);
+  const fixtureSql = postgres(env.DATABASE_URL!, { max: 1 });
+  try {
+    const [project] = await fixtureSql`SELECT id FROM workspaces WHERE name = ${E2E_PRIMARY_PROJECT_NAME}`;
+    if (!project) throw new Error("Missing seeded project for Jira validation");
+    const jiraSecret = randomBytes(32).toString("hex");
+    secrets.push(jiraSecret);
+    Object.assign(env, {
+      TOPOLOGY_VALIDATION_JIRA_PROJECT: project.id,
+      TOPOLOGY_JIRA_REQUIREMENT_SECRET_VALIDATION: jiraSecret,
+      TOPOLOGY_JIRA_REQUIREMENT_TARGETS: JSON.stringify([{
+        workspaceId: project.id, origin: "https://validation.atlassian.net", projectId: "10001",
+        secretEnv: "TOPOLOGY_JIRA_REQUIREMENT_SECRET_VALIDATION",
+      }]),
+    });
+  } finally { await fixtureSql.end({ timeout: 5 }); }
   await selectBrowserTemplate(env.DATABASE_URL!);
   if (["onboarding", "regression", "release"].includes(mode)) {
     const seededUrl = env.DATABASE_URL;
@@ -204,15 +224,43 @@ try {
     env.DATABASE_URL = seededUrl;
     env.PLAYWRIGHT_OUTPUT_DIR = path.join(output, "browser");
   }
-  if (["sanity", "regression", "release"].includes(mode)) {
-    await run("npm", ["run", "test:unit", "--", "--reporter=default", "--reporter=json", `--outputFile=${path.join(output, "unit.json")}`]);
-    await run("npm", ["run", "test:ui", "--", "--reporter=default", "--reporter=json", `--outputFile=${path.join(output, "components.json")}`]);
+  if (mode === "coverage") {
+    coverage = {
+      repositoryRoot: process.cwd(),
+      vitest: JSON.parse(readFileSync("node_modules/vitest/package.json", "utf8")).version,
+      v8: JSON.parse(readFileSync("node_modules/@vitest/coverage-v8/package.json", "utf8")).version,
+      python: sync("python3", ["--version"]),
+      pythonCoverage: sync("python3", ["-m", "coverage", "--version"]),
+    };
   }
-  if (["regression", "release", "integration"].includes(mode)) {
+  const coverageArgs = (suite: string) => mode === "coverage" ? [
+    "--coverage.enabled", "--coverage.reporter=json", "--coverage.reporter=json-summary",
+    `--coverage.reportsDirectory=${path.join(output, "coverage", suite)}`,
+    "--coverage.include=src/**/*.{ts,tsx}", "--coverage.include=packages/*/src/**/*.{ts,tsx}",
+  ] : [];
+  if (["sanity", "regression", "release", "coverage"].includes(mode)) {
+    await run("npm", ["run", "test:unit", "--", "--reporter=default", "--reporter=json", `--outputFile=${path.join(output, "unit.json")}`, ...coverageArgs("unit")]);
+    await run("npm", ["run", "test:ui", "--", "--reporter=default", "--reporter=json", `--outputFile=${path.join(output, "components.json")}`, ...coverageArgs("components")]);
+  }
+  if (["regression", "release", "integration", "coverage"].includes(mode)) {
     await run("npm", ["run", "build"]);
     env.PLAYWRIGHT_BUILD_READY = "1";
-    await run("npx", ["vitest", "run", "--config", "vitest.integration.config.ts", "--reporter=default", "--reporter=json", `--outputFile=${path.join(output, "integration.json")}`]);
-    await run("python3", ["-m", "pytest", "packages/pytest-topology/tests", "-q", "-p", "no:cacheprovider"]);
+    await run("npx", ["vitest", "run", "--config", "vitest.integration.config.ts", "--reporter=default", "--reporter=json", `--outputFile=${path.join(output, "integration.json")}`, ...coverageArgs("integration")]);
+    const pytest = ["-m", "pytest", "packages/pytest-topology/tests", "-q", "-p", "no:cacheprovider"];
+    if (mode === "coverage") {
+      const pythonCoverage = path.join(output, "coverage", ".coverage");
+      await run("python3", ["-m", "coverage", "run", "--branch", "--source=pytest_topology", `--data-file=${pythonCoverage}`, ...pytest]);
+      await run("python3", ["-m", "coverage", "json", `--data-file=${pythonCoverage}`, "-o", path.join(output, "coverage", "python.json")]);
+    } else {
+      await run("python3", pytest);
+    }
+  }
+  if (mode === "consumers") {
+    await run("npm", ["run", "packages:build"]);
+    await run("npm", ["run", "build"]);
+    const started = performance.now();
+    await evaluateConsumers({ root, output, env, secrets });
+    results.push({ command: "independent CLI, MCP and reporter consumers", status: "passed", durationMs: performance.now() - started });
   }
   if (["sanity", "regression", "release", "e2e", "smoke", "core", "debug"].includes(mode)) {
     if (["release", "core"].includes(mode)) await connectContainerBrowser();
@@ -232,7 +280,7 @@ try {
   }
   if (["release", "ops"].includes(mode)) {
     const started = performance.now();
-    const restarted = await evaluateOperations({ adminUrl: connection.toString(), runId, created, compose, temporaryRoot: root, s3Endpoint: env.ATTACHMENTS_S3_ENDPOINT!, bucket: env.ATTACHMENTS_S3_BUCKET! });
+    const restarted = await evaluateOperations({ adminUrl: connection.toString(), runId, created, compose, temporaryRoot: root, output, s3Endpoint: env.ATTACHMENTS_S3_ENDPOINT!, bucket: env.ATTACHMENTS_S3_BUCKET! });
     connection.port = restarted.postgresPort;
     env.ATTACHMENTS_S3_ENDPOINT = restarted.s3Endpoint;
     results.push({ command: "operations: upgrade/idempotency/backup/restore", status: "passed", durationMs: performance.now() - started });
@@ -308,7 +356,7 @@ try {
     runId, mode, commit: sync("git", ["rev-parse", "HEAD"]),
     dirty: Boolean(sync("git", ["status", "--porcelain"])),
     environment: { node: process.version, platform: platform(), arch: arch(), cpu: cpus()[0]?.model, memoryBytes: totalmem(), containerResources, browserRuntime: browserProvisioned ? `playwright:${JSON.parse(readFileSync("node_modules/playwright/package.json", "utf8")).version}-noble Linux` : "native installed Playwright" },
-    retries: 0, results, failure, status: failure ? "failed" : "passed",
+    retries: 0, results, failure, coverage, status: failure ? "failed" : "passed",
     qualifications: { liveProviders: "not run", screenReader: "not run", nativeZoom: "not run" },
   }, null, 2));
 }

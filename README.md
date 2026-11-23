@@ -127,7 +127,7 @@ Tracker tokens stay server-side. Do not put them in the browser or in the MCP pr
 | `npm run test:release` | Regression, core Firefox/WebKit, responsive/a11y, visual, operational and measured scale gates |
 | `npm run test:live` | Opt-in sandbox issue-provider read qualification |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run db:migrate` | Apply journaled Drizzle migrations (`0000_baseline` … `0012_vendor_case_sources`) |
+| `npm run db:migrate` | Apply journaled Drizzle migrations (`0000_baseline` … `0016_jira_requirement_revisions`) |
 | `npm run db:seed` | Seed demo user, workspace, cases, run, milestone, token |
 | `npm run topology` | Topology CLI |
 | `npm run mcp` | Start `@topology/mcp` stdio server |
